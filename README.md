@@ -1,5 +1,3 @@
-# Switch Organizer (forked)
-
 Pequena ferramenta para organizar/compressar/validar coleções Nintendo Switch.
 
 Como usar:
@@ -234,44 +232,3 @@ Os testes cobrem utilitários e caminhos críticos; adicionei testes antes de mu
 ## Contribuição
 
 Contribuições são bem-vindas. Para mudanças maiores, sugiro separar funcionalidades em módulos menores (reduzir a complexidade de `main()` e funções longas) e adicionar testes cobrindo os fluxos novos.
-
----
-
-## Publicando no GitHub
-
-Antes de publicar, garanta que você não tenha arquivos de log grandes no root do repositório e que `requirements.txt` esteja atualizado. Eu adicionei um `.gitignore` e arquivei logs em `logs/old/`.
-
-Passos rápidos para publicar:
-
-1. Inicialize o repositório (se ainda não):
-
-```bash
-git init
-git add .
-git commit -m "Initial project import: switch-organizer"
-```
-
-2. Crie o repositório no GitHub e conecte o remoto (substitua URL):
-
-```bash
-git branch -M main
-git remote add origin git@github.com:<OWNER>/<REPO>.git
-git push -u origin main
-```
-
-3. Para evitar commitar arquivos de log que já estavam no histórico, des-trackeie-os antes de commitar:
-
-```bash
-git rm --cached architect_v13.log || true
-git rm --cached organizer_v13.log || true
-git commit -m "Remove logs from tracking"
-git push
-```
-
-4. A CI foi adicionada em `.github/workflows/ci.yml` e executará os testes em pushes/PRs.
-
-5. Depois de subir, verifique a aba Actions no GitHub para confirmar que os testes passam.
-
-Se quiser, eu posso preparar o commit final com essas mudanças e criar um exemplo de release tag.
-
-## Licen
