@@ -1,0 +1,47 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Logs
+*.log
+logs/
+organizer_v13.log
+
+# Test / coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Editors/IDEs
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Python tooling
+.mypy_cache/
+.pyre/
+.pytype/
+.ruff_cache/
+
+# macOS
+.DS_Store
+
+# Misc
+*.bak
+*.swp
+*~

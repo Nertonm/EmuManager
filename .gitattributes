@@ -1,0 +1,5 @@
+# Force text files to use LF in the repository and ensure consistent diffing
+* text=auto eol=lf
+
+# Python
+*.py linguist-language=Python
