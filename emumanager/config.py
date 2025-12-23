@@ -24,7 +24,9 @@ EXT_TO_SYSTEM: Dict[str, str] = {
     ".cci": "3ds",
     ".gcm": "gamecube",
     ".rvz": "gamecube", # Dolphin (GC/Wii)
+    ".gcz": "gamecube",  # Legacy Dolphin compressed format (GC/Wii)
     ".wbfs": "wii",
+    ".wad": "wii",      # WiiWare titles
     ".wud": "wiiu",
     ".wux": "wiiu",
     ".wua": "wiiu",

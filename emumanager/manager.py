@@ -20,8 +20,79 @@ from .switch import cli as switch_cli
 
 
 def guess_system_for_file(path: Path) -> Optional[str]:
+    """Guess the target system for a ROM file.
+
+    Strategy:
+    - Direct mapping by extension when unambiguous.
+    - For ambiguous extensions (.iso, .chd, .bin, .zip, .pkg), try:
+      - Detect system hints from path segments (e.g., 'ps2', 'psx', 'wii').
+      - Detect known title IDs in filename (PS2: SLUS/SLES/SCUS/SCES; PSP: ULUS/ULES/NPJH/UCUS; PS3: BLUS/BLES/BCES).
+    - Fall back to extension mapping if no better hint is found.
+    """
+
+    name = path.name.upper()
     ext = path.suffix.lower()
-    return EXT_TO_SYSTEM.get(ext)
+    mapped = EXT_TO_SYSTEM.get(ext)
+
+    # If extension already maps to a specific system and is not known ambiguous, return it
+    ambiguous_exts = {".iso", ".chd", ".bin", ".zip", ".pkg"}
+    if mapped and ext not in ambiguous_exts:
+        return mapped
+
+    # 1) Path-based hint: look for known system names in any path segment
+    system_aliases = {
+        "psx": "psx",
+        "ps1": "psx",
+        "playstation": "psx",
+        "ps2": "ps2",
+        "ps3": "ps3",
+        "psp": "psp",
+        "psvita": "psvita",
+        "vita": "psvita",
+        "gamecube": "gamecube",
+        "gc": "gamecube",
+        "wii": "wii",
+        "wiiu": "wiiu",
+        "switch": "switch",
+        "nes": "nes",
+        "snes": "snes",
+        "megadrive": "megadrive",
+        "genesis": "megadrive",
+        "mastersystem": "mastersystem",
+        "dreamcast": "dreamcast",
+        "mame": "mame",
+        "fbneo": "mame",
+        "xbox": "xbox_classic",
+        "xbox360": "xbox360",
+        "gba": "gba",
+        "nds": "nds",
+        "n64": "n64",
+        "3ds": "3ds",
+        "neogeo": "neogeo",
+    }
+    for part in path.parts:
+        alias = system_aliases.get(part.lower())
+        if alias:
+            return alias
+
+    # 2) Filename heuristics for disc identifiers
+    # PS2 serials: SLUS-xxxxx, SLES-xxxxx, SCUS-xxxxx, SCES-xxxxx, SLPS-, SLPM-, etc.
+    ps2_tags = ("SLUS-", "SLES-", "SCUS-", "SCES-", "SLPS-", "SLPM-", "SLKA-", "SLED-")
+    if any(tag in name for tag in ps2_tags):
+        return "ps2"
+
+    # PSP product codes: ULUS, ULES, NPJH, UCUS, etc.
+    psp_tags = ("ULUS", "ULES", "NPJH", "NPUG", "UCUS", "ULJM", "ULJS", "ULKS", "ULEM")
+    if any(tag in name for tag in psp_tags):
+        return "psp"
+
+    # PS3 codes: BLUS, BLES, BCES, BLJM
+    ps3_tags = ("BLUS", "BLES", "BCES", "BLJM")
+    if any(tag in name for tag in ps3_tags):
+        return "ps3"
+
+    # Fallback to extension mapping (may be ambiguous but better than None)
+    return mapped
 
 
 def cmd_init(base_dir: Path, dry_run: bool) -> int:
