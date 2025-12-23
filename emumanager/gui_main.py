@@ -44,6 +44,7 @@ MSG_SELECT_BASE = "Please select a base directory first (Open Library)."
 LOG_WARN = "WARN: "
 LOG_ERROR = "ERROR: "
 LOG_EXCEPTION = "EXCEPTION: "
+LAST_SYSTEM_KEY = "ui/last_system"
 
 
 class MainWindowBase:
@@ -640,7 +641,24 @@ class MainWindowBase:
         if not self._settings:
             return
         try:
-            # Restore geometry/state if available
+            self._restore_window_settings()
+            self._restore_ui_settings()
+        except Exception:
+            pass
+
+    def _save_settings(self):
+        if not self._settings:
+            return
+        try:
+            self._persist_window_settings()
+            self._persist_ui_settings()
+        except Exception:
+            pass
+
+    def _restore_window_settings(self):
+        """Restore geometry/state and base dir from QSettings."""
+        try:
+            # Geometry/state
             try:
                 geom = self._settings.value("ui/window_geometry")
                 if geom:
@@ -660,11 +678,27 @@ class MainWindowBase:
                     self.window.restoreState(st)
             except Exception:
                 pass
+            # Last base
             last = self._settings.value("last_base")
             if last:
                 self._last_base = Path(str(last))
-            
-            # New settings
+        except Exception:
+            pass
+
+    def _restore_ui_settings(self):
+        """Restore checkboxes, toolbar visibility, filters, splitter, and table widths."""
+        try:
+            self._restore_checkboxes()
+            self._restore_extras()
+            self._restore_splitter()
+            self._restore_toolbar_visibility()
+            self._restore_table_widths()
+            self._restore_last_system()
+        except Exception:
+            pass
+
+    def _restore_checkboxes(self):
+        try:
             self.chk_dry_run.setChecked(str(self._settings.value("settings/dry_run", "false")).lower() == "true")
             self.spin_level.setValue(int(self._settings.value("settings/level", 3)))
             self.combo_profile.setCurrentText(str(self._settings.value("settings/profile", "None")))
@@ -674,61 +708,65 @@ class MainWindowBase:
             self.chk_recursive.setChecked(str(self._settings.value("settings/recursive", "true")).lower() == "true")
             self.chk_process_selected.setChecked(str(self._settings.value("settings/process_selected", "false")).lower() == "true")
             self.chk_standardize_names.setChecked(str(self._settings.value("settings/standardize_names", "false")).lower() == "true")
-            # UI extras
-            try:
-                vis = str(self._settings.value("ui/log_visible", "true")).lower() == "true"
-                self.ui.log_dock.setVisible(vis)
-            except Exception:
-                pass
-            if hasattr(self.ui, "edit_filter"):
-                self.ui.edit_filter.setText(str(self._settings.value("ui/rom_filter", "")))
-            if hasattr(self.ui, "combo_verif_filter"):
-                try:
-                    idx = int(self._settings.value("ui/verif_filter_idx", 0))
-                    self.ui.combo_verif_filter.setCurrentIndex(idx)
-                except Exception:
-                    pass
-            # Restore splitter state (if available)
-            try:
-                st = self._settings.value("ui/splitter_state")
-                if st:
-                    self.ui.splitter.restoreState(st)
-            except Exception:
-                pass
-            # Toolbar visibility
-            try:
-                tb_vis = str(self._settings.value("ui/toolbar_visible", "true")).lower() == "true"
-                if hasattr(self, "_toolbar") and self._toolbar:
-                    self._toolbar.setVisible(tb_vis)
-                if hasattr(self, "act_toggle_toolbar"):
-                    self.act_toggle_toolbar.setChecked(tb_vis)
-            except Exception:
-                pass
-            # Verification table column widths
-            try:
-                widths = self._settings.value("ui/verif_table_widths")
-                if widths and hasattr(self.ui, "table_results"):
-                    if isinstance(widths, (list, tuple)):
-                        for i, w in enumerate(widths):
-                            try:
-                                self.ui.table_results.setColumnWidth(i, int(w))
-                            except Exception:
-                                pass
-            except Exception:
-                pass
-            # Last selected system
-            try:
-                self._last_system = str(self._settings.value("ui/last_system")) if self._settings.value("ui/last_system") else None
-            except Exception:
-                self._last_system = None
         except Exception:
             pass
 
-    def _save_settings(self):
-        if not self._settings:
-            return
+    def _restore_extras(self):
         try:
-            # Save geometry/state
+            vis = str(self._settings.value("ui/log_visible", "true")).lower() == "true"
+            self.ui.log_dock.setVisible(vis)
+        except Exception:
+            pass
+        try:
+            if hasattr(self.ui, "edit_filter"):
+                self.ui.edit_filter.setText(str(self._settings.value("ui/rom_filter", "")))
+            if hasattr(self.ui, "combo_verif_filter"):
+                idx = int(self._settings.value("ui/verif_filter_idx", 0))
+                self.ui.combo_verif_filter.setCurrentIndex(idx)
+        except Exception:
+            pass
+
+    def _restore_splitter(self):
+        try:
+            st = self._settings.value("ui/splitter_state")
+            if st:
+                self.ui.splitter.restoreState(st)
+        except Exception:
+            pass
+
+    def _restore_toolbar_visibility(self):
+        try:
+            tb_vis = str(self._settings.value("ui/toolbar_visible", "true")).lower() == "true"
+            if hasattr(self, "_toolbar") and self._toolbar:
+                self._toolbar.setVisible(tb_vis)
+            if hasattr(self, "act_toggle_toolbar"):
+                self.act_toggle_toolbar.setChecked(tb_vis)
+        except Exception:
+            pass
+
+    def _restore_table_widths(self):
+        try:
+            widths = self._settings.value("ui/verif_table_widths")
+            if widths and hasattr(self.ui, "table_results"):
+                if isinstance(widths, (list, tuple)):
+                    for i, w in enumerate(widths):
+                        try:
+                            self.ui.table_results.setColumnWidth(i, int(w))
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
+    def _restore_last_system(self):
+        try:
+            self._last_system = str(self._settings.value(LAST_SYSTEM_KEY)) if self._settings.value(LAST_SYSTEM_KEY) else None
+        except Exception:
+            self._last_system = None
+
+    def _persist_window_settings(self):
+        """Persist geometry/state and base dir to QSettings."""
+        try:
+            # Geometry/state
             try:
                 self._settings.setValue("ui/window_geometry", self.window.saveGeometry())
                 self._settings.setValue("ui/window_state", self.window.saveState())
@@ -738,8 +776,21 @@ class MainWindowBase:
                 self._settings.setValue("window/height", self.window.height())
             if self._last_base:
                 self._settings.setValue("last_base", str(self._last_base))
-            
-            # New settings
+        except Exception:
+            pass
+
+    def _persist_ui_settings(self):
+        """Persist checkboxes, filters, splitter, toolbar visibility, and table widths."""
+        try:
+            self._persist_checkbox_settings()
+            self._persist_extras()
+            self._persist_splitter()
+            self._persist_table_widths()
+        except Exception:
+            pass
+
+    def _persist_checkbox_settings(self):
+        try:
             self._settings.setValue("settings/dry_run", str(self.chk_dry_run.isChecked()))
             self._settings.setValue("settings/level", self.spin_level.value())
             self._settings.setValue("settings/profile", self.combo_profile.currentText())
@@ -749,28 +800,30 @@ class MainWindowBase:
             self._settings.setValue("settings/recursive", str(self.chk_recursive.isChecked()))
             self._settings.setValue("settings/process_selected", str(self.chk_process_selected.isChecked()))
             self._settings.setValue("settings/standardize_names", str(self.chk_standardize_names.isChecked()))
-            # duplicate removed
-            # UI extras
-            try:
-                self._settings.setValue("ui/log_visible", str(self.ui.log_dock.isVisible()))
-            except Exception:
-                pass
+        except Exception:
+            pass
+
+    def _persist_extras(self):
+        try:
+            self._settings.setValue("ui/log_visible", str(self.ui.log_dock.isVisible()))
             if hasattr(self.ui, "edit_filter"):
                 self._settings.setValue("ui/rom_filter", self.ui.edit_filter.text())
             if hasattr(self.ui, "combo_verif_filter"):
                 self._settings.setValue("ui/verif_filter_idx", self.ui.combo_verif_filter.currentIndex())
-            # Save splitter state (if available)
-            try:
-                self._settings.setValue("ui/splitter_state", self.ui.splitter.saveState())
-            except Exception:
-                pass
-            # Save verification table column widths
-            try:
-                if hasattr(self.ui, "table_results"):
-                    widths = [self.ui.table_results.columnWidth(i) for i in range(self.ui.table_results.columnCount())]
-                    self._settings.setValue("ui/verif_table_widths", widths)
-            except Exception:
-                pass
+        except Exception:
+            pass
+
+    def _persist_splitter(self):
+        try:
+            self._settings.setValue("ui/splitter_state", self.ui.splitter.saveState())
+        except Exception:
+            pass
+
+    def _persist_table_widths(self):
+        try:
+            if hasattr(self.ui, "table_results"):
+                widths = [self.ui.table_results.columnWidth(i) for i in range(self.ui.table_results.columnCount())]
+                self._settings.setValue("ui/verif_table_widths", widths)
         except Exception:
             pass
 

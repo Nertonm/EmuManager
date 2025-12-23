@@ -91,6 +91,25 @@ def guess_system_for_file(path: Path) -> Optional[str]:
     if any(tag in name for tag in ps3_tags):
         return "ps3"
 
+    # 3) Lightweight header sniffing for GC/Wii ISOs
+    # GameCube/Wii disc IDs commonly appear at offset 0 as 6 ASCII chars.
+    # Heuristic: first char 'G' -> GameCube; 'R' or 'S' -> Wii.
+    if ext == ".iso":
+        try:
+            with open(path, "rb") as f:
+                header = f.read(8)
+            if header and len(header) >= 6:
+                disc_id = header[:6]
+                # Ensure alphanumeric uppercase pattern
+                if all((65 <= b <= 90) or (48 <= b <= 57) for b in disc_id):
+                    first = chr(disc_id[0])
+                    if first == "G":
+                        return "gamecube"
+                    if first in ("R", "S"):
+                        return "wii"
+        except Exception:
+            pass
+
     # Fallback to extension mapping (may be ambiguous but better than None)
     return mapped
 

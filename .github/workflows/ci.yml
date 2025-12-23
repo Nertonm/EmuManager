@@ -27,6 +27,7 @@ jobs:
           cache-dependency-path: |
             requirements.txt
             pyproject.toml
+            requirements-dev.txt
 
       - name: Install dependencies
         run: |
@@ -56,11 +57,13 @@ jobs:
         with:
           python-version: 3.11
           cache: 'pip'
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
       - name: Install linters
         run: |
           python -m pip install --upgrade pip
-          python -m pip install flake8 isort
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; else python -m pip install flake8 isort; fi
       - name: Run flake8
         run: flake8 .
       - name: Run isort (check-only)
