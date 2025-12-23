@@ -1,5 +1,3 @@
-import os
-import types
 from pathlib import Path
 import switch_organizer as so
 

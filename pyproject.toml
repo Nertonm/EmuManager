@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "emumanager"
+version = "0.1.0"
+description = "Small emulation collection manager and utilities"
+authors = [ { name = "EmuManager Maintainer" } ]
+dependencies = []
+readme = "README.md"
+license = "MIT"
+
+[project.scripts]
+emumanager = "emumanager.manager:main"
+emumanager-arch = "emumanager.architect:main"
+ps2-convert = "emumanager.converters.ps2_converter:_main"
+emumanager-gui = "emumanager.gui:main"
+
+[project.optional-dependencies]
+gui = ["pyqt6"]
+
+# Helpful extras for contributors
+test = ["pytest"]
+dev = ["ruff", "pytest", "build"]
+
+[tool.ruff]
+# Opinionated but permissive defaults for repository linting
+line-length = 88
+exclude = [".git", "__pycache__", "build", "dist", "logs", "*.pyc"]
+
+[tool.setuptools.packages.find]
+include = ["emumanager*"]

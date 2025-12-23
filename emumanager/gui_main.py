@@ -1,0 +1,1946 @@
+"""MainWindow component for EmuManager GUI.
+
+This module contains the MainWindow class and related UI helpers. It is
+GUI-library-agnostic in the sense that callers should import the Qt classes
+from the binding they prefer and pass them when constructing the window.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Callable, Optional
+from datetime import datetime
+import threading
+
+from .gui_ui import Ui_MainWindow
+from .gui_workers import (
+    worker_organize,
+    worker_health_check,
+    worker_clean_junk,
+    worker_switch_compress,
+    worker_switch_decompress,
+    worker_recompress_single,
+    worker_decompress_single,
+    worker_compress_single,
+    worker_ps2_convert,
+    worker_ps2_verify,
+    worker_ps2_organize,
+    worker_ps3_verify,
+    worker_ps3_organize,
+    worker_psp_verify,
+    worker_psp_organize,
+    worker_psp_compress,
+    worker_dolphin_convert,
+    worker_dolphin_verify,
+    worker_dolphin_organize,
+    worker_hash_verify
+)
+
+
+# Constants
+MSG_NO_ROM = "No ROM selected"
+MSG_NO_SYSTEM = "No system selected"
+MSG_NSZ_MISSING = "Error: 'nsz' tool not found in environment."
+MSG_SELECT_BASE = "Please select a base directory first (Open Library)."
+LOG_WARN = "WARN: "
+LOG_ERROR = "ERROR: "
+LOG_EXCEPTION = "EXCEPTION: "
+
+
+class MainWindowBase:
+    """A minimal abstraction over a Qt MainWindow used by the package.
+
+    This class expects the QtWidgets module to be available in the global
+    namespace of the caller (i.e., the module that instantiates it).
+    """
+
+    def __init__(self, qtwidgets: Any, manager_module: Any):
+        self._qtwidgets = qtwidgets
+        self._manager = manager_module
+        self.ui = Ui_MainWindow()
+
+        # Create widgets (use local alias to the qt binding)
+        qt = self._qtwidgets
+        # Common literals
+        self._dlg_select_base_title = "Select base directory"
+
+        # Attempt to locate the QtCore module corresponding to the passed
+        # QtWidgets binding (works for PyQt6 or PySide6). Also prepare a small
+        # thread pool used for background tasks.
+        try:
+            import importlib
+
+            try:
+                self._qtcore = importlib.import_module("PyQt6.QtCore")
+                self._qtgui = importlib.import_module("PyQt6.QtGui")
+            except Exception:
+                self._qtcore = importlib.import_module("PySide6.QtCore")
+                self._qtgui = importlib.import_module("PySide6.QtGui")
+        except Exception:
+            self._qtcore = None
+            self._qtgui = None
+
+        # Executor for background tasks (small pool)
+        try:
+            import concurrent.futures
+
+            self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+        except Exception:
+            self._executor = None
+
+        # UI state helpers
+        self._active_timer = None
+        self._active_future = None
+        self._cancel_event = threading.Event()
+        self._settings = None
+        self._last_base = None
+        self._env = {}  # Cache for environment tools/paths
+        self.window = qt.QMainWindow()
+        
+        # Setup UI
+        self.ui.setupUi(self.window, qt)
+        
+        # Setup close handler
+        self._original_close_event = self.window.closeEvent
+        self.window.closeEvent = self._on_close_event
+
+        # Alias common widgets for convenience and compatibility
+        self.log = self.ui.log
+        self.status = self.ui.statusbar
+        
+        # Alias settings widgets
+        self.chk_dry_run = self.ui.chk_dry_run
+        self.spin_level = self.ui.spin_level
+        self.combo_profile = self.ui.combo_profile
+        self.chk_rm_originals = self.ui.chk_rm_originals
+        self.chk_quarantine = self.ui.chk_quarantine
+        self.chk_deep_verify = self.ui.chk_deep_verify
+        self.chk_recursive = self.ui.chk_recursive
+        self.chk_process_selected = self.ui.chk_process_selected
+        self.chk_standardize_names = self.ui.chk_standardize_names
+
+        if self._qtgui:
+            self.ui.apply_dark_theme(qt, self._qtgui, self.window)
+
+        # Setup thread-safe logging signal
+        if self._qtcore:
+            # Define a QObject to hold the signal
+            class LogSignaler(self._qtcore.QObject):
+                # Try both PyQt6 and PySide6 signal names
+                log_signal = self._qtcore.pyqtSignal(str) if hasattr(self._qtcore, "pyqtSignal") else self._qtcore.Signal(str)
+            
+            self._signaler = LogSignaler()
+            self._signaler.log_signal.connect(self._log_msg_slot)
+        else:
+            self._signaler = None
+
+        # Connect Signals
+        self._connect_signals()
+        
+        # Initialize settings if possible
+        if self._qtcore:
+            self._settings = self._qtcore.QSettings("EmuManager", "Manager")
+            self._load_settings()
+        
+        # Enhance UI: toolbar and context menus
+        try:
+            self._setup_toolbar()
+            self._setup_menubar()
+            self._setup_rom_context_menu()
+            self._setup_verification_context_menu()
+        except Exception:
+            pass
+
+    def _connect_signals(self):
+        # Library Tab
+        self.ui.btn_open_lib.clicked.connect(self.on_open_library)
+        self.ui.btn_init.clicked.connect(self.on_init)
+        self.ui.btn_list.clicked.connect(self.on_list)
+        self.ui.btn_add.clicked.connect(self.on_add)
+        self.ui.btn_clear.clicked.connect(self.on_clear_log)
+        # Filter box
+        if hasattr(self.ui, "edit_filter"):
+            self.ui.edit_filter.textChanged.connect(self._on_filter_text)
+        if hasattr(self.ui, "btn_clear_filter"):
+            self.ui.btn_clear_filter.clicked.connect(lambda: self.ui.edit_filter.setText(""))
+        self.ui.sys_list.itemClicked.connect(self._on_system_selected)
+        self.ui.rom_list.itemDoubleClicked.connect(self._on_rom_double_clicked)
+        
+        # Switch Actions
+        self.ui.btn_compress.clicked.connect(self.on_compress_selected)
+        self.ui.btn_recompress.clicked.connect(self.on_recompress_selected)
+        self.ui.btn_decompress.clicked.connect(self.on_decompress_selected)
+        self.ui.btn_cancel.clicked.connect(self.on_cancel_requested)
+
+        # Tools Tab - Switch
+        self.ui.btn_organize.clicked.connect(self.on_organize)
+        self.ui.btn_health.clicked.connect(self.on_health_check)
+        self.ui.btn_switch_compress.clicked.connect(self.on_switch_compress)
+        self.ui.btn_switch_decompress.clicked.connect(self.on_switch_decompress)
+        
+        # Tools Tab - PS2
+        self.ui.btn_ps2_convert.clicked.connect(self.on_ps2_convert)
+        self.ui.btn_ps2_verify.clicked.connect(self.on_ps2_verify)
+        self.ui.btn_ps2_organize.clicked.connect(self.on_ps2_organize)
+        
+        # Tools Tab - PS3
+        self.ui.btn_ps3_verify.clicked.connect(self.on_ps3_verify)
+        self.ui.btn_ps3_organize.clicked.connect(self.on_ps3_organize)
+
+        # Tools Tab - PSP
+        self.ui.btn_psp_verify.clicked.connect(self.on_psp_verify)
+        self.ui.btn_psp_organize.clicked.connect(self.on_psp_organize)
+        self.ui.btn_psp_compress.clicked.connect(self.on_psp_compress)
+
+        # Tools Tab - Dolphin
+        self.ui.btn_dolphin_organize.clicked.connect(self.on_dolphin_organize)
+        self.ui.btn_dolphin_convert.clicked.connect(self.on_dolphin_convert)
+        self.ui.btn_dolphin_verify.clicked.connect(self.on_dolphin_verify)
+        
+        # Tools Tab - General
+        self.ui.btn_clean_junk.clicked.connect(self.on_clean_junk)
+
+        # Verification Tab
+        self.ui.btn_select_dat.clicked.connect(self.on_select_dat)
+        self.ui.btn_verify_dat.clicked.connect(self.on_verify_dat)
+        if hasattr(self.ui, "combo_verif_filter"):
+            self.ui.combo_verif_filter.currentTextChanged.connect(self.on_verification_filter_changed)
+        if hasattr(self.ui, "btn_export_csv"):
+            self.ui.btn_export_csv.clicked.connect(self.on_export_verification_csv)
+        # Key handling on ROM list (Enter/Return to Compress)
+        try:
+            self._install_rom_key_filter()
+        except Exception:
+            pass
+        if hasattr(self.ui, "table_results"):
+            self.ui.table_results.itemDoubleClicked.connect(self._on_verification_item_dblclick)
+        if hasattr(self.ui, "combo_verif_filter"):
+            self.ui.combo_verif_filter.currentTextChanged.connect(self.on_verification_filter_changed)
+        if hasattr(self.ui, "btn_export_csv"):
+            self.ui.btn_export_csv.clicked.connect(self.on_export_verification_csv)
+
+    def show(self):
+        self.window.show()
+
+    def _log_msg_slot(self, text: str):
+        # Prefix with timestamp for better traceability
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        line = f"[{now}] {text}"
+        self.log.append(line)
+        # Show brief status in the status bar
+        try:
+            self.status.showMessage(text, 5000)
+        except Exception:
+            pass
+
+    def log_msg(self, text: str):
+        """Thread-safe logging method."""
+        if self._signaler:
+            self._signaler.log_signal.emit(text)
+        else:
+            self._log_msg_slot(text)
+
+    def on_clear_log(self):
+        try:
+            self.log.clear()
+        except Exception:
+            # ignore GUI errors
+            pass
+
+    def _ensure_common_actions(self):
+        """Create common QAction objects once and store as instance attributes."""
+        qt = self._qtwidgets
+        # Avoid recreating if already set
+        if hasattr(self, "act_open_library"):
+            return
+
+        self.act_open_library = qt.QAction("Open Library", self.window)
+        self.act_open_library.setShortcut("Ctrl+O")
+        self.act_open_library.triggered.connect(self.on_open_library)
+
+        self.act_refresh_list = qt.QAction("Refresh List", self.window)
+        self.act_refresh_list.setShortcut("F5")
+        self.act_refresh_list.triggered.connect(self.on_list)
+
+        self.act_init_structure = qt.QAction("Init Structure", self.window)
+        self.act_init_structure.setShortcut("Ctrl+I")
+        self.act_init_structure.triggered.connect(self.on_init)
+
+        self.act_add_rom = qt.QAction("Add ROM", self.window)
+        self.act_add_rom.setShortcut("Ctrl+A")
+        self.act_add_rom.triggered.connect(self.on_add)
+
+        self.act_verify_dat = qt.QAction("Verify DAT", self.window)
+        self.act_verify_dat.setShortcut("Ctrl+Shift+V")
+        self.act_verify_dat.triggered.connect(self.on_verify_dat)
+
+        self.act_cancel = qt.QAction("Cancel", self.window)
+        self.act_cancel.setShortcut("Esc")
+        self.act_cancel.triggered.connect(self.on_cancel_requested)
+
+        self.act_toggle_log = qt.QAction("Toggle Log", self.window)
+        self.act_toggle_log.setShortcut("Ctrl+L")
+        def _toggle_log():
+            try:
+                vis = self.ui.log_dock.isVisible()
+                self.ui.log_dock.setVisible(not vis)
+            except Exception:
+                pass
+        self.act_toggle_log.triggered.connect(_toggle_log)
+
+        # Toggle toolbar visibility (View menu)
+        self.act_toggle_toolbar = qt.QAction("Show Toolbar", self.window)
+        try:
+            self.act_toggle_toolbar.setCheckable(True)
+        except Exception:
+            pass
+        def _toggle_tb(checked=None):
+            try:
+                tb = getattr(self, "_toolbar", None)
+                if tb:
+                    if checked is None:
+                        vis = tb.isVisible()
+                        tb.setVisible(not vis)
+                    else:
+                        tb.setVisible(bool(checked))
+            except Exception:
+                pass
+        self.act_toggle_toolbar.triggered.connect(_toggle_tb)
+
+        # Focus ROM filter
+        self.act_focus_filter = qt.QAction("Focus ROM Filter", self.window)
+        self.act_focus_filter.setShortcut("Ctrl+F")
+        def _focus_filter():
+            try:
+                if hasattr(self.ui, "edit_filter"):
+                    self.ui.edit_filter.setFocus()
+            except Exception:
+                pass
+        self.act_focus_filter.triggered.connect(_focus_filter)
+
+        # Additional tool actions (Tools menu only)
+        self.act_organize = qt.QAction("Organize Library", self.window)
+        self.act_organize.triggered.connect(self.on_organize)
+
+        self.act_health = qt.QAction("Health Check", self.window)
+        self.act_health.triggered.connect(self.on_health_check)
+
+        self.act_switch_compress = qt.QAction("Switch: Compress", self.window)
+        self.act_switch_compress.triggered.connect(self.on_switch_compress)
+
+        self.act_switch_decompress = qt.QAction("Switch: Decompress", self.window)
+        self.act_switch_decompress.triggered.connect(self.on_switch_decompress)
+
+        self.act_ps2_convert = qt.QAction("PS2: Convert to CHD", self.window)
+        self.act_ps2_convert.triggered.connect(self.on_ps2_convert)
+
+        self.act_ps2_verify = qt.QAction("PS2: Verify", self.window)
+        self.act_ps2_verify.triggered.connect(self.on_ps2_verify)
+
+        self.act_ps2_organize = qt.QAction("PS2: Organize", self.window)
+        self.act_ps2_organize.triggered.connect(self.on_ps2_organize)
+
+        self.act_ps3_verify = qt.QAction("PS3: Verify", self.window)
+        self.act_ps3_verify.triggered.connect(self.on_ps3_verify)
+
+        self.act_ps3_organize = qt.QAction("PS3: Organize", self.window)
+        self.act_ps3_organize.triggered.connect(self.on_ps3_organize)
+
+        self.act_psp_verify = qt.QAction("PSP: Verify", self.window)
+        self.act_psp_verify.triggered.connect(self.on_psp_verify)
+
+        self.act_psp_organize = qt.QAction("PSP: Organize", self.window)
+        self.act_psp_organize.triggered.connect(self.on_psp_organize)
+
+        self.act_psp_compress = qt.QAction("PSP: Compress ISO->CSO", self.window)
+        self.act_psp_compress.triggered.connect(self.on_psp_compress)
+
+        self.act_dol_convert = qt.QAction("GC/Wii: Convert to RVZ", self.window)
+        self.act_dol_convert.triggered.connect(self.on_dolphin_convert)
+
+        self.act_dol_verify = qt.QAction("GC/Wii: Verify", self.window)
+        self.act_dol_verify.triggered.connect(self.on_dolphin_verify)
+
+        self.act_dol_organize = qt.QAction("GC/Wii: Organize", self.window)
+        self.act_dol_organize.triggered.connect(self.on_dolphin_organize)
+
+        self.act_clean_junk = qt.QAction("Clean Junk Files", self.window)
+        self.act_clean_junk.triggered.connect(self.on_clean_junk)
+
+        self.act_export_csv = qt.QAction("Export Verification CSV", self.window)
+        self.act_export_csv.triggered.connect(self.on_export_verification_csv)
+
+        self.act_open_folder = qt.QAction("Open Selected ROM Folder", self.window)
+        self.act_open_folder.triggered.connect(self._open_selected_rom_folder)
+
+        self.act_copy_path = qt.QAction("Copy Selected ROM Path", self.window)
+        self.act_copy_path.triggered.connect(self._copy_selected_rom_path)
+
+        self.act_exit = qt.QAction("Exit", self.window)
+        self.act_exit.setShortcut("Ctrl+Q")
+        def _exit():
+            try:
+                self.window.close()
+            except Exception:
+                pass
+        self.act_exit.triggered.connect(_exit)
+
+        # Reset layout action
+        self.act_reset_layout = qt.QAction("Reset Layout", self.window)
+        self.act_reset_layout.triggered.connect(self._reset_layout)
+
+    def _setup_toolbar(self):
+        """Create a toolbar with common actions and shortcuts.
+
+        Actions are created once and reused by both toolbar and menubar.
+        """
+        qt = self._qtwidgets
+        try:
+            # Ensure actions exist
+            self._ensure_common_actions()
+            tb = qt.QToolBar("Main")
+            self.window.addToolBar(tb)
+            self._toolbar = tb
+            # Actions
+            tb.addAction(self.act_open_library)
+            tb.addAction(self.act_refresh_list)
+            tb.addAction(self.act_init_structure)
+            tb.addAction(self.act_add_rom)
+            tb.addAction(self.act_verify_dat)
+            tb.addAction(self.act_cancel)
+            tb.addSeparator()
+            tb.addAction(self.act_toggle_log)
+            tb.addAction(self.act_focus_filter)
+        except Exception:
+            pass
+
+    def _setup_menubar(self):
+            """Create the top menubar with File, Tools, and View menus."""
+            qt = self._qtwidgets
+            try:
+                self._ensure_common_actions()
+                mb = qt.QMenuBar(self.window)
+                self.window.setMenuBar(mb)
+
+                # File menu
+                m_file = mb.addMenu("File")
+                m_file.addAction(self.act_open_library)
+                m_file.addAction(self.act_refresh_list)
+                m_file.addAction(self.act_add_rom)
+                m_file.addSeparator()
+                m_file.addAction(self.act_exit)
+
+                # Tools menu
+                m_tools = mb.addMenu("Tools")
+                m_tools.addAction(self.act_init_structure)
+                m_tools.addSeparator()
+                m_tools.addAction(self.act_organize)
+                m_tools.addAction(self.act_health)
+                m_tools.addSeparator()
+                m_tools.addAction(self.act_switch_compress)
+                m_tools.addAction(self.act_switch_decompress)
+                m_tools.addSeparator()
+                m_tools.addAction(self.act_ps2_convert)
+                m_tools.addAction(self.act_ps2_verify)
+                m_tools.addAction(self.act_ps2_organize)
+                m_tools.addSeparator()
+                m_tools.addAction(self.act_ps3_verify)
+                m_tools.addAction(self.act_ps3_organize)
+                m_tools.addSeparator()
+                m_tools.addAction(self.act_psp_verify)
+                m_tools.addAction(self.act_psp_organize)
+                m_tools.addAction(self.act_psp_compress)
+                m_tools.addSeparator()
+                m_tools.addAction(self.act_dol_convert)
+                m_tools.addAction(self.act_dol_verify)
+                m_tools.addAction(self.act_dol_organize)
+                m_tools.addSeparator()
+                m_tools.addAction(self.act_clean_junk)
+                m_tools.addSeparator()
+                m_tools.addAction(self.act_verify_dat)
+                m_tools.addAction(self.act_export_csv)
+
+                # View menu
+                m_view = mb.addMenu("View")
+                m_view.addAction(self.act_toggle_log)
+                m_view.addAction(self.act_toggle_toolbar)
+                m_view.addSeparator()
+                m_view.addAction(self.act_focus_filter)
+                m_view.addSeparator()
+                m_view.addAction(self.act_reset_layout)
+            except Exception:
+                pass
+
+    def _setup_rom_context_menu(self):
+        """Add a context menu to the ROM list for quick actions."""
+        qt = self._qtwidgets
+        try:
+            policy = qt.Qt.ContextMenuPolicy.CustomContextMenu if hasattr(qt.Qt, "ContextMenuPolicy") else qt.Qt.CustomContextMenu
+            self.ui.rom_list.setContextMenuPolicy(policy)
+            def _show_menu(pos):
+                menu = qt.QMenu(self.ui.rom_list)
+                a1 = menu.addAction("Compress")
+                a2 = menu.addAction("Recompress")
+                a3 = menu.addAction("Decompress")
+                menu.addSeparator()
+                a4 = menu.addAction("Open Folder")
+                a5 = menu.addAction("Copy Path")
+                act = menu.exec(self.ui.rom_list.mapToGlobal(pos))
+                if act == a1:
+                    self.on_compress_selected()
+                elif act == a2:
+                    self.on_recompress_selected()
+                elif act == a3:
+                    self.on_decompress_selected()
+                elif act == a4:
+                    self._open_selected_rom_folder()
+                elif act == a5:
+                    self._copy_selected_rom_path()
+            self.ui.rom_list.customContextMenuRequested.connect(_show_menu)
+        except Exception:
+            pass
+
+    def _setup_verification_context_menu(self):
+        """Context menu for verification results to copy hashes or open location."""
+        qt = self._qtwidgets
+        try:
+            if not hasattr(self.ui, "table_results"):
+                return
+            policy = qt.Qt.ContextMenuPolicy.CustomContextMenu if hasattr(qt.Qt, "ContextMenuPolicy") else qt.Qt.CustomContextMenu
+            self.ui.table_results.setContextMenuPolicy(policy)
+
+            def _show_menu(pos):
+                menu = qt.QMenu(self.ui.table_results)
+                a_open = menu.addAction("Open Location")
+                menu.addSeparator()
+                a_crc = menu.addAction("Copy CRC32")
+                a_sha1 = menu.addAction("Copy SHA1")
+                a_md5 = menu.addAction("Copy MD5")
+                a_sha256 = menu.addAction("Copy SHA256")
+                act = menu.exec(self.ui.table_results.mapToGlobal(pos))
+                row = self.ui.table_results.currentRow()
+                results = getattr(self, "_last_verify_results", [])
+                if 0 <= row < len(results):
+                    res = results[row]
+                    if act == a_open:
+                        fp = getattr(res, "full_path", None)
+                        if fp:
+                            self._open_file_location(Path(fp))
+                    elif act == a_crc:
+                        qt.QApplication.clipboard().setText(res.crc or "")
+                        self.status.showMessage("CRC32 copied", 2000)
+                    elif act == a_sha1:
+                        qt.QApplication.clipboard().setText(res.sha1 or "")
+                        self.status.showMessage("SHA1 copied", 2000)
+                    elif act == a_md5:
+                        qt.QApplication.clipboard().setText(getattr(res, "md5", "") or "")
+                        self.status.showMessage("MD5 copied", 2000)
+                    elif act == a_sha256:
+                        qt.QApplication.clipboard().setText(getattr(res, "sha256", "") or "")
+                        self.status.showMessage("SHA256 copied", 2000)
+
+            self.ui.table_results.customContextMenuRequested.connect(_show_menu)
+        except Exception:
+            pass
+
+    def _open_selected_rom_folder(self):
+        try:
+            sel = self.ui.rom_list.currentItem()
+            sys_item = self.ui.sys_list.currentItem()
+            if not sel or not sys_item:
+                return
+            p = Path(self._last_base) / "roms" / sys_item.text() / sel.text()
+            self._open_file_location(p)
+        except Exception:
+            pass
+
+    def _copy_selected_rom_path(self):
+        try:
+            qt = self._qtwidgets
+            sel = self.ui.rom_list.currentItem()
+            sys_item = self.ui.sys_list.currentItem()
+            if not sel or not sys_item:
+                return
+            p = Path(self._last_base) / "roms" / sys_item.text() / sel.text()
+            cb = qt.QApplication.clipboard()
+            cb.setText(str(p))
+            self.status.showMessage("Path copied to clipboard", 3000)
+        except Exception:
+            pass
+
+    def _open_file_location(self, path: Path):
+        try:
+            import subprocess
+            if path.is_dir():
+                subprocess.run(["xdg-open", str(path)], check=False)
+            else:
+                subprocess.run(["xdg-open", str(path.parent)], check=False)
+        except Exception:
+            self.log_msg(f"Failed to open location: {path}")
+
+    # Background/task helpers
+    def _run_in_background(self, func: Callable[[], object], done_cb: Optional[Callable[[object], None]] = None):
+        """Run func() in a thread and call done_cb(result) in the GUI thread when ready."""
+        self._cancel_event.clear()
+        future = self._submit_task(func)
+        self._active_future = future
+
+        if self._qtcore:
+            self._start_polling_timer(future, done_cb)
+
+        self._enable_cancel_button()
+        return future
+
+    def _submit_task(self, func: Callable[[], object]):
+        if self._executor:
+            return self._executor.submit(func)
+        
+        # Synchronous fallback
+        class _F:
+            def __init__(self, res): self._res = res
+            def done(self): return True
+            def result(self): return self._res
+        
+        try:
+            res = func()
+        except Exception as e:
+            res = e
+        return _F(res)
+
+    def _start_polling_timer(self, future, done_cb):
+        timer = self._qtcore.QTimer(self.window)
+        timer.setInterval(200)
+        
+        def _check():
+            if not future.done():
+                return
+            timer.stop()
+            try:
+                result = future.result()
+            except Exception as e:
+                result = e
+            
+            if done_cb:
+                try:
+                    done_cb(result)
+                except Exception:
+                    self.log_msg("Background callback error")
+
+        timer.timeout.connect(_check)
+        timer.start()
+        self._active_timer = timer
+
+    def _enable_cancel_button(self):
+        try:
+            if hasattr(self.ui, "btn_cancel") and self.ui.btn_cancel:
+                self.ui.btn_cancel.setEnabled(True)
+        except Exception:
+            pass
+
+    def _load_settings(self):
+        if not self._settings:
+            return
+        try:
+            # Restore geometry/state if available
+            try:
+                geom = self._settings.value("ui/window_geometry")
+                if geom:
+                    self.window.restoreGeometry(geom)
+            except Exception:
+                # legacy width/height
+                w = self._settings.value("window/width")
+                h = self._settings.value("window/height")
+                if w and h:
+                    try:
+                        self.window.resize(int(w), int(h))
+                    except Exception:
+                        pass
+            try:
+                st = self._settings.value("ui/window_state")
+                if st:
+                    self.window.restoreState(st)
+            except Exception:
+                pass
+            last = self._settings.value("last_base")
+            if last:
+                self._last_base = Path(str(last))
+            
+            # New settings
+            self.chk_dry_run.setChecked(str(self._settings.value("settings/dry_run", "false")).lower() == "true")
+            self.spin_level.setValue(int(self._settings.value("settings/level", 3)))
+            self.combo_profile.setCurrentText(str(self._settings.value("settings/profile", "None")))
+            self.chk_rm_originals.setChecked(str(self._settings.value("settings/rm_originals", "false")).lower() == "true")
+            self.chk_quarantine.setChecked(str(self._settings.value("settings/quarantine", "false")).lower() == "true")
+            self.chk_deep_verify.setChecked(str(self._settings.value("settings/deep_verify", "false")).lower() == "true")
+            self.chk_recursive.setChecked(str(self._settings.value("settings/recursive", "true")).lower() == "true")
+            self.chk_process_selected.setChecked(str(self._settings.value("settings/process_selected", "false")).lower() == "true")
+            self.chk_standardize_names.setChecked(str(self._settings.value("settings/standardize_names", "false")).lower() == "true")
+            # UI extras
+            try:
+                vis = str(self._settings.value("ui/log_visible", "true")).lower() == "true"
+                self.ui.log_dock.setVisible(vis)
+            except Exception:
+                pass
+            if hasattr(self.ui, "edit_filter"):
+                self.ui.edit_filter.setText(str(self._settings.value("ui/rom_filter", "")))
+            if hasattr(self.ui, "combo_verif_filter"):
+                try:
+                    idx = int(self._settings.value("ui/verif_filter_idx", 0))
+                    self.ui.combo_verif_filter.setCurrentIndex(idx)
+                except Exception:
+                    pass
+            # Restore splitter state (if available)
+            try:
+                st = self._settings.value("ui/splitter_state")
+                if st:
+                    self.ui.splitter.restoreState(st)
+            except Exception:
+                pass
+            # Toolbar visibility
+            try:
+                tb_vis = str(self._settings.value("ui/toolbar_visible", "true")).lower() == "true"
+                if hasattr(self, "_toolbar") and self._toolbar:
+                    self._toolbar.setVisible(tb_vis)
+                if hasattr(self, "act_toggle_toolbar"):
+                    self.act_toggle_toolbar.setChecked(tb_vis)
+            except Exception:
+                pass
+            # Verification table column widths
+            try:
+                widths = self._settings.value("ui/verif_table_widths")
+                if widths and hasattr(self.ui, "table_results"):
+                    if isinstance(widths, (list, tuple)):
+                        for i, w in enumerate(widths):
+                            try:
+                                self.ui.table_results.setColumnWidth(i, int(w))
+                            except Exception:
+                                pass
+            except Exception:
+                pass
+            # Last selected system
+            try:
+                self._last_system = str(self._settings.value("ui/last_system")) if self._settings.value("ui/last_system") else None
+            except Exception:
+                self._last_system = None
+        except Exception:
+            pass
+
+    def _save_settings(self):
+        if not self._settings:
+            return
+        try:
+            # Save geometry/state
+            try:
+                self._settings.setValue("ui/window_geometry", self.window.saveGeometry())
+                self._settings.setValue("ui/window_state", self.window.saveState())
+            except Exception:
+                # legacy
+                self._settings.setValue("window/width", self.window.width())
+                self._settings.setValue("window/height", self.window.height())
+            if self._last_base:
+                self._settings.setValue("last_base", str(self._last_base))
+            
+            # New settings
+            self._settings.setValue("settings/dry_run", str(self.chk_dry_run.isChecked()))
+            self._settings.setValue("settings/level", self.spin_level.value())
+            self._settings.setValue("settings/profile", self.combo_profile.currentText())
+            self._settings.setValue("settings/rm_originals", str(self.chk_rm_originals.isChecked()))
+            self._settings.setValue("settings/quarantine", str(self.chk_quarantine.isChecked()))
+            self._settings.setValue("settings/deep_verify", str(self.chk_deep_verify.isChecked()))
+            self._settings.setValue("settings/recursive", str(self.chk_recursive.isChecked()))
+            self._settings.setValue("settings/process_selected", str(self.chk_process_selected.isChecked()))
+            self._settings.setValue("settings/standardize_names", str(self.chk_standardize_names.isChecked()))
+            # duplicate removed
+            # UI extras
+            try:
+                self._settings.setValue("ui/log_visible", str(self.ui.log_dock.isVisible()))
+            except Exception:
+                pass
+            if hasattr(self.ui, "edit_filter"):
+                self._settings.setValue("ui/rom_filter", self.ui.edit_filter.text())
+            if hasattr(self.ui, "combo_verif_filter"):
+                self._settings.setValue("ui/verif_filter_idx", self.ui.combo_verif_filter.currentIndex())
+            # Save splitter state (if available)
+            try:
+                self._settings.setValue("ui/splitter_state", self.ui.splitter.saveState())
+            except Exception:
+                pass
+            # Save verification table column widths
+            try:
+                if hasattr(self.ui, "table_results"):
+                    widths = [self.ui.table_results.columnWidth(i) for i in range(self.ui.table_results.columnCount())]
+                    self._settings.setValue("ui/verif_table_widths", widths)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _on_close_event(self, event):
+        self.log_msg("Shutting down...")
+        self._cancel_event.set()
+        # Persist settings before closing
+        try:
+            self._save_settings()
+        except Exception:
+            pass
+        if self._executor:
+            self._executor.shutdown(wait=False)
+        if self._original_close_event:
+            self._original_close_event(event)
+        else:
+            event.accept()
+
+    def _set_ui_enabled(self, enabled: bool):
+        try:
+            self.ui.btn_init.setEnabled(enabled)
+            self.ui.btn_list.setEnabled(enabled)
+            self.ui.btn_add.setEnabled(enabled)
+            self.ui.btn_clear.setEnabled(enabled)
+            self.ui.btn_open_library.setEnabled(enabled)
+            
+            # Also disable/enable tool buttons
+            self.ui.btn_organize.setEnabled(enabled)
+            self.ui.btn_health.setEnabled(enabled)
+            self.ui.btn_switch_compress.setEnabled(enabled)
+            self.ui.btn_switch_decompress.setEnabled(enabled)
+            self.ui.btn_ps2_convert.setEnabled(enabled)
+            self.ui.btn_ps2_verify.setEnabled(enabled)
+            self.ui.btn_ps2_organize.setEnabled(enabled)
+            self.ui.btn_ps3_verify.setEnabled(enabled)
+            self.ui.btn_ps3_organize.setEnabled(enabled)
+            self.ui.btn_psp_verify.setEnabled(enabled)
+            self.ui.btn_psp_organize.setEnabled(enabled)
+            self.ui.btn_dolphin_convert.setEnabled(enabled)
+            self.ui.btn_dolphin_verify.setEnabled(enabled)
+            self.ui.btn_clean_junk.setEnabled(enabled)
+            
+            # Verification Tab
+            self.ui.btn_select_dat.setEnabled(enabled)
+            if enabled and hasattr(self, "_current_dat_path") and self._current_dat_path:
+                self.ui.btn_verify_dat.setEnabled(True)
+            else:
+                self.ui.btn_verify_dat.setEnabled(False)
+            
+            # Compression buttons
+            self.ui.btn_compress.setEnabled(enabled)
+            self.ui.btn_recompress.setEnabled(enabled)
+            self.ui.btn_decompress.setEnabled(enabled)
+            
+            # Cancel button logic is inverse
+            self.ui.btn_cancel.setEnabled(not enabled)
+            
+            # Show/Hide progress bar
+            self.ui.progress_bar.setVisible(not enabled)
+            if enabled:
+                self.ui.progress_bar.setValue(0)
+                self.status.clearMessage()
+        except Exception:
+            pass
+
+    def progress_hook(self, percent: float, message: str):
+        """Simple progress hook for compression helpers.
+        
+        percent: 0.0 to 1.0
+        
+        Updates the status bar and appends a short log message. Safe to be set
+        as `args.progress_callback` in `switch_organizer`.
+        """
+        try:
+            # clamp percent
+            p = 0.0 if percent is None else float(percent)
+            if p < 0.0:
+                p = 0.0
+            if p > 1.0:
+                p = 1.0
+            
+            # Update progress bar
+            try:
+                if not self.ui.progress_bar.isVisible():
+                    self.ui.progress_bar.setVisible(True)
+                self.ui.progress_bar.setValue(int(p * 100))
+            except Exception:
+                pass
+
+            if message:
+                self.status.showMessage(message)
+                # Also log to the main log window if it's significant?
+                # For now, just status bar to avoid spam.
+        except Exception:
+            pass
+
+
+
+    # The following methods interact with manager; keep them small and testable
+    def on_init(self):
+        qt = self._qtwidgets
+        base = self._last_base
+        if not base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+        
+        try:
+            yes_btn = qt.QMessageBox.StandardButton.Yes
+            no_btn = qt.QMessageBox.StandardButton.No
+        except AttributeError:
+            yes_btn = qt.QMessageBox.Yes
+            no_btn = qt.QMessageBox.No
+
+        dry = qt.QMessageBox.question(self.window, "Dry-run?", "Run in dry-run (no changes)?", yes_btn | no_btn)
+        dry_run = dry == yes_btn
+        self.log_msg(f"Running init on: {base} (dry={dry_run})")
+
+        def _work():
+            return self._manager.cmd_init(base, dry_run=dry_run)
+
+        def _done(result):
+            if isinstance(result, Exception):
+                self.log_msg(f"Init error: {result}")
+            else:
+                try:
+                    self.log_msg(f"Finished init, rc={result}")
+                except Exception:
+                    pass
+            self._set_ui_enabled(True)
+
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
+    def on_list(self):
+        base = self._last_base
+        if not base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+            
+        systems = self._manager.cmd_list_systems(base)
+        try:
+            if self.sys_list is not None:
+                self.sys_list.clear()
+                for s in systems:
+                    self.sys_list.addItem(s)
+                # Auto-select last system if present
+                try:
+                    if getattr(self, "_last_system", None):
+                        items = [self.sys_list.item(i).text() for i in range(self.sys_list.count())]
+                        if self._last_system in items:
+                            idx = items.index(self._last_system)
+                            self.sys_list.setCurrentRow(idx)
+                            # Trigger population
+                            self._on_system_selected(self.sys_list.item(idx))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        if not systems:
+            self.log_msg("Nenhum sistema encontrado — execute 'init' primeiro.")
+        else:
+            self.log_msg("Sistemas encontrados:")
+            for s in systems:
+                self.log_msg(f" - {s}")
+
+    def on_add(self):
+        base = self._last_base
+        if not base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+
+        src = self._select_file_dialog("Select ROM file")
+        if not src:
+            return
+
+        system = self._select_system_dialog(src, base)
+        if not system:
+            self.log_msg("Add ROM cancelled: No system selected.")
+            return
+
+        move = self._ask_yes_no("Move file?", "Move file instead of copy?")
+        dry_run = self._ask_yes_no("Dry-run?", "Run in dry-run (no changes)?")
+
+        def _work_add():
+            return self._manager.cmd_add_rom(src, base, system=system, move=move, dry_run=dry_run)
+
+        def _done_add(result):
+            if isinstance(result, Exception):
+                self.log_msg(f"Add ROM error: {result}")
+            else:
+                try:
+                    self.log_msg(f"Added ROM -> {result}")
+                except Exception:
+                    pass
+            self._set_ui_enabled(True)
+
+        self._set_ui_enabled(False)
+        self._run_in_background(_work_add, _done_add)
+
+    def _select_file_dialog(self, title: str) -> Optional[Path]:
+        qt = self._qtwidgets
+        dlg = qt.QFileDialog(self.window, title)
+        try:
+            dlg.setFileMode(qt.QFileDialog.FileMode.ExistingFile)
+        except AttributeError:
+            dlg.setFileMode(qt.QFileDialog.ExistingFile)
+        if dlg.exec():
+            return Path(dlg.selectedFiles()[0])
+        return None
+
+    def _select_system_dialog(self, src: Path, base: Path) -> Optional[str]:
+        qt = self._qtwidgets
+        guessed = self._manager.guess_system_for_file(src)
+        systems = self._manager.cmd_list_systems(base)
+        items = sorted(systems)
+        idx = 0
+        if guessed:
+            if guessed not in items:
+                items.insert(0, guessed)
+            idx = items.index(guessed)
+        
+        system, ok = qt.QInputDialog.getItem(self.window, "Select System", "Target System:", items, idx, True)
+        return system if ok and system else None
+
+    def _ask_yes_no(self, title: str, msg: str) -> bool:
+        qt = self._qtwidgets
+        try:
+            yes_btn = qt.QMessageBox.StandardButton.Yes
+            no_btn = qt.QMessageBox.StandardButton.No
+        except AttributeError:
+            yes_btn = qt.QMessageBox.Yes
+            no_btn = qt.QMessageBox.No
+        
+        ans = qt.QMessageBox.question(self.window, title, msg, yes_btn | no_btn)
+        return ans == yes_btn
+
+    # UI helpers for systems/rom listing
+    def _on_system_selected(self, item):
+        try:
+            system = item.text()
+            self._populate_roms(system)
+            # Remember last selected system
+            try:
+                if self._settings:
+                    self._settings.setValue("ui/last_system", system)
+            except Exception:
+                pass
+            
+            # Toggle Switch actions
+            if hasattr(self.ui, "grp_switch_actions"):
+                is_switch = (system.lower() == "switch")
+                self.ui.grp_switch_actions.setVisible(is_switch)
+            # Apply current filter if present
+            if hasattr(self.ui, "edit_filter"):
+                self._apply_rom_filter(self.ui.edit_filter.text())
+        except Exception:
+            pass
+
+    def _on_rom_double_clicked(self, item):
+        try:
+            # double-click compresses by default
+            self.on_compress_selected()
+        except Exception:
+            pass
+
+    def _list_files_recursive(self, root: Path) -> list[Path]:
+        """List files recursively, excluding hidden files and directories."""
+        files = []
+        if not root.exists():
+            return files
+            
+        for p in root.rglob("*"):
+            if not p.is_file():
+                continue
+            if p.name.startswith("."):
+                continue
+            
+            try:
+                rel = p.relative_to(root)
+                if any(part.startswith(".") for part in rel.parts):
+                    continue
+                files.append(p)
+            except ValueError:
+                continue
+        
+        files.sort(key=lambda p: str(p).lower())
+        return files
+
+    def _list_dirs_recursive(self, root: Path) -> list[Path]:
+        """List directories recursively, excluding hidden ones."""
+        dirs = []
+        if not root.exists():
+            return dirs
+            
+        for p in root.rglob("*"):
+            if not p.is_dir():
+                continue
+            if p.name.startswith("."):
+                continue
+            
+            try:
+                rel = p.relative_to(root)
+                if any(part.startswith(".") for part in rel.parts):
+                    continue
+                dirs.append(p)
+            except ValueError:
+                continue
+        
+        # Sort reverse to ensure we process children before parents (useful for deletion)
+        dirs.sort(key=lambda p: str(p), reverse=True)
+        return dirs
+
+    def _list_files_flat(self, root: Path) -> list[Path]:
+        """List files in the directory (non-recursive), excluding hidden files."""
+        files = []
+        if not root.exists():
+            return files
+            
+        for p in root.iterdir():
+            if not p.is_file():
+                continue
+            if p.name.startswith("."):
+                continue
+            files.append(p)
+        return files
+
+    def _get_list_files_fn(self):
+        """Returns the appropriate list_files function based on settings."""
+        if self.chk_process_selected.isChecked():
+            return self._list_files_selected
+        elif self.chk_recursive.isChecked():
+            return self._list_files_recursive
+        else:
+            return self._list_files_flat
+
+    def _populate_roms(self, system: str):
+        if not self._last_base:
+            return
+        try:
+            roms_dir = Path(self._last_base) / "roms" / system
+            files = []
+            if roms_dir.exists():
+                # Recursively find files to support subfolders (A-M, N-Z, etc)
+                list_fn = self._get_list_files_fn()
+                full_files = list_fn(roms_dir)
+                files = [p.relative_to(roms_dir) for p in full_files]
+                # Store for filtering
+                self._current_roms = [str(p) for p in files]
+                
+            if self.rom_list is not None:
+                self.rom_list.clear()
+                for f in files:
+                    self.rom_list.addItem(str(f))
+        except Exception as e:
+            self.log_msg(f"Error listing ROMs: {e}")
+
+    def _on_filter_text(self, text: str):
+        try:
+            self._apply_rom_filter(text)
+        except Exception:
+            pass
+
+    def _apply_rom_filter(self, text: str):
+        if not hasattr(self, "_current_roms"):
+            return
+        try:
+            query = (text or "").lower().strip()
+            items = self._current_roms
+            if query:
+                items = [s for s in items if query in s.lower()]
+            self.ui.rom_list.clear()
+            for s in items:
+                self.ui.rom_list.addItem(s)
+        except Exception:
+            pass
+
+    def on_compress_selected(self):
+        # Compress the selected ROM using compression.compress_file in background
+        if not self.rom_list:
+            return
+        try:
+            sel = self.rom_list.currentItem()
+            if sel is None:
+                self.log_msg(MSG_NO_ROM)
+                return
+            rom_name = sel.text()
+            # find which system is selected to resolve full path
+            sys_item = self.sys_list.currentItem() if self.sys_list else None
+            if not sys_item:
+                self.log_msg(MSG_NO_SYSTEM)
+                return
+            system = sys_item.text()
+            filepath = Path(self._last_base) / "roms" / system / rom_name
+            if not filepath.exists():
+                self.log_msg(f"File not found: {filepath}")
+                return
+
+            # Ensure environment is ready
+            self._ensure_env(self._last_base)
+            if not self._env.get("TOOL_NSZ"):
+                self.log_msg(MSG_NSZ_MISSING)
+                return
+
+            args = self._get_common_args()
+            # Single file compression usually doesn't remove original unless specified, 
+            # but let's respect the checkbox if it's checked, or default to False if not clear.
+            # The GUI checkbox chk_rm_originals is used in _get_common_args.
+
+            def _work():
+                return worker_compress_single(filepath, self._env, args, self.log_msg)
+
+            def _done(res):
+                if isinstance(res, Exception):
+                    self.log_msg(f"Compress error: {res}")
+                elif res is None:
+                    self.log_msg("Compression did not produce a candidate")
+                else:
+                    self.log_msg(f"Compression candidate: {res}")
+                self._set_ui_enabled(True)
+
+            self._set_ui_enabled(False)
+            self._run_in_background(_work, _done)
+        except Exception as e:
+            self.log_msg(f"Compress action failed: {e}")
+
+    def on_recompress_selected(self):
+        # Recompress the selected ROM using the recompression helper
+        if not self.rom_list:
+            return
+        try:
+            sel = self.rom_list.currentItem()
+            if sel is None:
+                self.log_msg(MSG_NO_ROM)
+                return
+            rom_name = sel.text()
+            sys_item = self.sys_list.currentItem() if self.sys_list else None
+            if not sys_item:
+                self.log_msg(MSG_NO_SYSTEM)
+                return
+            system = sys_item.text()
+            filepath = Path(self._last_base) / "roms" / system / rom_name
+            if not filepath.exists():
+                self.log_msg(f"File not found: {filepath}")
+                return
+
+            # Ensure environment is ready
+            self._ensure_env(self._last_base)
+            if not self._env.get("TOOL_NSZ"):
+                self.log_msg(MSG_NSZ_MISSING)
+                return
+
+            args = self._get_common_args()
+
+            def _work():
+                return worker_recompress_single(filepath, self._env, args, self.log_msg)
+
+            def _done(res):
+                if isinstance(res, Exception):
+                    self.log_msg(f"Recompress error: {res}")
+                elif res is None:
+                    self.log_msg("Recompression did not produce a candidate")
+                else:
+                    self.log_msg(f"Recompression result: {res}")
+                self._set_ui_enabled(True)
+
+            self._set_ui_enabled(False)
+            self._run_in_background(_work, _done)
+        except Exception as e:
+            self.log_msg(f"Recompress action failed: {e}")
+
+    def on_decompress_selected(self):
+        # Decompress the selected archive and show candidate
+        if not self.rom_list:
+            return
+        try:
+            sel = self.rom_list.currentItem()
+            if sel is None:
+                self.log_msg(MSG_NO_ROM)
+                return
+            rom_name = sel.text()
+            sys_item = self.sys_list.currentItem() if self.sys_list else None
+            if not sys_item:
+                self.log_msg(MSG_NO_SYSTEM)
+                return
+            system = sys_item.text()
+            filepath = Path(self._last_base) / "roms" / system / rom_name
+            if not filepath.exists():
+                self.log_msg(f"File not found: {filepath}")
+                return
+
+            # Ensure environment is ready
+            self._ensure_env(self._last_base)
+            if not self._env.get("TOOL_NSZ"):
+                self.log_msg(MSG_NSZ_MISSING)
+                return
+
+            args = self._get_common_args()
+
+            def _work():
+                return worker_decompress_single(filepath, self._env, args, self.log_msg)
+
+            def _done(res):
+                if isinstance(res, Exception):
+                    self.log_msg(f"Decompress error: {res}")
+                elif res is None:
+                    self.log_msg("Decompress did not produce a candidate")
+                else:
+                    self.log_msg(f"Decompress candidate: {res}")
+                self._set_ui_enabled(True)
+
+            self._set_ui_enabled(False)
+            self._run_in_background(_work, _done)
+        except Exception as e:
+            self.log_msg(f"Decompress action failed: {e}")
+
+    def on_cancel_requested(self):
+        try:
+            self._cancel_event.set()
+            from emumanager.common.execution import cancel_current_process
+            ok = cancel_current_process()
+            self.log_msg("Cancel requested" + (" — cancelled" if ok else " — nothing to cancel"))
+        except Exception:
+            self.log_msg("Cancel requested — failed to call cancel")
+
+    def _ensure_env(self, base_path: Path):
+        """Ensure environment tools and paths are configured for the given base path."""
+        if self._env and self._env.get("ROMS_DIR") == base_path:
+            return
+
+        try:
+            from emumanager.switch.main_helpers import configure_environment
+            from emumanager.common.execution import find_tool
+
+            # Create a dummy args object for configure_environment
+            class Args:
+                dir = str(base_path)
+                keys = str(base_path / "keys.txt") # Default assumption
+                compress = False
+                decompress = False
+            
+            # We need to find keys.txt or ask user, but for now let's assume it's in base or we use a default
+            # If keys are not found, configure_environment might fail or warn. 
+            # Let's try to find keys in common locations if not at base/keys.txt
+            keys_path = base_path / "keys.txt"
+            if not keys_path.exists():
+                 keys_path = base_path / "prod.keys"
+            
+            args = Args()
+            args.keys = str(keys_path)
+
+            # Mock logger to capture output to GUI log
+            class GuiLogger:
+                def info(_s, msg, *a): self.log_msg(msg % a if a else msg)
+                def warning(_s, msg, *a): self.log_msg("WARN: " + (msg % a if a else msg))
+                def error(_s, msg, *a): self.log_msg("ERROR: " + (msg % a if a else msg))
+                def debug(_s, msg, *a): pass # ignore debug
+                def exception(_s, msg, *a): self.log_msg("EXCEPTION: " + (msg % a if a else msg))
+
+            self._env = configure_environment(args, GuiLogger(), find_tool)
+            self.log_msg(f"Environment configured for {base_path}")
+        except Exception as e:
+            self.log_msg(f"Failed to configure environment: {e}")
+            self._env = {}
+
+
+
+
+
+    def _get_common_args(self):
+        class Args:
+            pass
+        args = Args()
+        args.dry_run = self.chk_dry_run.isChecked()
+        args.level = self.spin_level.value()
+        profile = self.combo_profile.currentText()
+        args.compression_profile = profile if profile != "None" else None
+        args.rm_originals = self.chk_rm_originals.isChecked()
+        args.quarantine = self.chk_quarantine.isChecked()
+        args.deep_verify = self.chk_deep_verify.isChecked()
+        args.clean_junk = False # Handled separately
+        args.organize = False # Handled separately
+        args.compress = False
+        args.decompress = False
+        args.recompress = False
+        args.keep_on_failure = False
+        args.cmd_timeout = None
+        args.quarantine_dir = None
+        args.report_csv = None
+        args.dup_check = "fast"
+        args.verbose = False
+        args.progress_callback = self.progress_hook
+        args.cancel_event = self._cancel_event
+        args.standardize_names = self.chk_standardize_names.isChecked()
+        return args
+
+    def on_organize(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+        
+        self._ensure_env(self._last_base)
+
+        args = self._get_common_args()
+        args.organize = True
+        
+        def _work():
+            return worker_organize(
+                self._last_base, 
+                self._env, 
+                args, 
+                self.log_msg, 
+                self._get_list_files_fn(),
+                progress_cb=getattr(self, "progress_hook", None)
+            )
+
+        def _done(res):
+            if isinstance(res, Exception):
+                self.log_msg(f"Organize error: {res}")
+            else:
+                self.log_msg(str(res))
+            self._set_ui_enabled(True)
+
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
+    def on_health_check(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+        
+        self._ensure_env(self._last_base)
+        
+        args = self._get_common_args()
+        
+        def _work():
+            return worker_health_check(
+                self._last_base, 
+                self._env, 
+                args, 
+                self.log_msg, 
+                self._get_list_files_fn()
+            )
+
+        def _done(res):
+            if isinstance(res, Exception):
+                self.log_msg(f"Health Check error: {res}")
+            else:
+                self.log_msg(str(res))
+            self._set_ui_enabled(True)
+
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
+    def on_clean_junk(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+        
+        args = self._get_common_args()
+        
+        def _work():
+            return worker_clean_junk(
+                self._last_base, 
+                args, 
+                self.log_msg, 
+                self._get_list_files_fn(),
+                self._list_dirs_recursive
+            )
+
+        def _done(res):
+            self.log_msg(str(res))
+            self._set_ui_enabled(True)
+
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
+    def on_ps2_convert(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+        
+        args = self._get_common_args()
+        
+        def _work():
+            return worker_ps2_convert(
+                self._last_base,
+                args,
+                self.log_msg
+            )
+            
+        def _done(res):
+            self.log_msg(str(res))
+            self._set_ui_enabled(True)
+            
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
+    def on_ps2_verify(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+        
+        args = self._get_common_args()
+        
+        def _work():
+            return worker_ps2_verify(
+                self._last_base,
+                args,
+                self.log_msg,
+                self._get_list_files_fn()
+            )
+            
+        def _done(res):
+            self.log_msg(str(res))
+            self._set_ui_enabled(True)
+            
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
+    def on_ps3_verify(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+        
+        args = self._get_common_args()
+        
+        def _work():
+            return worker_ps3_verify(
+                self._last_base,
+                args,
+                self.log_msg,
+                self._get_list_files_fn(),
+                self._list_dirs_recursive
+            )
+            
+        def _done(res):
+            self.log_msg(str(res))
+            self._set_ui_enabled(True)
+            
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
+    def on_ps3_organize(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+        
+        args = self._get_common_args()
+        
+        def _work():
+            return worker_ps3_organize(
+                self._last_base,
+                args,
+                self.log_msg,
+                self._get_list_files_fn(),
+                self._list_dirs_recursive
+            )
+            
+        def _done(res):
+            self.log_msg(str(res))
+            self._set_ui_enabled(True)
+            
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
+    def on_psp_verify(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+        
+        args = self._get_common_args()
+        
+        def _work():
+            return worker_psp_verify(
+                self._last_base,
+                args,
+                self.log_msg,
+                self._get_list_files_fn()
+            )
+            
+        def _done(res):
+            self.log_msg(str(res))
+            self._set_ui_enabled(True)
+            
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
+    def on_psp_organize(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+        
+        args = self._get_common_args()
+        
+        def _work():
+            return worker_psp_organize(
+                self._last_base,
+                args,
+                self.log_msg,
+                self._get_list_files_fn()
+            )
+            
+        def _done(res):
+            self.log_msg(str(res))
+            self._set_ui_enabled(True)
+            
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
+    def on_dolphin_convert(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+        
+        args = self._get_common_args()
+        
+        def _work():
+            return worker_dolphin_convert(
+                self._last_base,
+                args,
+                self.log_msg,
+                self._get_list_files_fn()
+            )
+            
+        def _done(res):
+            self.log_msg(str(res))
+            self._set_ui_enabled(True)
+            
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
+    def on_dolphin_verify(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+        
+        args = self._get_common_args()
+        
+        def _work():
+            return worker_dolphin_verify(
+                self._last_base,
+                args,
+                self.log_msg,
+                self._get_list_files_fn()
+            )
+            
+        def _done(res):
+            self.log_msg(str(res))
+            self._set_ui_enabled(True)
+            
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
+    def on_dolphin_organize(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+        
+        args = self._get_common_args()
+        
+        def _work():
+            return worker_dolphin_organize(
+                self._last_base,
+                args,
+                self.log_msg,
+                self._get_list_files_fn()
+            )
+            
+        def _done(res):
+            self.log_msg(str(res))
+            self._set_ui_enabled(True)
+            
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
+    def on_ps2_organize(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+        
+        args = self._get_common_args()
+        
+        def _work():
+            return worker_ps2_organize(
+                self._last_base,
+                args,
+                self.log_msg,
+                self._get_list_files_fn()
+            )
+            
+        def _done(res):
+            self.log_msg(str(res))
+            self._set_ui_enabled(True)
+            
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
+    def on_open_library(self):
+        qt = self._qtwidgets
+        dlg = qt.QFileDialog(self.window, "Select Library Directory")
+        try:
+            dlg.setFileMode(qt.QFileDialog.FileMode.Directory)
+        except AttributeError:
+            dlg.setFileMode(qt.QFileDialog.Directory)
+        
+        if dlg.exec():
+            base = Path(dlg.selectedFiles()[0])
+            self._last_base = base
+            self.ui.lbl_library.setText(str(base))
+            self.ui.lbl_library.setStyleSheet("font-weight: bold; color: #3daee9;")
+            self.log_msg(f"Library opened: {base}")
+            
+            # Auto-refresh list if possible
+            try:
+                self.on_list()
+            except Exception:
+                pass
+
+    def on_switch_compress(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+        
+        self._ensure_env(self._last_base)
+        
+        args = self._get_common_args()
+        
+        def _work():
+            return worker_switch_compress(
+                self._last_base, 
+                self._env, 
+                args, 
+                self.log_msg, 
+                self._get_list_files_fn()
+            )
+
+        def _done(res):
+            if isinstance(res, Exception):
+                self.log_msg(f"Compression error: {res}")
+            else:
+                self.log_msg(str(res))
+            self._set_ui_enabled(True)
+
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
+    def on_switch_decompress(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+        
+        self._ensure_env(self._last_base)
+        
+        args = self._get_common_args()
+        
+        def _work():
+            return worker_switch_decompress(
+                self._last_base, 
+                self._env, 
+                args, 
+                self.log_msg, 
+                self._get_list_files_fn()
+            )
+
+        def _done(res):
+            if isinstance(res, Exception):
+                self.log_msg(f"Decompression error: {res}")
+            else:
+                self.log_msg(str(res))
+            self._set_ui_enabled(True)
+
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
+    def on_select_dat(self):
+        qt = self._qtwidgets
+        dlg = qt.QFileDialog(self.window, "Select DAT File")
+        try:
+            dlg.setFileMode(qt.QFileDialog.FileMode.ExistingFile)
+        except AttributeError:
+            dlg.setFileMode(qt.QFileDialog.ExistingFile)
+        dlg.setNameFilter("DAT Files (*.dat *.xml)")
+        
+        if dlg.exec():
+            path = Path(dlg.selectedFiles()[0])
+            self._current_dat_path = path
+            self.ui.lbl_dat_path.setText(path.name)
+            self.ui.lbl_dat_path.setStyleSheet("color: #3daee9; font-weight: bold;")
+            self.ui.btn_verify_dat.setEnabled(True)
+            self.log_msg(f"Selected DAT: {path}")
+
+    def on_verify_dat(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+            
+        if not hasattr(self, "_current_dat_path") or not self._current_dat_path:
+            self.log_msg("Please select a DAT file first.")
+            return
+            
+        args = self._get_common_args()
+        args.dat_path = self._current_dat_path
+        
+        # Clear previous results
+        self.ui.table_results.setRowCount(0)
+        
+        def _work():
+            return worker_hash_verify(
+                self._last_base,
+                args,
+                self.log_msg,
+                self._get_list_files_fn()
+            )
+            
+        def _done(res):
+            if hasattr(res, "results"):
+                self.log_msg(res.text)
+                # Store for filtering/export
+                self._last_verify_results = res.results
+                self.on_verification_filter_changed()
+            else:
+                self.log_msg(str(res))
+            self._set_ui_enabled(True)
+            
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
+    def _populate_verification_results(self, results, status_filter: Optional[str] = None):
+        filtered = [r for r in results if (not status_filter or r.status == status_filter)]
+        self.ui.table_results.setRowCount(len(filtered))
+        for i, r in enumerate(filtered):
+            self._create_result_row(i, r)
+
+    def _create_result_row(self, row_idx, result):
+        qt = self._qtwidgets
+        
+        # Status Item with Color
+        item_status = qt.QTableWidgetItem(result.status)
+        self._style_status_item(item_status, result.status)
+        self.ui.table_results.setItem(row_idx, 0, item_status)
+        
+        # Other columns
+        self.ui.table_results.setItem(row_idx, 1, qt.QTableWidgetItem(result.filename))
+        self.ui.table_results.setItem(row_idx, 2, qt.QTableWidgetItem(result.match_name or ""))
+        self.ui.table_results.setItem(row_idx, 3, qt.QTableWidgetItem(result.crc or ""))
+        self.ui.table_results.setItem(row_idx, 4, qt.QTableWidgetItem(result.sha1 or ""))
+        # New columns: MD5 and SHA256 (if deep verify)
+        try:
+            self.ui.table_results.setItem(row_idx, 5, qt.QTableWidgetItem(getattr(result, "md5", "") or ""))
+            self.ui.table_results.setItem(row_idx, 6, qt.QTableWidgetItem(getattr(result, "sha256", "") or ""))
+        except Exception:
+            pass
+
+    def _style_status_item(self, item, status):
+        qt = self._qtwidgets
+        if status == "VERIFIED":
+            bg_color = self._qtgui.QColor(200, 255, 200) if self._qtgui else qt.QColor(0, 255, 0)
+            fg_color = self._qtgui.QColor(0, 100, 0) if self._qtgui else qt.QColor(0, 0, 0)
+        else:
+            bg_color = self._qtgui.QColor(255, 200, 200) if self._qtgui else qt.QColor(255, 0, 0)
+            fg_color = self._qtgui.QColor(100, 0, 0) if self._qtgui else qt.QColor(0, 0, 0)
+            
+        item.setBackground(bg_color)
+        item.setForeground(fg_color)
+
+    def _on_verification_item_dblclick(self, item):
+        try:
+            row = item.row()
+            results = getattr(self, "_last_verify_results", [])
+            if 0 <= row < len(results):
+                fp = results[row].full_path
+                if fp:
+                    self._open_file_location(Path(fp))
+        except Exception:
+            pass
+
+    def on_verification_filter_changed(self):
+        status = None
+        if hasattr(self.ui, "combo_verif_filter"):
+            txt = self.ui.combo_verif_filter.currentText()
+            if txt in ("VERIFIED", "UNKNOWN"):
+                status = txt
+        results = getattr(self, "_last_verify_results", [])
+        self._populate_verification_results(results, status)
+
+    def on_export_verification_csv(self):
+        qt = self._qtwidgets
+        all_results = getattr(self, "_last_verify_results", [])
+        # Respect current filter
+        status = None
+        if hasattr(self.ui, "combo_verif_filter"):
+            txt = self.ui.combo_verif_filter.currentText()
+            if txt in ("VERIFIED", "UNKNOWN"):
+                status = txt
+        results = [r for r in all_results if (not status or r.status == status)]
+        if not results:
+            self.log_msg("No results to export.")
+            return
+        # Save file dialog
+        path = None
+        try:
+            dlg = qt.QFileDialog(self.window, "Export Verification CSV")
+            try:
+                dlg.setAcceptMode(qt.QFileDialog.AcceptMode.AcceptSave)
+            except AttributeError:
+                dlg.setAcceptMode(qt.QFileDialog.AcceptSave)
+            dlg.setNameFilter("CSV Files (*.csv)")
+            if dlg.exec():
+                path = dlg.selectedFiles()[0]
+        except Exception:
+            pass
+        if not path:
+            # Fallback default path
+            path = str((self._last_base or Path(".")) / "verification_results.csv")
+        try:
+            import csv
+            with open(path, "w", newline="") as f:
+                w = csv.writer(f)
+                w.writerow(["Status", "File Name", "Game Name", "CRC32", "SHA1", "MD5", "SHA256"])
+                for r in results:
+                    w.writerow([r.status, r.filename, r.match_name or "", r.crc or "", r.sha1 or "", getattr(r, "md5", "") or "", getattr(r, "sha256", "") or ""]) 
+            self.log_msg(f"Exported CSV: {path}")
+        except Exception as e:
+            self.log_msg(f"Export CSV error: {e}")
+
+    def on_psp_compress(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+            
+        args = self._get_common_args()
+        # Add specific args if needed, e.g. compression level
+        args.level = 9
+        args.rm_originals = self.ui.chk_rm_originals.isChecked()
+        
+        def _work():
+            return worker_psp_compress(
+                self._last_base,
+                args,
+                self.log_msg,
+                self._get_list_files_fn()
+            )
+            
+        def _done(res):
+            self.log_msg(str(res))
+            
+        self._run_background_task(_work, _done)
+
+    def _list_files_selected(self, root: Path) -> list[Path]:
+        """Return only selected files from the UI, resolved to absolute paths."""
+        if not self.rom_list or not self.sys_list:
+            return []
+            
+        selected_items = self.rom_list.selectedItems()
+        if not selected_items:
+            return []
+            
+        sys_item = self.sys_list.currentItem()
+        if not sys_item:
+            return []
+            
+        system = sys_item.text()
+        roms_dir = Path(self._last_base) / "roms" / system
+        
+        files = []
+        for item in selected_items:
+            rel_path = item.text()
+            full_path = roms_dir / rel_path
+            # Only include if it exists (sanity check)
+            if full_path.exists():
+                files.append(full_path)
+                
+        return files

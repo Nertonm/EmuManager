@@ -20,11 +20,13 @@ pip-wheel-metadata/
 *.log
 logs/
 organizer_v13.log
+architect*.log
 
 # Test / coverage
 .coverage
 htmlcov/
 .pytest_cache/
+coverage.xml
 
 # Editors/IDEs
 .vscode/
@@ -45,3 +47,11 @@ htmlcov/
 *.bak
 *.swp
 *~
+verification_results.csv
+.python-version
+*.code-workspace
+
+# User content
+roms/
+_INSTALL_LOG.txt
+nsz/

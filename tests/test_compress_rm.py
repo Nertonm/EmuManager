@@ -1,5 +1,4 @@
 import types
-import os
 import switch_organizer as so
 
 
