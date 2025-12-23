@@ -250,10 +250,15 @@ class MainWindowBase:
     def _ensure_common_actions(self):
         """Create common QAction objects once and store as instance attributes."""
         qt = self._qtwidgets
-        # Avoid recreating if already set
         if hasattr(self, "act_open_library"):
             return
+        # grouped creators to reduce complexity
+        self._create_file_actions(qt)
+        self._create_view_actions(qt)
+        self._create_tools_actions(qt)
+        self._create_misc_actions(qt)
 
+    def _create_file_actions(self, qt):
         self.act_open_library = qt.QAction("Open Library", self.window)
         self.act_open_library.setShortcut("Ctrl+O")
         self.act_open_library.triggered.connect(self.on_open_library)
@@ -278,6 +283,16 @@ class MainWindowBase:
         self.act_cancel.setShortcut("Esc")
         self.act_cancel.triggered.connect(self.on_cancel_requested)
 
+        self.act_exit = qt.QAction("Exit", self.window)
+        self.act_exit.setShortcut("Ctrl+Q")
+        def _exit():
+            try:
+                self.window.close()
+            except Exception:
+                pass
+        self.act_exit.triggered.connect(_exit)
+
+    def _create_view_actions(self, qt):
         self.act_toggle_log = qt.QAction("Toggle Log", self.window)
         self.act_toggle_log.setShortcut("Ctrl+L")
         def _toggle_log():
@@ -288,7 +303,6 @@ class MainWindowBase:
                 pass
         self.act_toggle_log.triggered.connect(_toggle_log)
 
-        # Toggle toolbar visibility (View menu)
         self.act_toggle_toolbar = qt.QAction("Show Toolbar", self.window)
         try:
             self.act_toggle_toolbar.setCheckable(True)
@@ -307,7 +321,6 @@ class MainWindowBase:
                 pass
         self.act_toggle_toolbar.triggered.connect(_toggle_tb)
 
-        # Focus ROM filter
         self.act_focus_filter = qt.QAction("Focus ROM Filter", self.window)
         self.act_focus_filter.setShortcut("Ctrl+F")
         def _focus_filter():
@@ -318,7 +331,11 @@ class MainWindowBase:
                 pass
         self.act_focus_filter.triggered.connect(_focus_filter)
 
-        # Additional tool actions (Tools menu only)
+        # Reset layout
+        self.act_reset_layout = qt.QAction("Reset Layout", self.window)
+        self.act_reset_layout.triggered.connect(self._reset_layout)
+
+    def _create_tools_actions(self, qt):
         self.act_organize = qt.QAction("Organize Library", self.window)
         self.act_organize.triggered.connect(self.on_organize)
 
@@ -370,24 +387,12 @@ class MainWindowBase:
         self.act_export_csv = qt.QAction("Export Verification CSV", self.window)
         self.act_export_csv.triggered.connect(self.on_export_verification_csv)
 
+    def _create_misc_actions(self, qt):
         self.act_open_folder = qt.QAction("Open Selected ROM Folder", self.window)
         self.act_open_folder.triggered.connect(self._open_selected_rom_folder)
 
         self.act_copy_path = qt.QAction("Copy Selected ROM Path", self.window)
         self.act_copy_path.triggered.connect(self._copy_selected_rom_path)
-
-        self.act_exit = qt.QAction("Exit", self.window)
-        self.act_exit.setShortcut("Ctrl+Q")
-        def _exit():
-            try:
-                self.window.close()
-            except Exception:
-                pass
-        self.act_exit.triggered.connect(_exit)
-
-        # Reset layout action
-        self.act_reset_layout = qt.QAction("Reset Layout", self.window)
-        self.act_reset_layout.triggered.connect(self._reset_layout)
 
     def _setup_toolbar(self):
         """Create a toolbar with common actions and shortcuts.
@@ -510,36 +515,46 @@ class MainWindowBase:
             self.ui.table_results.setContextMenuPolicy(policy)
 
             def _show_menu(pos):
-                menu = qt.QMenu(self.ui.table_results)
-                a_open = menu.addAction("Open Location")
-                menu.addSeparator()
-                a_crc = menu.addAction("Copy CRC32")
-                a_sha1 = menu.addAction("Copy SHA1")
-                a_md5 = menu.addAction("Copy MD5")
-                a_sha256 = menu.addAction("Copy SHA256")
+                menu, actions = self._build_verification_menu(qt)
                 act = menu.exec(self.ui.table_results.mapToGlobal(pos))
                 row = self.ui.table_results.currentRow()
                 results = getattr(self, "_last_verify_results", [])
                 if 0 <= row < len(results):
-                    res = results[row]
-                    if act == a_open:
-                        fp = getattr(res, "full_path", None)
-                        if fp:
-                            self._open_file_location(Path(fp))
-                    elif act == a_crc:
-                        qt.QApplication.clipboard().setText(res.crc or "")
-                        self.status.showMessage("CRC32 copied", 2000)
-                    elif act == a_sha1:
-                        qt.QApplication.clipboard().setText(res.sha1 or "")
-                        self.status.showMessage("SHA1 copied", 2000)
-                    elif act == a_md5:
-                        qt.QApplication.clipboard().setText(getattr(res, "md5", "") or "")
-                        self.status.showMessage("MD5 copied", 2000)
-                    elif act == a_sha256:
-                        qt.QApplication.clipboard().setText(getattr(res, "sha256", "") or "")
-                        self.status.showMessage("SHA256 copied", 2000)
+                    self._handle_verification_action(qt, act, actions, results[row])
 
             self.ui.table_results.customContextMenuRequested.connect(_show_menu)
+        except Exception:
+            pass
+
+    def _build_verification_menu(self, qt):
+        menu = qt.QMenu(self.ui.table_results)
+        a_open = menu.addAction("Open Location")
+        menu.addSeparator()
+        a_crc = menu.addAction("Copy CRC32")
+        a_sha1 = menu.addAction("Copy SHA1")
+        a_md5 = menu.addAction("Copy MD5")
+        a_sha256 = menu.addAction("Copy SHA256")
+        actions = {"open": a_open, "crc": a_crc, "sha1": a_sha1, "md5": a_md5, "sha256": a_sha256}
+        return menu, actions
+
+    def _handle_verification_action(self, qt, act, actions, res):
+        try:
+            if act == actions["open"]:
+                fp = getattr(res, "full_path", None)
+                if fp:
+                    self._open_file_location(Path(fp))
+            elif act == actions["crc"]:
+                qt.QApplication.clipboard().setText(res.crc or "")
+                self.status.showMessage("CRC32 copied", 2000)
+            elif act == actions["sha1"]:
+                qt.QApplication.clipboard().setText(res.sha1 or "")
+                self.status.showMessage("SHA1 copied", 2000)
+            elif act == actions["md5"]:
+                qt.QApplication.clipboard().setText(getattr(res, "md5", "") or "")
+                self.status.showMessage("MD5 copied", 2000)
+            elif act == actions["sha256"]:
+                qt.QApplication.clipboard().setText(getattr(res, "sha256", "") or "")
+                self.status.showMessage("SHA256 copied", 2000)
         except Exception:
             pass
 
@@ -962,32 +977,38 @@ class MainWindowBase:
         if not base:
             self.log_msg(MSG_SELECT_BASE)
             return
-            
         systems = self._manager.cmd_list_systems(base)
+        self._refresh_system_list_ui(systems)
+        self._log_systems(systems)
+
+    def _refresh_system_list_ui(self, systems):
         try:
             if self.sys_list is not None:
                 self.sys_list.clear()
                 for s in systems:
                     self.sys_list.addItem(s)
-                # Auto-select last system if present
-                try:
-                    if getattr(self, "_last_system", None):
-                        items = [self.sys_list.item(i).text() for i in range(self.sys_list.count())]
-                        if self._last_system in items:
-                            idx = items.index(self._last_system)
-                            self.sys_list.setCurrentRow(idx)
-                            # Trigger population
-                            self._on_system_selected(self.sys_list.item(idx))
-                except Exception:
-                    pass
+                self._auto_select_last_system()
         except Exception:
             pass
+
+    def _auto_select_last_system(self):
+        try:
+            if getattr(self, "_last_system", None):
+                items = [self.sys_list.item(i).text() for i in range(self.sys_list.count())]
+                if self._last_system in items:
+                    idx = items.index(self._last_system)
+                    self.sys_list.setCurrentRow(idx)
+                    self._on_system_selected(self.sys_list.item(idx))
+        except Exception:
+            pass
+
+    def _log_systems(self, systems):
         if not systems:
             self.log_msg("Nenhum sistema encontrado — execute 'init' primeiro.")
-        else:
-            self.log_msg("Sistemas encontrados:")
-            for s in systems:
-                self.log_msg(f" - {s}")
+            return
+        self.log_msg("Sistemas encontrados:")
+        for s in systems:
+            self.log_msg(f" - {s}")
 
     def on_add(self):
         base = self._last_base
@@ -1911,19 +1932,23 @@ class MainWindowBase:
 
     def on_export_verification_csv(self):
         qt = self._qtwidgets
+        results = self._get_filtered_verification_results()
+        if not results:
+            self.log_msg("No results to export.")
+            return
+        path = self._ask_export_path(qt) or str((self._last_base or Path(".")) / "verification_results.csv")
+        self._write_verification_csv(path, results)
+
+    def _get_filtered_verification_results(self):
         all_results = getattr(self, "_last_verify_results", [])
-        # Respect current filter
         status = None
         if hasattr(self.ui, "combo_verif_filter"):
             txt = self.ui.combo_verif_filter.currentText()
             if txt in ("VERIFIED", "UNKNOWN"):
                 status = txt
-        results = [r for r in all_results if (not status or r.status == status)]
-        if not results:
-            self.log_msg("No results to export.")
-            return
-        # Save file dialog
-        path = None
+        return [r for r in all_results if (not status or r.status == status)]
+
+    def _ask_export_path(self, qt):
         try:
             dlg = qt.QFileDialog(self.window, "Export Verification CSV")
             try:
@@ -1932,12 +1957,12 @@ class MainWindowBase:
                 dlg.setAcceptMode(qt.QFileDialog.AcceptSave)
             dlg.setNameFilter("CSV Files (*.csv)")
             if dlg.exec():
-                path = dlg.selectedFiles()[0]
+                return dlg.selectedFiles()[0]
         except Exception:
             pass
-        if not path:
-            # Fallback default path
-            path = str((self._last_base or Path(".")) / "verification_results.csv")
+        return None
+
+    def _write_verification_csv(self, path, results):
         try:
             import csv
             with open(path, "w", newline="") as f:
