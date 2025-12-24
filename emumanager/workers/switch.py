@@ -299,23 +299,23 @@ def worker_recompress_single(filepath: Path, env: dict, args: Any, log_cb: Calla
             try:
                 def verify_fn(p, rc):
                     return verify_integrity(
-                        p, 
-                        deep=False, 
-                        tool_nsz=env.get("TOOL_NSZ"), 
-                        roms_dir=env["ROMS_DIR"], 
-                        cmd_timeout=None, 
-                        tool_metadata=env.get("TOOL_METADATA"), 
-                        is_nstool=env.get("IS_NSTOOL"), 
-                        keys_path=env.get("KEYS_PATH"), 
+                        p,
+                        deep=False,
+                        tool_nsz=env.get("TOOL_NSZ"),
+                        roms_dir=env["ROMS_DIR"],
+                        cmd_timeout=None,
+                        tool_metadata=env.get("TOOL_METADATA"),
+                        is_nstool=env.get("IS_NSTOOL"),
+                        keys_path=env.get("KEYS_PATH"),
                         tool_hactool=env.get("TOOL_HACTOOL")
                     )
-                
+
                 result_path = compression.handle_produced_file(
-                    new_file, 
-                    filepath, 
-                    run_wrapper, 
-                    verify_fn=verify_fn, 
-                    args=args, 
+                    new_file,
+                    filepath,
+                    run_wrapper,
+                    verify_fn=verify_fn,
+                    args=args,
                     roms_dir=env["ROMS_DIR"]
                 )
                 return result_path
@@ -324,10 +324,11 @@ def worker_recompress_single(filepath: Path, env: dict, args: Any, log_cb: Calla
                 return None
     return None
 
+
 def worker_decompress_single(filepath: Path, env: dict, args: Any, log_cb: Callable[[str], None]) -> Optional[Path]:
     """Worker function for decompressing a single Switch file."""
     logger = GuiLogger(log_cb)
-    
+
     tool_nsz = env.get("TOOL_NSZ")
     if not tool_nsz:
         logger.error(MSG_NSZ_MISSING)
@@ -337,16 +338,16 @@ def worker_decompress_single(filepath: Path, env: dict, args: Any, log_cb: Calla
         return run_cmd(cmd, filebase=None, timeout=None)
 
     res = compression.decompress_and_find_candidate(
-        filepath, 
-        run_wrapper, 
-        tool_nsz=str(tool_nsz), 
-        tool_metadata=str(env.get("TOOL_METADATA")) if env.get("TOOL_METADATA") else None, 
-        is_nstool=env.get("IS_NSTOOL", False), 
-        keys_path=env.get("KEYS_PATH"), 
-        args=args, 
+        filepath,
+        run_wrapper,
+        tool_nsz=str(tool_nsz),
+        tool_metadata=str(env.get("TOOL_METADATA")) if env.get("TOOL_METADATA") else None,
+        is_nstool=env.get("IS_NSTOOL", False),
+        keys_path=env.get("KEYS_PATH"),
+        args=args,
         roms_dir=env["ROMS_DIR"]
     )
-    
+
     if res:
         logger.info(f"Decompressed: {filepath.name} -> {res.name}")
         return res
@@ -354,10 +355,11 @@ def worker_decompress_single(filepath: Path, env: dict, args: Any, log_cb: Calla
         logger.error(f"Failed to decompress: {filepath.name}")
         return None
 
+
 def worker_compress_single(filepath: Path, env: dict, args: Any, log_cb: Callable[[str], None]) -> Optional[Path]:
     """Worker function for compressing a single Switch file."""
     logger = GuiLogger(log_cb)
-    
+
     tool_nsz = env.get("TOOL_NSZ")
     if not tool_nsz:
         logger.error(MSG_NSZ_MISSING)
@@ -373,14 +375,14 @@ def worker_compress_single(filepath: Path, env: dict, args: Any, log_cb: Callabl
         args.rm_originals = False
 
     res = compression.compress_file(
-        filepath, 
-        run_wrapper, 
-        tool_nsz=str(tool_nsz), 
-        level=args.level, 
-        args=args, 
+        filepath,
+        run_wrapper,
+        tool_nsz=str(tool_nsz),
+        level=args.level,
+        args=args,
         roms_dir=env["ROMS_DIR"]
     )
-    
+
     if res:
         logger.info(f"Compressed: {filepath.name} -> {res.name}")
         return res
