@@ -8,7 +8,17 @@ from emumanager.converters import ps2_converter
 from emumanager.common.execution import find_tool
 from emumanager.ps2 import metadata as ps2_meta
 from emumanager.ps2 import database as ps2_db
-from emumanager.workers.common import GuiLogger, GuiLogHandler, MSG_CANCELLED, find_target_dir, calculate_file_hash, create_file_progress_cb
+from emumanager.workers.common import (
+    GuiLogger, 
+    GuiLogHandler, 
+    MSG_CANCELLED, 
+    find_target_dir, 
+    calculate_file_hash, 
+    create_file_progress_cb,
+    emit_verification_result,
+    make_result_collector
+)
+from emumanager.common.models import VerifyResult
 
 MSG_PS2_DIR_NOT_FOUND = "PS2 ROMs directory not found."
 PS2_SUBDIRS = ["roms/ps2", "ps2"]
@@ -58,7 +68,13 @@ def worker_ps2_convert(base_path: Path, args: Any, log_cb: Callable[[str], None]
     finally:
         ps2_logger.removeHandler(handler)
 
-def _process_ps2_file(f: Path, logger: GuiLogger, deep_verify: bool = False, progress_cb: Optional[Callable[[float], None]] = None) -> str:
+def _process_ps2_file(
+    f: Path, 
+    logger: GuiLogger, 
+    deep_verify: bool = False, 
+    progress_cb: Optional[Callable[[float], None]] = None,
+    per_file_cb: Optional[Callable[[Any], None]] = None
+) -> str:
     """
     Process a single PS2 file to extract serial and identify title.
     Returns: 'found', 'unknown', or 'skip'.
@@ -83,12 +99,25 @@ def _process_ps2_file(f: Path, logger: GuiLogger, deep_verify: bool = False, pro
     else:
         info_str = "[NO SERIAL] Could not identify"
 
+    md5: Optional[str] = None
+    sha1: Optional[str] = None
     if deep_verify:
         logger.info(f"Hashing {f.name}...")
         md5 = calculate_file_hash(f, "md5", progress_cb=progress_cb)
-        info_str += f" | MD5: {md5}"
+        sha1 = calculate_file_hash(f, "sha1", progress_cb=progress_cb)
+        info_str += f" | MD5: {md5} | SHA1: {sha1}"
         
     logger.info(f"{info_str} -> {f.name}")
+    
+    emit_verification_result(
+        per_file_cb,
+        f,
+        status="VERIFIED" if serial else "UNKNOWN",
+        serial=serial,
+        title=ps2_db.db.get_title(serial) if serial else None,
+        md5=md5,
+        sha1=sha1
+    )
     
     return "found" if serial else "unknown"
 
@@ -119,6 +148,10 @@ def worker_ps2_verify(base_path: Path, args: Any, log_cb: Callable[[str], None],
     cancel_event = getattr(args, "cancel_event", None)
     deep_verify = getattr(args, "deep_verify", False)
     
+    per_file_cb_attr = getattr(args, "per_file_cb", None)
+    results_list_attr = getattr(args, "results", None)
+    collector = make_result_collector(per_file_cb_attr, results_list_attr) if (callable(per_file_cb_attr) or isinstance(results_list_attr, list)) else None
+    
     for i, f in enumerate(files):
         if cancel_event and cancel_event.is_set():
             logger.warning(MSG_CANCELLED)
@@ -133,7 +166,13 @@ def worker_ps2_verify(base_path: Path, args: Any, log_cb: Callable[[str], None],
         if progress_cb:
             progress_cb(start_prog, f"Verifying {f.name}...")
             
-        res = _process_ps2_file(f, logger, deep_verify=deep_verify, progress_cb=file_prog_cb)
+        res = _process_ps2_file(
+            f, 
+            logger, 
+            deep_verify=deep_verify, 
+            progress_cb=file_prog_cb,
+            per_file_cb=collector
+        )
         if res == "found":
             found += 1
         elif res == "unknown":

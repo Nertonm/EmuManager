@@ -16,6 +16,11 @@ from emumanager.workers.ps2 import (
     worker_ps2_verify, 
     worker_ps2_organize
 )
+from emumanager.workers.psx import (
+    worker_psx_convert,
+    worker_psx_verify,
+    worker_psx_organize,
+)
 from emumanager.workers.ps3 import (
     worker_ps3_verify, 
     worker_ps3_organize
@@ -24,6 +29,10 @@ from emumanager.workers.psp import (
     worker_psp_verify,
     worker_psp_organize,
     worker_psp_compress
+)
+from emumanager.workers.n3ds import (
+    worker_n3ds_verify,
+    worker_n3ds_organize
 )
 from emumanager.workers.dolphin import (
     worker_dolphin_convert, 
@@ -47,11 +56,16 @@ __all__ = [
     "worker_ps2_convert",
     "worker_ps2_verify",
     "worker_ps2_organize",
+    "worker_psx_convert",
+    "worker_psx_verify",
+    "worker_psx_organize",
     "worker_ps3_verify",
     "worker_ps3_organize",
     "worker_psp_verify",
     "worker_psp_organize",
     "worker_psp_compress",
+    "worker_n3ds_verify",
+    "worker_n3ds_organize",
     "worker_dolphin_convert",
     "worker_dolphin_verify",
     "worker_dolphin_organize",

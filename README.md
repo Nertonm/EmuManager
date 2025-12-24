@@ -27,6 +27,7 @@
 - **Compressão e Conversão**:
     - **Switch**: Comprima/Descomprima (`.nsp` <-> `.nsz`, `.xci` <-> `.xcz`).
     - **GameCube/Wii**: Converta ISO para RVZ (formato moderno do Dolphin).
+    - **PS1**: Converta BIN/CUE/ISO para CHD.
     - **PS2**: Converta ISO/CSO para CHD.
     - **PSP**: Converta ISO para CSO.
 
@@ -110,6 +111,24 @@ Opcional (headless): para executar os testes de fumaça da GUI em ambientes sem 
 5. Filtre, ordene e exporte CSV conforme necessário; clique com o botão direito para copiar hashes ou abrir a pasta.
 
 ---
+
+## Suporte a PlayStation 1 (PS1)
+
+Recursos disponíveis na aba Tools → PS1:
+
+- Converter: BIN/CUE/ISO → CHD (usa `chdman`).
+- Verificar: extrai o Serial do jogo (ex.: `SLUS-00594`); com “Deep Verify” calcula também MD5.
+- Organizar: renomeia para `Título [Serial].ext` usando um banco opcional `psx_db.csv`.
+
+Requisitos:
+
+- `chdman` no PATH para conversão (parte do MAME).
+- Opcional: `psx_db.csv` na raiz da biblioteca com linhas `Serial,Título` (cabeçalho opcional). Um exemplo está em `docs/examples/psx_db.csv`.
+
+Pastas e formatos suportados:
+
+- PS1 é escaneado em `roms/psx` ou `psx` dentro da sua biblioteca.
+- Extração de serial funciona com `.bin`, `.iso`, `.gz` e `.chd`.
 
 ## Estrutura do Projeto
 

@@ -8,7 +8,10 @@ from emumanager.gamecube import metadata as gc_meta
 from emumanager.gamecube import database as gc_db
 from emumanager.wii import metadata as wii_meta
 from emumanager.wii import database as wii_db
-from emumanager.workers.common import GuiLogger, MSG_CANCELLED, calculate_file_hash, create_file_progress_cb
+from emumanager.workers.common import (
+    GuiLogger, MSG_CANCELLED, calculate_file_hash, create_file_progress_cb,
+    emit_verification_result, make_result_collector, VerifyResult
+)
 
 DOLPHIN_CONVERTIBLE_EXTENSIONS = {".iso", ".gcm", ".wbfs"}
 DOLPHIN_ALL_EXTENSIONS = {".iso", ".gcm", ".wbfs", ".rvz", ".gcZ"}
@@ -78,16 +81,19 @@ def worker_dolphin_convert(base_path: Path, args: Any, log_cb: Callable[[str], N
                  
     return f"Dolphin Conversion complete. Converted: {total_converted}"
 
-def _verify_dolphin_file(f: Path, converter: DolphinConverter, target_dir: Path, logger: GuiLogger, deep_verify: bool = False, progress_cb: Optional[Callable[[float], None]] = None) -> bool:
+def _verify_dolphin_file(f: Path, converter: DolphinConverter, target_dir: Path, logger: GuiLogger, deep_verify: bool = False, progress_cb: Optional[Callable[[float], None]] = None, per_file_cb: Optional[Callable[[VerifyResult], None]] = None) -> bool:
     if f.suffix.lower() not in DOLPHIN_ALL_EXTENSIONS:
         return False
     
     # Identify first
     meta = {}
+    system = "UNKNOWN"
     if "gamecube" in str(target_dir).lower():
         meta = gc_meta.get_metadata(f)
+        system = "GAMECUBE"
     elif "wii" in str(target_dir).lower():
         meta = wii_meta.get_metadata(f)
+        system = "WII"
         
     game_id = meta.get("game_id", "Unknown")
     title = meta.get("internal_name", "")
@@ -96,18 +102,38 @@ def _verify_dolphin_file(f: Path, converter: DolphinConverter, target_dir: Path,
     if title:
         info_str += f"{title} "
 
+    md5_val = None
+    sha1_val = None
+
     if deep_verify:
         logger.info(f"Hashing {f.name}...")
-        md5 = calculate_file_hash(f, "md5", progress_cb=progress_cb)
-        info_str += f"| MD5: {md5} "
+        md5_val = calculate_file_hash(f, "md5", progress_cb=progress_cb)
+        sha1_val = calculate_file_hash(f, "sha1", progress_cb=None)
+        info_str += f"| MD5: {md5_val} "
     
     logger.info(f"{info_str}Verifying {f.name}...")
-    if converter.verify_rvz(f):
+    
+    # Dolphin tool verification
+    is_valid = converter.verify_rvz(f)
+    
+    status = "VERIFIED" if is_valid else "BAD_DUMP"
+    if is_valid:
         logger.info(f"✅ OK: {f.name}")
-        return True
     else:
         logger.error(f"❌ FAIL: {f.name}")
-        return False
+        
+    emit_verification_result(
+        per_file_cb=per_file_cb,
+        filename=f.name,
+        status=status,
+        system=system,
+        serial=game_id,
+        title=title,
+        md5=md5_val,
+        sha1=sha1_val
+    )
+        
+    return is_valid
 
 def _collect_dolphin_files(targets: list[Path], list_files_fn: Callable[[Path], list[Path]], logger: GuiLogger) -> list[tuple[Path, Path]]:
     all_files = []
@@ -155,6 +181,10 @@ def worker_dolphin_verify(base_path: Path, args: Any, log_cb: Callable[[str], No
     cancel_event = getattr(args, "cancel_event", None)
     deep_verify = getattr(args, "deep_verify", False)
     
+    # Setup result collector
+    results_list = getattr(args, "results", None)
+    per_file_cb = make_result_collector(results_list, getattr(args, "on_result", None))
+    
     for i, (f, target_dir) in enumerate(all_files):
         if cancel_event and cancel_event.is_set():
             logger.warning(MSG_CANCELLED)
@@ -169,7 +199,7 @@ def worker_dolphin_verify(base_path: Path, args: Any, log_cb: Callable[[str], No
         if progress_cb:
             progress_cb(start_prog, f"Verifying {f.name}...")
             
-        if _verify_dolphin_file(f, converter, target_dir, logger, deep_verify=deep_verify, progress_cb=file_prog_cb):
+        if _verify_dolphin_file(f, converter, target_dir, logger, deep_verify=deep_verify, progress_cb=file_prog_cb, per_file_cb=per_file_cb):
             passed += 1
         else:
             failed += 1

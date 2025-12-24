@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 from typing import Any
 
+# Common button labels to reduce duplication
+IDENTIFY_VERIFY_LABEL = "Identify & Verify Games"
+ORGANIZE_LABEL = "Organize (Rename)"
+
 class Ui_MainWindow:
     def setupUi(self, MainWindow, qtwidgets: Any):
         qt = qtwidgets
@@ -210,30 +214,31 @@ class Ui_MainWindow:
 
     def setupToolsTab(self, qt, parent):
         layout = qt.QVBoxLayout(parent)
-        
         # Create nested tabs for tools
         self.tools_tabs = qt.QTabWidget()
         layout.addWidget(self.tools_tabs)
 
-        # --- Tab: Nintendo Switch ---
+        self._setup_switch_tab(qt)
+        self._setup_psx_tab(qt)
+        self._setup_ps2_tab(qt)
+        self._setup_ps3_tab(qt)
+        self._setup_psp_tab(qt)
+        self._setup_dolphin_tab(qt)
+        self._setup_general_tab(qt)
+
+    def _setup_switch_tab(self, qt):
         self.tab_switch = qt.QWidget()
         switch_layout = qt.QVBoxLayout(self.tab_switch)
-        
         grp_switch = qt.QGroupBox("Nintendo Switch Actions")
         grp_switch_layout = qt.QVBoxLayout()
-        
         self.btn_organize = qt.QPushButton("Organize Library (Rename/Move)")
         self.btn_organize.setToolTip("Organizes Switch ROMs based on metadata (TitleID, Version, etc)")
-        
         self.btn_health = qt.QPushButton("Health Check (Integrity + Virus)")
         self.btn_health.setToolTip("Verifies NCA integrity and scans for viruses")
-        
         self.btn_switch_compress = qt.QPushButton("Compress Library (NSP -> NSZ)")
         self.btn_switch_compress.setToolTip("Compresses all NSP files in the library to NSZ format")
-        
         self.btn_switch_decompress = qt.QPushButton("Decompress Library (NSZ -> NSP)")
         self.btn_switch_decompress.setToolTip("Decompresses all NSZ files in the library back to NSP format")
-
         try:
             style = qt.QApplication.style()
             self.btn_organize.setIcon(style.standardIcon(qt.QStyle.StandardPixmap.SP_FileDialogListView))
@@ -249,33 +254,58 @@ class Ui_MainWindow:
                 self.btn_switch_decompress.setIcon(style.standardIcon(qt.QStyle.SP_ArrowUp))
             except Exception:
                 pass
-
         grp_switch_layout.addWidget(self.btn_organize)
         grp_switch_layout.addWidget(self.btn_health)
         grp_switch_layout.addWidget(self.btn_switch_compress)
         grp_switch_layout.addWidget(self.btn_switch_decompress)
         grp_switch.setLayout(grp_switch_layout)
-        
         switch_layout.addWidget(grp_switch)
         switch_layout.addStretch()
         self.tools_tabs.addTab(self.tab_switch, "Switch")
 
-        # --- Tab: PlayStation 2 ---
+    def _setup_psx_tab(self, qt):
+        self.tab_psx = qt.QWidget()
+        psx_layout = qt.QVBoxLayout(self.tab_psx)
+        grp_psx = qt.QGroupBox("PlayStation 1 Actions")
+        grp_psx_layout = qt.QVBoxLayout()
+        self.btn_psx_convert = qt.QPushButton("Convert BIN/CUE/ISO to CHD")
+        self.btn_psx_convert.setToolTip("Converts PS1 games to CHD format to save space")
+        self.btn_psx_verify = qt.QPushButton(IDENTIFY_VERIFY_LABEL)
+        self.btn_psx_verify.setToolTip("Scans PS1 games, extracts Serials, and identifies titles")
+        self.btn_psx_organize = qt.QPushButton(ORGANIZE_LABEL)
+        self.btn_psx_organize.setToolTip("Renames PS1 games based on Serial (e.g. 'Title [Serial].chd')")
+        try:
+            style = qt.QApplication.style()
+            self.btn_psx_convert.setIcon(style.standardIcon(qt.QStyle.StandardPixmap.SP_DriveCDIcon))
+            self.btn_psx_verify.setIcon(style.standardIcon(qt.QStyle.StandardPixmap.SP_DialogApplyButton))
+            self.btn_psx_organize.setIcon(style.standardIcon(qt.QStyle.StandardPixmap.SP_FileDialogListView))
+        except Exception:
+            try:
+                style = qt.QApplication.style()
+                self.btn_psx_convert.setIcon(style.standardIcon(qt.QStyle.SP_DriveCDIcon))
+                self.btn_psx_verify.setIcon(style.standardIcon(qt.QStyle.SP_DialogApplyButton))
+                self.btn_psx_organize.setIcon(style.standardIcon(qt.QStyle.SP_FileDialogListView))
+            except Exception:
+                pass
+        grp_psx_layout.addWidget(self.btn_psx_convert)
+        grp_psx_layout.addWidget(self.btn_psx_verify)
+        grp_psx_layout.addWidget(self.btn_psx_organize)
+        grp_psx.setLayout(grp_psx_layout)
+        psx_layout.addWidget(grp_psx)
+        psx_layout.addStretch()
+        self.tools_tabs.addTab(self.tab_psx, "PS1")
+
+    def _setup_ps2_tab(self, qt):
         self.tab_ps2 = qt.QWidget()
         ps2_layout = qt.QVBoxLayout(self.tab_ps2)
-        
         grp_ps2 = qt.QGroupBox("PlayStation 2 Actions")
         grp_ps2_layout = qt.QVBoxLayout()
-        
         self.btn_ps2_convert = qt.QPushButton("Convert ISO/CSO to CHD")
         self.btn_ps2_convert.setToolTip("Converts PS2 games to CHD format to save space")
-        
-        self.btn_ps2_verify = qt.QPushButton("Identify & Verify Games")
+        self.btn_ps2_verify = qt.QPushButton(IDENTIFY_VERIFY_LABEL)
         self.btn_ps2_verify.setToolTip("Scans PS2 games, extracts Serials, and identifies titles")
-        
-        self.btn_ps2_organize = qt.QPushButton("Organize (Rename)")
+        self.btn_ps2_organize = qt.QPushButton(ORGANIZE_LABEL)
         self.btn_ps2_organize.setToolTip("Renames PS2 games based on Serial (e.g. 'Title [Serial].iso')")
-        
         try:
             style = qt.QApplication.style()
             self.btn_ps2_convert.setIcon(style.standardIcon(qt.QStyle.StandardPixmap.SP_DriveCDIcon))
@@ -289,29 +319,23 @@ class Ui_MainWindow:
                 self.btn_ps2_organize.setIcon(style.standardIcon(qt.QStyle.SP_FileDialogListView))
             except Exception:
                 pass
-
         grp_ps2_layout.addWidget(self.btn_ps2_convert)
         grp_ps2_layout.addWidget(self.btn_ps2_verify)
         grp_ps2_layout.addWidget(self.btn_ps2_organize)
         grp_ps2.setLayout(grp_ps2_layout)
-        
         ps2_layout.addWidget(grp_ps2)
         ps2_layout.addStretch()
         self.tools_tabs.addTab(self.tab_ps2, "PS2")
 
-        # --- Tab: PlayStation 3 ---
+    def _setup_ps3_tab(self, qt):
         self.tab_ps3 = qt.QWidget()
         ps3_layout = qt.QVBoxLayout(self.tab_ps3)
-        
         grp_ps3 = qt.QGroupBox("PlayStation 3 Actions")
         grp_ps3_layout = qt.QVBoxLayout()
-        
-        self.btn_ps3_verify = qt.QPushButton("Identify & Verify Games")
+        self.btn_ps3_verify = qt.QPushButton(IDENTIFY_VERIFY_LABEL)
         self.btn_ps3_verify.setToolTip("Scans PS3 games (ISO/Folder), extracts Serials, and identifies titles")
-        
-        self.btn_ps3_organize = qt.QPushButton("Organize (Rename)")
+        self.btn_ps3_organize = qt.QPushButton(ORGANIZE_LABEL)
         self.btn_ps3_organize.setToolTip("Renames PS3 games based on Serial (e.g. 'Title [Serial]')")
-        
         try:
             style = qt.QApplication.style()
             self.btn_ps3_verify.setIcon(style.standardIcon(qt.QStyle.StandardPixmap.SP_DialogApplyButton))
@@ -323,31 +347,24 @@ class Ui_MainWindow:
                 self.btn_ps3_organize.setIcon(style.standardIcon(qt.QStyle.SP_FileDialogListView))
             except Exception:
                 pass
-
         grp_ps3_layout.addWidget(self.btn_ps3_verify)
         grp_ps3_layout.addWidget(self.btn_ps3_organize)
         grp_ps3.setLayout(grp_ps3_layout)
-        
         ps3_layout.addWidget(grp_ps3)
         ps3_layout.addStretch()
         self.tools_tabs.addTab(self.tab_ps3, "PS3")
 
-        # --- Tab: PSP ---
+    def _setup_psp_tab(self, qt):
         self.tab_psp = qt.QWidget()
         psp_layout = qt.QVBoxLayout(self.tab_psp)
-        
         grp_psp = qt.QGroupBox("PlayStation Portable (PSP) Actions")
         grp_psp_layout = qt.QVBoxLayout()
-        
-        self.btn_psp_verify = qt.QPushButton("Identify & Verify Games")
+        self.btn_psp_verify = qt.QPushButton(IDENTIFY_VERIFY_LABEL)
         self.btn_psp_verify.setToolTip("Scans PSP games (ISO/CSO/PBP), extracts Serials, and identifies titles")
-        
-        self.btn_psp_organize = qt.QPushButton("Organize (Rename)")
+        self.btn_psp_organize = qt.QPushButton(ORGANIZE_LABEL)
         self.btn_psp_organize.setToolTip("Renames PSP games based on Serial (e.g. 'Title [Serial]')")
-
         self.btn_psp_compress = qt.QPushButton("Compress ISO to CSO")
         self.btn_psp_compress.setToolTip("Compresses PSP ISO files to CSO format")
-        
         try:
             style = qt.QApplication.style()
             self.btn_psp_verify.setIcon(style.standardIcon(qt.QStyle.StandardPixmap.SP_DialogApplyButton))
@@ -361,32 +378,25 @@ class Ui_MainWindow:
                 self.btn_psp_compress.setIcon(style.standardIcon(qt.QStyle.SP_ArrowDown))
             except Exception:
                 pass
-
         grp_psp_layout.addWidget(self.btn_psp_verify)
         grp_psp_layout.addWidget(self.btn_psp_organize)
         grp_psp_layout.addWidget(self.btn_psp_compress)
         grp_psp.setLayout(grp_psp_layout)
-        
         psp_layout.addWidget(grp_psp)
         psp_layout.addStretch()
         self.tools_tabs.addTab(self.tab_psp, "PSP")
 
-        # --- Tab: GameCube / Wii ---
+    def _setup_dolphin_tab(self, qt):
         self.tab_dolphin = qt.QWidget()
         dolphin_layout = qt.QVBoxLayout(self.tab_dolphin)
-        
         grp_dolphin = qt.QGroupBox("Dolphin (GC/Wii) Actions")
         grp_dolphin_layout = qt.QVBoxLayout()
-        
         self.btn_dolphin_organize = qt.QPushButton("Organize Library (Rename)")
         self.btn_dolphin_organize.setToolTip("Renames GC/Wii games based on metadata (Internal Name [GameID])")
-
         self.btn_dolphin_convert = qt.QPushButton("Convert ISO/WBFS to RVZ")
         self.btn_dolphin_convert.setToolTip("Converts GameCube/Wii games to RVZ format (Lossless compression)")
-        
-        self.btn_dolphin_verify = qt.QPushButton("Identify & Verify Games")
+        self.btn_dolphin_verify = qt.QPushButton(IDENTIFY_VERIFY_LABEL)
         self.btn_dolphin_verify.setToolTip("Scans GC/Wii games, extracts IDs, and verifies integrity")
-        
         try:
             style = qt.QApplication.style()
             self.btn_dolphin_organize.setIcon(style.standardIcon(qt.QStyle.StandardPixmap.SP_FileDialogListView))
@@ -400,25 +410,20 @@ class Ui_MainWindow:
                 self.btn_dolphin_verify.setIcon(style.standardIcon(qt.QStyle.SP_DialogApplyButton))
             except Exception:
                 pass
-
         grp_dolphin_layout.addWidget(self.btn_dolphin_organize)
         grp_dolphin_layout.addWidget(self.btn_dolphin_convert)
         grp_dolphin_layout.addWidget(self.btn_dolphin_verify)
         grp_dolphin.setLayout(grp_dolphin_layout)
-        
         dolphin_layout.addWidget(grp_dolphin)
         dolphin_layout.addStretch()
         self.tools_tabs.addTab(self.tab_dolphin, "GameCube / Wii")
 
-        # --- Tab: General ---
+    def _setup_general_tab(self, qt):
         self.tab_general = qt.QWidget()
         gen_layout = qt.QVBoxLayout(self.tab_general)
-        
         grp_gen = qt.QGroupBox("General Maintenance")
         grp_gen_layout = qt.QVBoxLayout()
-        
         self.btn_clean_junk = qt.QPushButton("Clean Junk Files (.txt, .nfo, empty dirs)")
-        
         try:
             style = qt.QApplication.style()
             self.btn_clean_junk.setIcon(style.standardIcon(qt.QStyle.StandardPixmap.SP_TrashIcon))
@@ -428,10 +433,8 @@ class Ui_MainWindow:
                 self.btn_clean_junk.setIcon(style.standardIcon(qt.QStyle.SP_TrashIcon))
             except Exception:
                 pass
-
         grp_gen_layout.addWidget(self.btn_clean_junk)
         grp_gen.setLayout(grp_gen_layout)
-        
         gen_layout.addWidget(grp_gen)
         gen_layout.addStretch()
         self.tools_tabs.addTab(self.tab_general, "General")

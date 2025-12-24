@@ -3,6 +3,7 @@ import logging
 import hashlib
 from typing import Callable, Any, Optional
 from pathlib import Path
+from emumanager.common.models import VerifyResult
 
 # Constants for logging
 LOG_WARN = "WARN: "
@@ -145,3 +146,55 @@ def worker_clean_junk(base_path: Path, args: Any, log_cb: Callable[[str], None],
         progress_cb(1.0, "Cleanup complete")
             
     return f"Cleanup complete. Deleted {deleted_files} files and {deleted_dirs} empty directories."
+
+def emit_verification_result(
+    per_file_cb: Optional[Callable[[VerifyResult], None]] = None, 
+    filename: str | Path = "", 
+    status: str = "UNKNOWN", 
+    serial: Optional[str] = None, 
+    title: Optional[str] = None, 
+    md5: Optional[str] = None, 
+    sha1: Optional[str] = None,
+    crc: Optional[str] = None,
+    **kwargs
+):
+    """Emit a standardized verification result."""
+    if not per_file_cb:
+        return
+    try:
+        match_name = None
+        if title and serial:
+            match_name = f"{title} [{serial}]"
+        elif title:
+            match_name = title
+        elif serial:
+            match_name = f"[{serial}]"
+
+        fname = filename.name if isinstance(filename, Path) else str(filename)
+        fpath = str(filename) if isinstance(filename, Path) else None
+
+        res = VerifyResult(
+            filename=fname,
+            status=status,
+            match_name=match_name,
+            crc=crc,
+            sha1=sha1,
+            md5=md5,
+            sha256=None,
+            full_path=fpath
+        )
+        per_file_cb(res)
+    except Exception:
+        pass
+
+def make_result_collector(per_file_cb, results_list):
+    """Create a collector function that feeds both a callback and a list."""
+    def _collector(d: Any, _cb=per_file_cb, _lst=results_list):
+        if callable(_cb):
+            try:
+                _cb(d)
+            except Exception:
+                pass
+        if isinstance(_lst, list):
+            _lst.append(d)
+    return _collector

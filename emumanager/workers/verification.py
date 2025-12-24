@@ -5,22 +5,7 @@ from dataclasses import dataclass, field
 
 from emumanager.verification import dat_parser, hasher
 from emumanager.workers.common import GuiLogger, MSG_CANCELLED, create_file_progress_cb
-
-@dataclass
-class VerifyResult:
-    filename: str
-    status: str  # "VERIFIED", "UNKNOWN", "MISMATCH"
-    match_name: Optional[str]
-    crc: Optional[str]
-    sha1: Optional[str]
-    md5: Optional[str] = None
-    sha256: Optional[str] = None
-    full_path: Optional[str] = None
-
-@dataclass
-class VerifyReport:
-    text: str
-    results: List[VerifyResult] = field(default_factory=list)
+from emumanager.common.models import VerifyResult, VerifyReport
 
 def worker_hash_verify(base_path: Path, args: Any, log_cb: Callable[[str], None], list_files_fn: Callable[[Path], list[Path]]) -> VerifyReport:
     """Worker function for DAT-based hash verification."""

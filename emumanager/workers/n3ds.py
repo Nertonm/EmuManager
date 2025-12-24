@@ -1,0 +1,198 @@
+from __future__ import annotations
+from pathlib import Path
+from typing import Any, Callable, Optional
+import re
+
+from emumanager.n3ds import metadata as n3ds_meta
+from emumanager.n3ds import database as n3ds_db
+from emumanager.workers.common import (
+    GuiLogger, MSG_CANCELLED, find_target_dir, calculate_file_hash, 
+    create_file_progress_cb, emit_verification_result, make_result_collector,
+    VerifyResult
+)
+
+MSG_N3DS_DIR_NOT_FOUND = "3DS ROMs directory not found."
+N3DS_SUBDIRS = ["roms/3ds", "3ds", "n3ds", "roms/n3ds"]
+
+def _process_n3ds_item(
+    item: Path, 
+    logger: GuiLogger, 
+    deep_verify: bool = False, 
+    progress_cb: Optional[Callable[[float], None]] = None,
+    per_file_cb: Optional[Callable[[VerifyResult], None]] = None
+) -> str:
+    """
+    Process a 3DS item (file) to extract serial and identify title.
+    Returns: 'found', 'unknown', or 'skip'.
+    """
+    meta = n3ds_meta.get_metadata(item)
+    serial = meta.get("serial")
+    
+    title = None
+    status = "unknown"
+    
+    if serial:
+        title = n3ds_db.db.get_title(serial)
+        if not title:
+            title = meta.get("title", "Unknown Title")
+        status = "found"
+    else:
+        title = meta.get("title", "Unknown")
+
+    md5_val = None
+    sha1_val = None
+
+    if deep_verify:
+        logger.info(f"Hashing {item.name}...")
+        md5_val = calculate_file_hash(item, "md5", progress_cb=progress_cb)
+        sha1_val = calculate_file_hash(item, "sha1", progress_cb=None)
+        
+    emit_verification_result(
+        per_file_cb=per_file_cb,
+        filename=item.name,
+        status="VERIFIED" if status == "found" else "UNKNOWN",
+        system="3DS",
+        serial=serial,
+        title=title,
+        md5=md5_val,
+        sha1=sha1_val
+    )
+    
+    info_str = f"[{serial or 'No Serial'}] {title}"
+    if md5_val:
+        info_str += f" | MD5: {md5_val}"
+        
+    logger.info(f"{info_str} -> {item.name}")
+    
+    return status
+
+def worker_n3ds_verify(base_path: Path, args: Any, log_cb: Callable[[str], None], list_files_fn: Callable[[Path], list[Path]]) -> str:
+    """Worker function for 3DS verification."""
+    logger = GuiLogger(log_cb)
+    
+    target_dir = find_target_dir(base_path, N3DS_SUBDIRS)
+    if not target_dir:
+        return MSG_N3DS_DIR_NOT_FOUND
+
+    # Try to load DB
+    db_path = base_path / "n3ds_db.csv"
+    if db_path.exists():
+        n3ds_db.db.load_from_csv(db_path)
+        logger.info(f"Loaded 3DS database from {db_path}")
+    
+    logger.info(f"Scanning 3DS content in {target_dir}...")
+    
+    found = 0
+    unknown = 0
+    
+    files = list_files_fn(target_dir)
+    total = len(files)
+    progress_cb = getattr(args, "progress_callback", None)
+    cancel_event = getattr(args, "cancel_event", None)
+    deep_verify = getattr(args, "deep_verify", False)
+
+    # Setup result collector
+    results_list = getattr(args, "results", None)
+    per_file_cb = make_result_collector(results_list, getattr(args, "on_result", None))
+
+    for i, f in enumerate(files):
+        if cancel_event and cancel_event.is_set():
+            logger.warning(MSG_CANCELLED)
+            break
+            
+        # Calculate progress range for this file
+        start_prog = i / total
+        file_weight = 1.0 / total
+        
+        file_prog_cb = create_file_progress_cb(progress_cb, start_prog, file_weight, f.name)
+
+        if progress_cb:
+            progress_cb(start_prog, f"Verifying {f.name}...")
+
+        if f.suffix.lower() in (".3ds", ".cia", ".3dz", ".cci"):
+            res = _process_n3ds_item(f, logger, deep_verify=deep_verify, progress_cb=file_prog_cb, per_file_cb=per_file_cb)
+            if res == "found":
+                found += 1
+            elif res == "unknown":
+                unknown += 1
+            
+    if progress_cb:
+        progress_cb(1.0, "3DS Verification complete")
+
+    return f"Scan complete. Identified: {found}, Unknown: {unknown}"
+
+def _organize_n3ds_item(item: Path, args: Any, logger: GuiLogger) -> bool:
+    meta = n3ds_meta.get_metadata(item)
+    serial = meta.get("serial")
+    
+    if not serial:
+        return False
+        
+    db_title = n3ds_db.db.get_title(serial)
+    title = db_title if db_title else "Unknown"
+        
+    # Sanitize
+    clean_title = re.sub(r'[<>:"/\\|?*]', '', title).strip()
+    new_name = f"{clean_title} [{serial}]"
+    
+    if item.is_file():
+        new_name += item.suffix
+        
+    new_path = item.parent / new_name
+    
+    if item.name == new_name:
+        return False
+        
+    if new_path.exists():
+        logger.warning(f"Target already exists: {new_name}")
+        return False
+        
+    try:
+        if not getattr(args, "dry_run", False):
+            item.rename(new_path)
+        logger.info(f"Renamed: {item.name} -> {new_name}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to rename {item.name}: {e}")
+        return False
+
+def worker_n3ds_organize(base_path: Path, args: Any, log_cb: Callable[[str], None], list_files_fn: Callable[[Path], list[Path]]) -> str:
+    """Worker function for 3DS organization."""
+    logger = GuiLogger(log_cb)
+    
+    target_dir = find_target_dir(base_path, N3DS_SUBDIRS)
+    if not target_dir:
+        return MSG_N3DS_DIR_NOT_FOUND
+
+    # Try to load DB
+    db_path = base_path / "n3ds_db.csv"
+    if db_path.exists():
+        n3ds_db.db.load_from_csv(db_path)
+        logger.info(f"Loaded 3DS database from {db_path}")
+    
+    renamed = 0
+    skipped = 0
+    
+    files = list_files_fn(target_dir)
+    total = len(files)
+    progress_cb = getattr(args, "progress_callback", None)
+    cancel_event = getattr(args, "cancel_event", None)
+    
+    for i, f in enumerate(files):
+        if cancel_event and cancel_event.is_set():
+            logger.warning(MSG_CANCELLED)
+            break
+            
+        if progress_cb:
+            progress_cb(i / total, f"Organizing {f.name}...")
+            
+        if f.suffix.lower() in (".3ds", ".cia", ".3dz", ".cci"):
+            if _organize_n3ds_item(f, args, logger):
+                renamed += 1
+            else:
+                skipped += 1
+                
+    if progress_cb:
+        progress_cb(1.0, "3DS Organization complete")
+        
+    return f"Organization complete. Renamed: {renamed}, Skipped: {skipped}"

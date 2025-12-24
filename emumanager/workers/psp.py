@@ -5,12 +5,15 @@ import re
 
 from emumanager.psp import metadata as psp_meta
 from emumanager.psp import database as psp_db
-from emumanager.workers.common import GuiLogger, MSG_CANCELLED, calculate_file_hash, create_file_progress_cb
+from emumanager.workers.common import (
+    GuiLogger, MSG_CANCELLED, calculate_file_hash, create_file_progress_cb,
+    emit_verification_result, make_result_collector, VerifyResult
+)
 from emumanager.converters import psp_converter
 
 MSG_PSP_DIR_NOT_FOUND = "PSP ROMs directory not found."
 
-def _process_psp_item(item: Path, logger: GuiLogger, deep_verify: bool = False, progress_cb: Optional[Callable[[float], None]] = None) -> str:
+def _process_psp_item(item: Path, logger: GuiLogger, deep_verify: bool = False, progress_cb: Optional[Callable[[float], None]] = None, per_file_cb: Optional[Callable[[VerifyResult], None]] = None) -> str:
     """
     Process a PSP item (file) to extract serial and identify title.
     Returns: 'found', 'unknown', or 'skip'.
@@ -18,24 +21,43 @@ def _process_psp_item(item: Path, logger: GuiLogger, deep_verify: bool = False, 
     meta = psp_meta.get_metadata(item)
     serial = meta.get("serial")
     
-    info_str = ""
+    title = None
+    status = "unknown"
+    
     if serial:
         title = psp_db.db.get_title(serial)
-        if title:
-            info_str = f"[{serial}] {title}"
-        else:
-            info_str = f"[{serial}] Unknown Title"
+        if not title:
+            title = meta.get("title", "Unknown Title")
+        status = "found"
     else:
-        info_str = "Unknown Serial"
+        title = meta.get("title", "Unknown")
+
+    md5_val = None
+    sha1_val = None
 
     if deep_verify:
         logger.info(f"Hashing {item.name}...")
-        md5 = calculate_file_hash(item, "md5", progress_cb=progress_cb)
-        info_str += f" | MD5: {md5}"
+        md5_val = calculate_file_hash(item, "md5", progress_cb=progress_cb)
+        sha1_val = calculate_file_hash(item, "sha1", progress_cb=None)
+        
+    emit_verification_result(
+        per_file_cb=per_file_cb,
+        filename=item.name,
+        status="VERIFIED" if status == "found" else "UNKNOWN",
+        system="PSP",
+        serial=serial,
+        title=title,
+        md5=md5_val,
+        sha1=sha1_val
+    )
+    
+    info_str = f"[{serial or 'No Serial'}] {title}"
+    if md5_val:
+        info_str += f" | MD5: {md5_val}"
         
     logger.info(f"{info_str} -> {item.name}")
     
-    return "found" if serial else "unknown"
+    return status
 
 def _resolve_psp_target(base_path: Path) -> Optional[Path]:
     candidates = [
@@ -71,6 +93,10 @@ def worker_psp_verify(base_path: Path, args: Any, log_cb: Callable[[str], None],
     cancel_event = getattr(args, "cancel_event", None)
     deep_verify = getattr(args, "deep_verify", False)
 
+    # Setup result collector
+    results_list = getattr(args, "results", None)
+    per_file_cb = make_result_collector(results_list, getattr(args, "on_result", None))
+
     for i, f in enumerate(files):
         if cancel_event and cancel_event.is_set():
             logger.warning(MSG_CANCELLED)
@@ -86,7 +112,7 @@ def worker_psp_verify(base_path: Path, args: Any, log_cb: Callable[[str], None],
             progress_cb(start_prog, f"Verifying {f.name}...")
 
         if f.suffix.lower() in (".iso", ".cso", ".pbp"):
-            res = _process_psp_item(f, logger, deep_verify=deep_verify, progress_cb=file_prog_cb)
+            res = _process_psp_item(f, logger, deep_verify=deep_verify, progress_cb=file_prog_cb, per_file_cb=per_file_cb)
             if res == "found":
                 found += 1
             elif res == "unknown":

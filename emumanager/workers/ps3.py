@@ -5,13 +5,17 @@ import re
 
 from emumanager.ps3 import metadata as ps3_meta
 from emumanager.ps3 import database as ps3_db
-from emumanager.workers.common import GuiLogger, MSG_CANCELLED, find_target_dir, calculate_file_hash, create_file_progress_cb
+from emumanager.workers.common import (
+    GuiLogger, MSG_CANCELLED, find_target_dir, calculate_file_hash, 
+    create_file_progress_cb, emit_verification_result, make_result_collector,
+    VerifyResult
+)
 
 PARAM_SFO = "PARAM.SFO"
 MSG_PS3_DIR_NOT_FOUND = "PS3 ROMs directory not found."
 PS3_SUBDIRS = ["roms/ps3", "ps3"]
 
-def _process_ps3_item(item: Path, logger: GuiLogger, deep_verify: bool = False, progress_cb: Optional[Callable[[float], None]] = None) -> str:
+def _process_ps3_item(item: Path, logger: GuiLogger, deep_verify: bool = False, progress_cb: Optional[Callable[[float], None]] = None, per_file_cb: Optional[Callable[[VerifyResult], None]] = None) -> str:
     """
     Process a PS3 item (file or folder) to extract serial and identify title.
     Returns: 'found', 'unknown', or 'skip'.
@@ -19,26 +23,45 @@ def _process_ps3_item(item: Path, logger: GuiLogger, deep_verify: bool = False, 
     meta = ps3_meta.get_metadata(item)
     serial = meta.get("serial")
     
-    info_str = ""
+    title = None
+    status = "unknown"
+    
     if serial:
         title = ps3_db.db.get_title(serial)
-        if title:
-            info_str = f"[{serial}] {title}"
-        else:
-            info_str = f"[{serial}] Unknown Title"
+        if not title:
+            title = meta.get("title", "Unknown Title")
+        status = "found"
     else:
-        info_str = "Unknown Serial"
+        title = meta.get("title", "Unknown")
+
+    md5_val = None
+    sha1_val = None
 
     if deep_verify and item.is_file():
         logger.info(f"Hashing {item.name}...")
-        md5 = calculate_file_hash(item, "md5", progress_cb=progress_cb)
-        info_str += f" | MD5: {md5}"
+        md5_val = calculate_file_hash(item, "md5", progress_cb=progress_cb)
+        sha1_val = calculate_file_hash(item, "sha1", progress_cb=None)
+    
+    emit_verification_result(
+        per_file_cb=per_file_cb,
+        filename=item.name,
+        status="VERIFIED" if status == "found" else "UNKNOWN",
+        system="PS3",
+        serial=serial,
+        title=title,
+        md5=md5_val,
+        sha1=sha1_val
+    )
+    
+    info_str = f"[{serial or 'No Serial'}] {title}"
+    if md5_val:
+        info_str += f" | MD5: {md5_val}"
     
     logger.info(f"{info_str} -> {item.name}")
     
-    return "found" if serial else "unknown"
+    return status
 
-def _scan_ps3_folders(dirs: list[Path], logger: GuiLogger, args: Any) -> tuple[int, int]:
+def _scan_ps3_folders(dirs: list[Path], logger: GuiLogger, args: Any, per_file_cb: Optional[Callable[[VerifyResult], None]] = None) -> tuple[int, int]:
     found = 0
     unknown = 0
     cancel_event = getattr(args, "cancel_event", None)
@@ -49,14 +72,14 @@ def _scan_ps3_folders(dirs: list[Path], logger: GuiLogger, args: Any) -> tuple[i
             
         # Check if it's a game folder (has PARAM.SFO or PS3_GAME)
         if (d / PARAM_SFO).exists() or (d / "PS3_GAME" / PARAM_SFO).exists():
-            res = _process_ps3_item(d, logger, deep_verify=False) # Don't hash folders
+            res = _process_ps3_item(d, logger, deep_verify=False, per_file_cb=per_file_cb) # Don't hash folders
             if res == "found":
                 found += 1
             elif res == "unknown":
                 unknown += 1
     return found, unknown
 
-def _scan_ps3_files(files: list[Path], logger: GuiLogger, args: Any, deep_verify: bool, progress_cb: Optional[Callable[[float, str], None]]) -> tuple[int, int]:
+def _scan_ps3_files(files: list[Path], logger: GuiLogger, args: Any, deep_verify: bool, progress_cb: Optional[Callable[[float, str], None]], per_file_cb: Optional[Callable[[VerifyResult], None]] = None) -> tuple[int, int]:
     found = 0
     unknown = 0
     total_files = len(files)
@@ -77,7 +100,7 @@ def _scan_ps3_files(files: list[Path], logger: GuiLogger, args: Any, deep_verify
             progress_cb(start_prog, f"Verifying {f.name}...")
             
         if f.suffix.lower() in (".iso", ".pkg"):
-            res = _process_ps3_item(f, logger, deep_verify=deep_verify, progress_cb=file_prog_cb)
+            res = _process_ps3_item(f, logger, deep_verify=deep_verify, progress_cb=file_prog_cb, per_file_cb=per_file_cb)
             if res == "found":
                 found += 1
             elif res == "unknown":
@@ -104,13 +127,17 @@ def worker_ps3_verify(base_path: Path, args: Any, log_cb: Callable[[str], None],
     progress_cb = getattr(args, "progress_callback", None)
     deep_verify = getattr(args, "deep_verify", False)
     
+    # Setup result collector
+    results_list = getattr(args, "results", None)
+    per_file_cb = make_result_collector(results_list, getattr(args, "on_result", None))
+    
     # Scan files (ISOs, PKGs)
-    found, unknown = _scan_ps3_files(files, logger, args, deep_verify, progress_cb)
+    found, unknown = _scan_ps3_files(files, logger, args, deep_verify, progress_cb, per_file_cb)
 
     # Scan folders (JB format)
     if list_dirs_fn:
         dirs = list_dirs_fn(target_dir)
-        f_found, f_unknown = _scan_ps3_folders(dirs, logger, args)
+        f_found, f_unknown = _scan_ps3_folders(dirs, logger, args, per_file_cb)
         found += f_found
         unknown += f_unknown
             

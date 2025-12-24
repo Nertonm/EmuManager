@@ -12,6 +12,7 @@ from datetime import datetime
 import threading
 
 from .gui_ui import Ui_MainWindow
+from .common.models import VerifyResult
 from .gui_workers import (
     worker_organize,
     worker_health_check,
@@ -24,11 +25,16 @@ from .gui_workers import (
     worker_ps2_convert,
     worker_ps2_verify,
     worker_ps2_organize,
+    worker_psx_convert,
+    worker_psx_verify,
+    worker_psx_organize,
     worker_ps3_verify,
     worker_ps3_organize,
     worker_psp_verify,
     worker_psp_organize,
     worker_psp_compress,
+    worker_n3ds_verify,
+    worker_n3ds_organize,
     worker_dolphin_convert,
     worker_dolphin_verify,
     worker_dolphin_organize,
@@ -178,6 +184,11 @@ class MainWindowBase:
         self.ui.btn_switch_compress.clicked.connect(self.on_switch_compress)
         self.ui.btn_switch_decompress.clicked.connect(self.on_switch_decompress)
         
+        # Tools Tab - PS1
+        self.ui.btn_psx_convert.clicked.connect(self.on_psx_convert)
+        self.ui.btn_psx_verify.clicked.connect(self.on_psx_verify)
+        self.ui.btn_psx_organize.clicked.connect(self.on_psx_organize)
+
         # Tools Tab - PS2
         self.ui.btn_ps2_convert.clicked.connect(self.on_ps2_convert)
         self.ui.btn_ps2_verify.clicked.connect(self.on_ps2_verify)
@@ -351,11 +362,20 @@ class MainWindowBase:
         self.act_ps2_convert = qt.QAction("PS2: Convert to CHD", self.window)
         self.act_ps2_convert.triggered.connect(self.on_ps2_convert)
 
+        self.act_psx_convert = qt.QAction("PS1: Convert to CHD", self.window)
+        self.act_psx_convert.triggered.connect(self.on_psx_convert)
+
         self.act_ps2_verify = qt.QAction("PS2: Verify", self.window)
         self.act_ps2_verify.triggered.connect(self.on_ps2_verify)
 
+        self.act_psx_verify = qt.QAction("PS1: Verify", self.window)
+        self.act_psx_verify.triggered.connect(self.on_psx_verify)
+
         self.act_ps2_organize = qt.QAction("PS2: Organize", self.window)
         self.act_ps2_organize.triggered.connect(self.on_ps2_organize)
+
+        self.act_psx_organize = qt.QAction("PS1: Organize", self.window)
+        self.act_psx_organize.triggered.connect(self.on_psx_organize)
 
         self.act_ps3_verify = qt.QAction("PS3: Verify", self.window)
         self.act_ps3_verify.triggered.connect(self.on_ps3_verify)
@@ -371,6 +391,12 @@ class MainWindowBase:
 
         self.act_psp_compress = qt.QAction("PSP: Compress ISO->CSO", self.window)
         self.act_psp_compress.triggered.connect(self.on_psp_compress)
+
+        self.act_n3ds_verify = qt.QAction("3DS: Verify", self.window)
+        self.act_n3ds_verify.triggered.connect(self.on_n3ds_verify)
+
+        self.act_n3ds_organize = qt.QAction("3DS: Organize", self.window)
+        self.act_n3ds_organize.triggered.connect(self.on_n3ds_organize)
 
         self.act_dol_convert = qt.QAction("GC/Wii: Convert to RVZ", self.window)
         self.act_dol_convert.triggered.connect(self.on_dolphin_convert)
@@ -445,6 +471,10 @@ class MainWindowBase:
                 m_tools.addAction(self.act_switch_compress)
                 m_tools.addAction(self.act_switch_decompress)
                 m_tools.addSeparator()
+                m_tools.addAction(self.act_psx_convert)
+                m_tools.addAction(self.act_psx_verify)
+                m_tools.addAction(self.act_psx_organize)
+                m_tools.addSeparator()
                 m_tools.addAction(self.act_ps2_convert)
                 m_tools.addAction(self.act_ps2_verify)
                 m_tools.addAction(self.act_ps2_organize)
@@ -455,6 +485,9 @@ class MainWindowBase:
                 m_tools.addAction(self.act_psp_verify)
                 m_tools.addAction(self.act_psp_organize)
                 m_tools.addAction(self.act_psp_compress)
+                m_tools.addSeparator()
+                m_tools.addAction(self.act_n3ds_verify)
+                m_tools.addAction(self.act_n3ds_organize)
                 m_tools.addSeparator()
                 m_tools.addAction(self.act_dol_convert)
                 m_tools.addAction(self.act_dol_verify)
@@ -1542,12 +1575,31 @@ class MainWindowBase:
         self._set_ui_enabled(False)
         self._run_in_background(_work, _done)
 
+    def on_psx_convert(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+        args = self._get_common_args()
+        def _work():
+            return worker_psx_convert(
+                self._last_base,
+                args,
+                self.log_msg
+            )
+        def _done(res):
+            self.log_msg(str(res))
+            self._set_ui_enabled(True)
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
     def on_ps2_verify(self):
         if not self._last_base:
             self.log_msg(MSG_SELECT_BASE)
             return
         
         args = self._get_common_args()
+        results_holder: list = []
+        args.results = results_holder
         
         def _work():
             return worker_ps2_verify(
@@ -1558,9 +1610,41 @@ class MainWindowBase:
             )
             
         def _done(res):
+            try:
+                self._last_verify_results = results_holder
+                self.on_verification_filter_changed()
+            except Exception:
+                pass
             self.log_msg(str(res))
             self._set_ui_enabled(True)
             
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
+    def on_psx_verify(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+        args = self._get_common_args()
+        # Collect per-file results for GUI table
+        results_holder: list = []
+        args.results = results_holder
+        def _work():
+            return worker_psx_verify(
+                self._last_base,
+                args,
+                self.log_msg,
+                self._get_list_files_fn()
+            )
+        def _done(res):
+            # res is a summary string; populate table from collected per-file results
+            try:
+                self._last_verify_results = results_holder
+                self.on_verification_filter_changed()
+            except Exception:
+                pass
+            self.log_msg(str(res))
+            self._set_ui_enabled(True)
         self._set_ui_enabled(False)
         self._run_in_background(_work, _done)
 
@@ -1570,6 +1654,8 @@ class MainWindowBase:
             return
         
         args = self._get_common_args()
+        results_holder: list = []
+        args.results = results_holder
         
         def _work():
             return worker_ps3_verify(
@@ -1581,6 +1667,11 @@ class MainWindowBase:
             )
             
         def _done(res):
+            try:
+                self._last_verify_results = results_holder
+                self.on_verification_filter_changed()
+            except Exception:
+                pass
             self.log_msg(str(res))
             self._set_ui_enabled(True)
             
@@ -1616,6 +1707,8 @@ class MainWindowBase:
             return
         
         args = self._get_common_args()
+        results_holder: list = []
+        args.results = results_holder
         
         def _work():
             return worker_psp_verify(
@@ -1626,6 +1719,11 @@ class MainWindowBase:
             )
             
         def _done(res):
+            try:
+                self._last_verify_results = results_holder
+                self.on_verification_filter_changed()
+            except Exception:
+                pass
             self.log_msg(str(res))
             self._set_ui_enabled(True)
             
@@ -1641,6 +1739,57 @@ class MainWindowBase:
         
         def _work():
             return worker_psp_organize(
+                self._last_base,
+                args,
+                self.log_msg,
+                self._get_list_files_fn()
+            )
+            
+        def _done(res):
+            self.log_msg(str(res))
+            self._set_ui_enabled(True)
+            
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
+    def on_n3ds_verify(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+        
+        args = self._get_common_args()
+        results_holder: list = []
+        args.results = results_holder
+        
+        def _work():
+            return worker_n3ds_verify(
+                self._last_base,
+                args,
+                self.log_msg,
+                self._get_list_files_fn()
+            )
+            
+        def _done(res):
+            try:
+                self._last_verify_results = results_holder
+                self.on_verification_filter_changed()
+            except Exception:
+                pass
+            self.log_msg(str(res))
+            self._set_ui_enabled(True)
+            
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
+    def on_n3ds_organize(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+        
+        args = self._get_common_args()
+        
+        def _work():
+            return worker_n3ds_organize(
                 self._last_base,
                 args,
                 self.log_msg,
@@ -1682,6 +1831,8 @@ class MainWindowBase:
             return
         
         args = self._get_common_args()
+        results_holder: list = []
+        args.results = results_holder
         
         def _work():
             return worker_dolphin_verify(
@@ -1692,6 +1843,11 @@ class MainWindowBase:
             )
             
         def _done(res):
+            try:
+                self._last_verify_results = results_holder
+                self.on_verification_filter_changed()
+            except Exception:
+                pass
             self.log_msg(str(res))
             self._set_ui_enabled(True)
             
@@ -1739,6 +1895,24 @@ class MainWindowBase:
             self.log_msg(str(res))
             self._set_ui_enabled(True)
             
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
+    def on_psx_organize(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+        args = self._get_common_args()
+        def _work():
+            return worker_psx_organize(
+                self._last_base,
+                args,
+                self.log_msg,
+                self._get_list_files_fn()
+            )
+        def _done(res):
+            self.log_msg(str(res))
+            self._set_ui_enabled(True)
         self._set_ui_enabled(False)
         self._run_in_background(_work, _done)
 
