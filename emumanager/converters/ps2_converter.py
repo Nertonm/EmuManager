@@ -61,18 +61,15 @@ def _finalize_cleanup(cso_path: Path, iso_path: Path, chd_path: Path, backup_dir
     logger.info("Finalizing (backup=%s remove=%s)", backup_dir, remove_original)
     if dry_run:
         return
+    from emumanager.common.fileops import safe_unlink
     try:
-        try:
-            iso_path.unlink(missing_ok=True)
-        except TypeError:
-            if iso_path.exists():
-                iso_path.unlink()
+        safe_unlink(iso_path, logger)
     except Exception:
         logger.debug("Failed to remove ISO %s", iso_path)
 
     if remove_original:
         try:
-            cso_path.unlink()
+            safe_unlink(cso_path, logger)
         except Exception:
             logger.debug("Failed to remove original CSO %s", cso_path)
     else:

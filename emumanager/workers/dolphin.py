@@ -31,8 +31,9 @@ def _convert_dolphin_file(f: Path, converter: DolphinConverter, args: Any, logge
     
     if success and getattr(args, "rm_originals", False):
         try:
-            f.unlink()
-            logger.info(f"Deleted original: {f.name}")
+            from emumanager.common.fileops import safe_unlink
+
+            safe_unlink(f, logger)
         except Exception as e:
             logger.error(f"Failed to delete {f.name}: {e}")
             

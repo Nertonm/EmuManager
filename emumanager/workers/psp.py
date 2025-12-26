@@ -138,8 +138,9 @@ def _compress_psp_file(f: Path, args: Any, logger: GuiLogger) -> bool:
         logger.info(f"Compressed: {f.name}")
         if getattr(args, "rm_originals", False) and not dry_run:
             try:
-                f.unlink()
-                logger.info(f"Removed original: {f.name}")
+                from emumanager.common.fileops import safe_unlink
+
+                safe_unlink(f, logger)
             except Exception as e:
                 logger.error(f"Failed to remove original: {e}")
         return True

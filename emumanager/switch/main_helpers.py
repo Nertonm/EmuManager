@@ -287,7 +287,7 @@ def process_one_file(fpath: Path, ctx: dict):
         else:
             return make_catalog_entry(clean_name, meta, fpath2.suffix, target_path, region), "ok"
     except Exception:
-        logger.exception("Erro ao processar arquivo %s", fpath)
+        logger.exception("Error while processing file %s", fpath)
         return None, "error"
 
 

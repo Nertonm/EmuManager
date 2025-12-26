@@ -103,8 +103,11 @@ def _clean_junk_files(files: list[Path], args: Any, logger: GuiLogger, progress_
         if f.suffix.lower() in junk_exts:
             try:
                 if not getattr(args, "dry_run", False):
-                    f.unlink()
-                logger.info(f"Deleted junk file: {f.name}")
+                    from emumanager.common.fileops import safe_unlink
+
+                    safe_unlink(f, logger)
+                else:
+                    logger.info(f"[DRY-RUN] Would delete junk file: {f.name}")
                 count += 1
             except Exception as e:
                 logger.error(f"Failed to delete {f.name}: {e}")

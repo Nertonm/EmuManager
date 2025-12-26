@@ -19,7 +19,7 @@ import hashlib
 import logging
 from logging.handlers import RotatingFileHandler
 from emumanager.switch import meta_extractor, meta_parser
-from emumanager.logging_cfg import Col
+from emumanager.logging_cfg import Col, get_fileops_logger
 from emumanager.verification.hasher import get_file_hash
 
 # Keep original reference so test monkeypatches (which replace subprocess.run) can be detected
@@ -576,11 +576,20 @@ def _handle_new_compression(filepath, args, tool_nsz, roms_dir, cmd_timeout, too
                     if ok:
                         try:
                             filepath.unlink()
-                            logger.info("Original removido após compressão bem-sucedida: %s", filepath.name)
+                            logger.info(
+                                "Original removido após compressão bem-sucedida: %s",
+                                filepath.name,
+                            )
+                            logger.debug(
+                                "Original removido (caminho completo): %s", filepath
+                            )
                         except Exception:
-                            logger.exception("Falha ao remover arquivo original depois de comprimir: %s", filepath)
+                            logger.exception(
+                                "Falha ao remover arquivo original depois de comprimir: %s",
+                                filepath,
+                            )
                     else:
-                        logger.warning("Arquivo comprimido gerado, mas não passou na verificação: %s", compressed_candidate)
+                        logger.warning("Compressed file generated but failed verification: %s", compressed_candidate)
                         if getattr(args, "keep_on_failure", False):
                             try:
                                 qdir = args.quarantine_dir
@@ -596,7 +605,7 @@ def _handle_new_compression(filepath, args, tool_nsz, roms_dir, cmd_timeout, too
                             except Exception:
                                 logger.exception("Failed moving failed compressed artifact to quarantine: %s", compressed_candidate)
             except Exception:
-                logger.exception("Erro ao validar/remover original para %s", filepath)
+                logger.exception("Error while validating/removing original for %s", filepath)
 
         return compressed_candidate or filepath.with_suffix(".nsz")
     except Exception as e:
@@ -630,8 +639,11 @@ def safe_move(source, dest, *, args, logger):
     # thin wrapper delegating to the testable implementation in emumanager.common.fileops
     try:
         from emumanager.common.fileops import safe_move as _safe_move_impl
+        # Prefer dedicated fileops logger for audit; fall back to provided logger
+        base_dir = getattr(args, "roms_dir", None) or getattr(args, "base_path", None) or None
+        fileops_logger = get_fileops_logger(base_dir) if base_dir else logger
 
-        return _safe_move_impl(source, dest, args=args, get_file_hash=get_file_hash, logger=logger)
+        return _safe_move_impl(source, dest, args=args, get_file_hash=get_file_hash, logger=fileops_logger)
     except Exception:
         # Fallback: attempt a simple move
         try:
@@ -671,24 +683,24 @@ def main(argv: Optional[List[str]] = None):
             prof = args.compression_profile
             if prof in COMPRESSION_PROFILE_LEVELS:
                 args.level = COMPRESSION_PROFILE_LEVELS[prof]
-                logger.info("Perfil de compressão '%s' selecionado -> nível %s", prof, args.level)
+                logger.info("Compression profile '%s' selected -> level %s", prof, args.level)
             else:
-                logger.warning("Perfil de compressão desconhecido '%s', mantendo --level=%s", prof, args.level)
+                logger.warning("Unknown compression profile '%s', keeping --level=%s", prof, args.level)
     except Exception:
-        logger.exception("Erro ao aplicar compression_profile")
+        logger.exception("Error while applying compression_profile")
 
     # Validate numeric level bounds (1-22)
     try:
         lvl = int(args.level)
         if lvl < 1:
-            logger.warning("Nivel de compressao %s muito baixo; ajustando para 1", lvl)
+            logger.warning("Compression level %s too low; adjusting to 1", lvl)
             lvl = 1
         if lvl > 22:
-            logger.warning("Nivel de compressao %s acima do permitido; ajustando para 22", lvl)
+            logger.warning("Compression level %s above allowed; adjusting to 22", lvl)
             lvl = 22
         args.level = lvl
     except Exception:
-        logger.warning("Nivel de compressao inválido; usando 1")
+        logger.warning("Invalid compression level; using 1")
         args.level = 1
 
     if args.compress and args.decompress:
@@ -713,8 +725,8 @@ def main(argv: Optional[List[str]] = None):
     IS_NSTOOL = env["IS_NSTOOL"]
 
     setup_logging(args.log_file, args.verbose)
-    logger.info("Iniciando Switch Organizer")
-    logger.info("Dir: %s", ROMS_DIR)
+    logger.info("Starting Switch Organizer")
+    logger.info("Directory: %s", ROMS_DIR)
 
     files = [
         f
@@ -806,7 +818,9 @@ def main(argv: Optional[List[str]] = None):
         for junk in ROMS_DIR.rglob("*"):
             if junk.suffix.lower() in {".txt", ".nfo", ".url", ".lnk", ".website"}:
                 try:
-                    junk.unlink()
+                    from emumanager.common.fileops import safe_unlink
+
+                    safe_unlink(junk, logger)
                 except Exception as e:
                     logger.debug(f"failed to remove junk {junk}: {e}")
 
@@ -835,5 +849,5 @@ if __name__ == "__main__":
         # argparse or explicit sys.exit calls
         raise
     except Exception:
-        logger.exception("Fatal error inesperado ao rodar o script")
+        logger.exception("Unexpected fatal error while running script")
         sys.exit(2)

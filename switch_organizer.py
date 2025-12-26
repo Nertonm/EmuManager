@@ -1005,8 +1005,9 @@ def _handle_new_compression(filepath):
                         ok = True
                     if ok:
                         try:
-                            filepath.unlink()
-                            logger.info("Original removido após compressão bem-sucedida: %s", filepath.name)
+                            from emumanager.common.fileops import safe_unlink
+
+                            safe_unlink(filepath, logger)
                         except Exception:
                             logger.exception("Falha ao remover arquivo original depois de comprimir: %s", filepath)
                     else:

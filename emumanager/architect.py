@@ -112,7 +112,7 @@ def setup_retro(
         "Mantenha organizado por pastas alfabéticas se tiver muitos jogos."
     )
     create_readme(path, name, formats, wiki, bios_status, notas)
-    logger.info("[Retro]   %s :: Configurado.", name)
+    logger.info("[Retro]   %s :: Configured.", name)
     return sys
 
 
@@ -135,7 +135,7 @@ def setup_moderno(
             (path / sub / "# Favoritos").mkdir(parents=True, exist_ok=True)
 
     create_readme(path, name, formats, wiki, bios_status, details)
-    logger.info("[Moderno] %s :: Configurado.", name)
+    logger.info("[Modern]  %s :: Configured.", name)
     return sys
 
 
@@ -155,7 +155,7 @@ def setup_arcade(
         "3. Use sets 'Non-Merged' para facilitar o gerenciamento individual."
     )
     create_readme(path, name, ".zip (Full Non-Merged)", "https://docs.mamedev.org/", bios_status, notas)
-    logger.info("[Arcade]  %s :: Configurado.", name)
+    logger.info("[Arcade]  %s :: Configured.", name)
     return sys
 
 
@@ -178,8 +178,8 @@ def build_acervo(base_dir: Path, dry_run: bool, logger: logging.Logger):
     if not dry_run:
         log_file.write_text(f"Início da criação: {dt}\n", encoding="utf-8")
 
-    logger.info("Local de Instalação: %s", base_dir)
-    logger.info("Data da Build: %s", dt)
+    logger.info("Install location: %s", base_dir)
+    logger.info("Build date: %s", dt)
 
     # BIOS folder and readme
     bios_dir = base_dir / "bios"
@@ -214,7 +214,7 @@ Arcade:
     if not dry_run:
         leia_me.write_text(leia_text.strip() + "\n", encoding="utf-8")
 
-    logger.info("BIOS Folder :: Configurado.")
+    logger.info("BIOS folder :: Configured.")
 
     # --- NINTENDO ---
     setup_retro(base_dir, "nes", "Nintendo (NES)", ".nes, .zip", "https://emulation.gametechwiki.com/index.php/Nintendo_Entertainment_System_emulators", "Não", logger)
@@ -254,10 +254,10 @@ Arcade:
     setup_arcade(base_dir, "fbneo", "Final Burn Neo", "Não (Incluído nos sets)", logger)
 
     # Final notes
-    logger.info("CONSTRUÇÃO DO ACERVO CONCLUÍDA!")
+    logger.info("COLLECTION BUILD COMPLETE!")
     if not dry_run:
-        logger.info("Log detalhado salvo em: %s", log_file)
-    logger.info("Próximos passos: preencher /bios, copiar jogos e ler _INFO_TECNICA.txt de cada sistema.")
+        logger.info("Detailed log saved to: %s", log_file)
+    logger.info("Next steps: fill /bios, copy games and read _INFO_TECNICA.txt for each system.")
 
 
 def _get_logger(base_dir: Path) -> logging.Logger:

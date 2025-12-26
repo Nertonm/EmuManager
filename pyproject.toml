@@ -20,9 +20,14 @@ emumanager-gui = "emumanager.gui:main"
 [project.optional-dependencies]
 gui = ["pyqt6"]
 
-# Helpful extras for contributors
-test = ["pytest"]
-dev = ["ruff", "pytest", "build"]
+# Helpful extras for contributors (use with: pip install ".[dev]" or ".[test]")
+test = ["pytest", "pytest-cov"]
+dev = [
+	"ruff",
+	"pytest",
+	"pytest-cov",
+	"build",
+]
 
 [tool.ruff]
 # Opinionated but permissive defaults for repository linting

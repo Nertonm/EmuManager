@@ -196,8 +196,9 @@ def _compress_single_file(f: Path, tool_nsz: str, env: dict, args: Any, run_wrap
         if getattr(args, "rm_originals", False) and res != f:
             try:
                 if not getattr(args, "dry_run", False):
-                    f.unlink()
-                    logger.info(f"Removed original: {f.name}")
+                    from emumanager.common.fileops import safe_unlink
+
+                    safe_unlink(f, logger)
             except Exception as e:
                 logger.error(f"Failed to remove original {f.name}: {e}")
         return "success"
