@@ -41,23 +41,33 @@ class ConversionResult:
     message: str
 
 
-def _decompress_to_iso(cso_path: Path, iso_path: Path, maxcso: Path, dry_run: bool, timeout: int) -> bool:
+def _decompress_to_iso(cso_path: Path, iso_path: Path, maxcso: Path, dry_run: bool, timeout: int, verbose: bool = False) -> bool:
     logger.info("Decompressing %s -> %s", cso_path.name, iso_path.name)
     if dry_run:
         return True
-    run_cmd([str(maxcso), "--decompress", str(cso_path), "-o", str(iso_path)], timeout=timeout, check=True)
+    res = run_cmd([str(maxcso), "--decompress", str(cso_path), "-o", str(iso_path)], timeout=timeout, check=True)
+    if verbose:
+        if res.stdout:
+            logger.info("maxcso stdout:\n%s", res.stdout)
+        if res.stderr:
+            logger.info("maxcso stderr:\n%s", res.stderr)
     return iso_path.exists()
 
 
-def _convert_iso_to_chd(iso_path: Path, chd_path: Path, chdman: Path, dry_run: bool, timeout: int) -> bool:
+def _convert_iso_to_chd(iso_path: Path, chd_path: Path, chdman: Path, dry_run: bool, timeout: int, verbose: bool = False) -> bool:
     logger.info("Converting %s -> %s", iso_path.name, chd_path.name)
     if dry_run:
         return True
-    run_cmd([str(chdman), "createdvd", "-i", str(iso_path), "-o", str(chd_path)], timeout=timeout, check=True)
+    res = run_cmd([str(chdman), "createdvd", "-i", str(iso_path), "-o", str(chd_path)], timeout=timeout, check=True)
+    if verbose:
+        if res.stdout:
+            logger.info("chdman stdout:\n%s", res.stdout)
+        if res.stderr:
+            logger.info("chdman stderr:\n%s", res.stderr)
     return chd_path.exists()
 
 
-def _finalize_cleanup(cso_path: Path, iso_path: Path, chd_path: Path, backup_dir: Path, dry_run: bool, remove_original: bool) -> None:
+def _finalize_cleanup(cso_path: Path, iso_path: Path, backup_dir: Path, dry_run: bool, remove_original: bool) -> None:
     logger.info("Finalizing (backup=%s remove=%s)", backup_dir, remove_original)
     if dry_run:
         return
@@ -88,6 +98,7 @@ def convert_file(
     dry_run: bool = False,
     timeout: int = 3600,
     remove_original: bool = False,
+    verbose: bool = False,
 ) -> ConversionResult:
     iso_path = cso_path.with_suffix(".iso")
     chd_path = cso_path.with_suffix(".chd")
@@ -98,19 +109,19 @@ def convert_file(
         return ConversionResult(cso=cso_path, iso=None, chd=chd_path, success=False, message=msg)
 
     try:
-        ok = _decompress_to_iso(cso_path, iso_path, maxcso, dry_run, timeout)
+        ok = _decompress_to_iso(cso_path, iso_path, maxcso, dry_run, timeout, verbose=verbose)
         if not ok:
             msg = "Failed to produce ISO"
             logger.error(Col.RED + "[FAIL] %s" % msg + Col.RESET)
             return ConversionResult(cso=cso_path, iso=iso_path, chd=None, success=False, message=msg)
 
-        ok = _convert_iso_to_chd(iso_path, chd_path, chdman, dry_run, timeout)
+        ok = _convert_iso_to_chd(iso_path, chd_path, chdman, dry_run, timeout, verbose=verbose)
         if not ok:
             msg = "Failed to produce CHD"
             logger.error(Col.RED + "[ERROR] %s" % msg + Col.RESET)
             return ConversionResult(cso=cso_path, iso=iso_path, chd=chd_path, success=False, message=msg)
 
-        _finalize_cleanup(cso_path, iso_path, chd_path, backup_dir, dry_run, remove_original)
+        _finalize_cleanup(cso_path, iso_path, backup_dir, dry_run, remove_original)
         return ConversionResult(cso=cso_path, iso=iso_path, chd=chd_path, success=True, message="OK")
     except subprocess.CalledProcessError as exc:
         msg = f"External tool failed: {exc}"
@@ -164,6 +175,7 @@ def convert_directory(
             dry_run=dry_run,
             timeout=timeout,
             remove_original=remove_original,
+            verbose=verbose,
         )
         results.append(res)
         
