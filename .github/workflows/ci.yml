@@ -188,3 +188,33 @@ jobs:
             echo "PYPI_API_TOKEN is not set; skipping publish." && exit 0
           fi
           python -m twine upload dist/*
+
+  sonar:
+      name: SonarCloud Analysis
+      runs-on: ubuntu-latest
+      needs: tests
+      # Ajuste as condições conforme seu gosto
+      if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+
+      steps:
+        - uses: actions/checkout@v4
+          with:
+            fetch-depth: 0  # recomendado pelo Sonar para análise de histórico/branches
+
+        - name: Download coverage artifact (Python 3.11)
+          uses: actions/download-artifact@v4
+          with:
+            name: coverage-3.11
+            path: .
+
+        - name: SonarCloud Scan
+          uses: SonarSource/sonarcloud-github-action@v2
+          env:
+            SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          # Se você criou sonar-project.properties, não precisa passar argumentos
+          # Se preferir, pode reforçar alguns parâmetros:
+          # with:
+          #   args: >
+          #     -Dsonar.projectKey=SEU_PROJECT_KEY
+          #     -Dsonar.organization=SEU_ORG_KEY
+          #     -Dsonar.python.coverage.reportPaths=coverage.xml
