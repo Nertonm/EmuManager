@@ -14,14 +14,19 @@ def test_gui_headless_smoke(tmp_path):
         pytest.skip("GUI launcher script not found")
 
     xvfb = shutil.which("xvfb-run")
+    has_display = "DISPLAY" in subprocess.os.environ
+
     # If no X server and no xvfb-run, skip test
-    if xvfb is None and "DISPLAY" not in subprocess.os.environ:
+    if not has_display and xvfb is None:
         pytest.skip(
             "No X server (DISPLAY) and xvfb-run not available; skipping GUI smoke test"
         )
 
     cmd = []
-    if xvfb:
+    # Prefer existing DISPLAY if available (avoids nesting xvfb-run)
+    if has_display:
+        cmd = [sys.executable, str(script), "--headless"]
+    elif xvfb:
         cmd = [
             xvfb,
             "-s",
@@ -30,8 +35,6 @@ def test_gui_headless_smoke(tmp_path):
             str(script),
             "--headless",
         ]
-    else:
-        cmd = [sys.executable, str(script), "--headless"]
 
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
     # For debugging failures, include stdout/stderr in the assertion message
