@@ -4,6 +4,7 @@ Small, pure functions that interpret stdout/stderr from NSZ or related tools.
 These are intentionally conservative and return Optional values to allow the
 caller to fallback to other heuristics.
 """
+
 from __future__ import annotations
 
 import re
@@ -11,7 +12,7 @@ from typing import Optional
 
 
 def detect_nsz_level_from_stdout(stdout: Optional[str]) -> Optional[int]:
-    """Try to extract a zstd compression level from NSZ tool output or filename-like text.
+    """Try to extract a zstd compression level from NSZ tool output.
 
     Returns the level as int if found (1-22), otherwise None.
     """
@@ -19,7 +20,11 @@ def detect_nsz_level_from_stdout(stdout: Optional[str]) -> Optional[int]:
         return None
     s = stdout
     # common patterns: 'zstd level: 3', 'compression level: 19', '-19' or 'level 3'
-    m = re.search(r"(?:zstd|compression|level)[^0-9]{0,10}([1-9]|1[0-9]|2[0-2])\b", s, re.IGNORECASE)
+    m = re.search(
+        r"(?:zstd|compression|level)[^0-9]{0,10}([1-9]|1[0-9]|2[0-2])\b",
+        s,
+        re.IGNORECASE,
+    )
     if m:
         try:
             val = int(m.group(1))

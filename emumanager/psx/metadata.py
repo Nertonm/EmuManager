@@ -1,15 +1,20 @@
 from __future__ import annotations
 
-import re
 import gzip
+import re
 import subprocess
 from pathlib import Path
 from typing import Optional
+
 from ..common.execution import find_tool
 
 # PS1 boot line typically in SYSTEM.CNF as: BOOT = cdrom:\SLUS_005.94;1
-PSX_BOOT_RE = re.compile(rb"BOOT\s*=\s*cdrom0?:\\?([A-Z]{4})[_-](\d{3})\.?((?:\d{2})?)", re.IGNORECASE)
+PSX_BOOT_RE = re.compile(
+    rb"BOOT\s*=\s*cdrom0?:\\?([A-Z]{4})[_-](\d{3})\.?((?:\d{2})?)",
+    re.IGNORECASE,
+)
 SERIAL_RE = re.compile(rb"([A-Z]{4})[_-](\d{3})\.?((?:\d{2})?)")
+
 
 def _read_header_chd(file_path: Path, size: int) -> bytes:
     chdman = find_tool("chdman")
@@ -29,6 +34,7 @@ def _read_header_chd(file_path: Path, size: int) -> bytes:
         return data or b""
     except Exception:
         return b""
+
 
 def get_psx_serial(file_path: Path) -> Optional[str]:
     """Attempt to extract PS1 serial (e.g., SLUS-00594) from image.

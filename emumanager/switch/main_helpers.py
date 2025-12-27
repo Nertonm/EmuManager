@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, List, Optional
 import csv
 import sys
+from pathlib import Path
+from typing import Any, List, Optional
 
 
 def _setup_quarantine(args: Any, roms_dir: Path, logger) -> Optional[Path]:
     if not getattr(args, "quarantine", False):
         return None
-        
+
     qdir = getattr(args, "quarantine_dir", None)
     if qdir:
         quarantine_dir = Path(qdir).resolve()
@@ -23,9 +23,14 @@ def _setup_quarantine(args: Any, roms_dir: Path, logger) -> Optional[Path]:
         logger.exception("Could not create quarantine dir %s: %s", quarantine_dir, e)
         return None
 
-def _check_file_health(f: Path, args: Any, verify_integrity: callable, scan_for_virus: callable) -> tuple[bool, str, bool | None, str]:
+
+def _check_file_health(
+    f: Path, args: Any, verify_integrity: callable, scan_for_virus: callable
+) -> tuple[bool, str, bool | None, str]:
     try:
-        ok, verify_out = verify_integrity(f, deep=getattr(args, "deep_verify", False), return_output=True)
+        ok, verify_out = verify_integrity(
+            f, deep=getattr(args, "deep_verify", False), return_output=True
+        )
     except Exception as e:
         ok = False
         verify_out = str(e)
@@ -33,13 +38,22 @@ def _check_file_health(f: Path, args: Any, verify_integrity: callable, scan_for_
     av_result, av_out = scan_for_virus(f)
     return ok, verify_out, av_result, av_out
 
-def _handle_quarantine(f: Path, integrity_status: str, av_status: str, quarantine_dir: Optional[Path], args: Any, safe_move: callable, logger) -> str:
+
+def _handle_quarantine(
+    f: Path,
+    integrity_status: str,
+    av_status: str,
+    quarantine_dir: Optional[Path],
+    args: Any,
+    safe_move: callable,
+    logger,
+) -> str:
     if not quarantine_dir or getattr(args, "dry_run", False):
         return ""
-        
+
     if integrity_status == "OK" and av_status != "INFECTED":
         return ""
-        
+
     try:
         dest = quarantine_dir / f.name
         moved = safe_move(f, dest)
@@ -48,12 +62,21 @@ def _handle_quarantine(f: Path, integrity_status: str, av_status: str, quarantin
         logger.exception("failed to move to quarantine: %s", f)
         return "QUARANTINE_ERROR"
 
-def _scan_files(all_files: List[Path], args: Any, quarantine_dir: Optional[Path], verify_integrity: callable, scan_for_virus: callable, safe_move: callable, logger) -> tuple:
+
+def _scan_files(
+    all_files: List[Path],
+    args: Any,
+    quarantine_dir: Optional[Path],
+    verify_integrity: callable,
+    scan_for_virus: callable,
+    safe_move: callable,
+    logger,
+) -> tuple:
     corrupted = []
     infected = []
     unknown_av = []
     report_rows = []
-    
+
     total = len(all_files)
     progress_cb = getattr(args, "progress_callback", None)
     cancel_event = getattr(args, "cancel_event", None)
@@ -62,12 +85,14 @@ def _scan_files(all_files: List[Path], args: Any, quarantine_dir: Optional[Path]
         if cancel_event and cancel_event.is_set():
             logger.warning("Operation cancelled by user.")
             break
-            
+
         if progress_cb:
             progress_cb(i / total, f"Checking {f.name}...")
-            
-        ok, verify_out, av_result, av_out = _check_file_health(f, args, verify_integrity, scan_for_virus)
-        
+
+        ok, verify_out, av_result, av_out = _check_file_health(
+            f, args, verify_integrity, scan_for_virus
+        )
+
         if not ok:
             corrupted.append(f)
             integrity_status = "CORRUPT"
@@ -83,20 +108,37 @@ def _scan_files(all_files: List[Path], args: Any, quarantine_dir: Optional[Path]
             unknown_av.append((f, av_out))
             av_status = "UNKNOWN"
 
-        action_taken = _handle_quarantine(f, integrity_status, av_status, quarantine_dir, args, safe_move, logger)
-
-        report_rows.append([
-            str(f),
+        action_taken = _handle_quarantine(
+            f,
             integrity_status,
-            (verify_out or "")[:10000],
             av_status,
-            (av_out or "")[:10000],
-            action_taken,
-        ])
-        
+            quarantine_dir,
+            args,
+            safe_move,
+            logger,
+        )
+
+        report_rows.append(
+            [
+                str(f),
+                integrity_status,
+                (verify_out or "")[:10000],
+                av_status,
+                (av_out or "")[:10000],
+                action_taken,
+            ]
+        )
+
     return corrupted, infected, unknown_av, report_rows
 
-def _print_health_summary(total_files: int, corrupted: list, infected: list, unknown_av: list, problems: bool):
+
+def _print_health_summary(
+    total_files: int,
+    corrupted: list,
+    infected: list,
+    unknown_av: list,
+    problems: bool,
+):
     print("\nHealth Check Result:")
     print(f"Total files scanned: {total_files}")
     print(f"Corrupted/failed integrity: {len(corrupted)}")
@@ -109,11 +151,12 @@ def _print_health_summary(total_files: int, corrupted: list, infected: list, unk
             print(f" - {inf} -> {out.splitlines()[0] if out else ''}")
     if unknown_av:
         print(f"Files with AV unknown/error: {len(unknown_av)} (no scanner or error)")
-    
+
     if problems:
         print("Health check found issues. See report (if provided) or console output.")
     else:
         print("All clear: no corruption or infections found (or AV not available).")
+
 
 def _write_health_csv(csv_path: str, report_rows: list, logger):
     if not csv_path:
@@ -121,24 +164,48 @@ def _write_health_csv(csv_path: str, report_rows: list, logger):
     try:
         with open(csv_path, "w", newline="", encoding="utf-8") as rf:
             rw = csv.writer(rf)
-            rw.writerow(["path", "integrity", "integrity_output", "av_status", "av_output", "action"])
+            rw.writerow(
+                [
+                    "path",
+                    "integrity",
+                    "integrity_output",
+                    "av_status",
+                    "av_output",
+                    "action",
+                ]
+            )
             rw.writerows(report_rows)
         print(f"Report saved to: {csv_path}")
     except Exception:
         logger.exception("Failed to write report CSV %s", csv_path)
 
-def run_health_check(all_files: List[Path], args: Any, roms_dir: Path, verify_integrity: callable, scan_for_virus: callable, safe_move: callable, logger) -> dict:
+
+def run_health_check(
+    all_files: List[Path],
+    args: Any,
+    roms_dir: Path,
+    verify_integrity: callable,
+    scan_for_virus: callable,
+    safe_move: callable,
+    logger,
+) -> dict:
     """Run health check (integrity + AV) and return a summary dict."""
     logger.info("Iniciando Health Check: integridade + antivírus")
-    
+
     quarantine_dir = _setup_quarantine(args, roms_dir, logger)
-    
+
     corrupted, infected, unknown_av, report_rows = _scan_files(
-        all_files, args, quarantine_dir, verify_integrity, scan_for_virus, safe_move, logger
+        all_files,
+        args,
+        quarantine_dir,
+        verify_integrity,
+        scan_for_virus,
+        safe_move,
+        logger,
     )
 
     problems = bool(corrupted or infected)
-    
+
     _print_health_summary(len(all_files), corrupted, infected, unknown_av, problems)
     _write_health_csv(getattr(args, "report_csv", None), report_rows, logger)
 
@@ -188,7 +255,9 @@ def configure_environment(args: Any, logger: Any, find_tool: callable) -> dict:
         logger.error("Por favor, instale 'nstool' ou coloque o executável nesta pasta.")
         sys.exit(1)
 
-    if (getattr(args, "compress", False) or getattr(args, "decompress", False)) and not tool_nsz:
+    if (
+        getattr(args, "compress", False) or getattr(args, "decompress", False)
+    ) and not tool_nsz:
         logger.error("❌ ERRO: Ferramenta de compressão 'nsz' não encontrada!")
         logger.error("Instale com: pip install nsz")
         sys.exit(1)
@@ -209,7 +278,13 @@ def configure_environment(args: Any, logger: Any, find_tool: callable) -> dict:
     }
 
 
-def build_new_filename(clean_name: str, tid: str, ver: str, suffix: str, region: Optional[str] = None) -> str:
+def build_new_filename(
+    clean_name: str,
+    tid: str,
+    ver: str,
+    suffix: str,
+    region: Optional[str] = None,
+) -> str:
     name = f"{clean_name} [{tid}]"
     if region:
         name = f"{name} ({region})"
@@ -226,7 +301,9 @@ def get_dest_folder(roms_dir: Path, region: str) -> Path:
     return roms_dir / folder_name
 
 
-def make_catalog_entry(clean_name: str, meta: dict, suffix: str, target_path: Path, region: str) -> List[Any]:
+def make_catalog_entry(
+    clean_name: str, meta: dict, suffix: str, target_path: Path, region: str
+) -> List[Any]:
     return [
         clean_name,
         meta["id"],
@@ -258,7 +335,7 @@ def process_one_file(fpath: Path, ctx: dict):
         if not meta or not meta.get("id"):
             reason = "TitleID não encontrado"
             if fpath.suffix.lower() == ".nsz":
-                reason += "; arquivo comprimido (.nsz) — tente usar --decompress ou instale/veja suporte da ferramenta nsz"
+                reason += "; arquivo comprimido (.nsz) — tente usar --decompress"
             logger.warning(
                 "Metadados ausentes para %s: %s. Arquivo: %s",
                 fpath.name,
@@ -274,18 +351,28 @@ def process_one_file(fpath: Path, ctx: dict):
 
         args = ctx.get("args")
         standardize = getattr(args, "standardize_names", False)
-        new_fname = build_new_filename(clean_name, meta.get("id"), meta.get("ver"), fpath2.suffix, region if standardize else None)
+        new_fname = build_new_filename(
+            clean_name,
+            meta.get("id"),
+            meta.get("ver"),
+            fpath2.suffix,
+            region if standardize else None,
+        )
         dest_folder = get_dest_folder(roms_dir, region)
         target_path = dest_folder / new_fname
 
         if fpath2 != target_path:
             moved = safe_move(fpath2, target_path)
             if moved:
-                return make_catalog_entry(clean_name, meta, fpath2.suffix, target_path, region), "ok"
+                return make_catalog_entry(
+                    clean_name, meta, fpath2.suffix, target_path, region
+                ), "ok"
             else:
                 return None, "skipped"
         else:
-            return make_catalog_entry(clean_name, meta, fpath2.suffix, target_path, region), "ok"
+            return make_catalog_entry(
+                clean_name, meta, fpath2.suffix, target_path, region
+            ), "ok"
     except Exception:
         logger.exception("Error while processing file %s", fpath)
         return None, "error"
@@ -294,9 +381,13 @@ def process_one_file(fpath: Path, ctx: dict):
 def _update_progress(progress_cb, current, total, filename):
     if progress_cb:
         try:
-            progress_cb(float(current) / max(1, total), f"Processing {current}/{total}: {filename}")
+            progress_cb(
+                float(current) / max(1, total),
+                f"Processing {current}/{total}: {filename}",
+            )
         except Exception:
             pass
+
 
 def process_files(files: List[Path], ctx: dict):
     """Process the list of files using a single context dict.
@@ -329,7 +420,7 @@ def process_files(files: List[Path], ctx: dict):
             if logger:
                 logger.warning("Operation cancelled by user.")
             break
-            
+
         _update_progress(progress_cb, i, total, fpath.name)
 
         row, status = process_one_file(fpath, ctx)

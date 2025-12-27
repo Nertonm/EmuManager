@@ -1,4 +1,5 @@
 from pathlib import Path
+
 import switch_organizer as so
 
 
@@ -71,7 +72,12 @@ def test_health_check_quarantine_report(tmp_path, monkeypatch):
 
     monkeypatch.setattr(so, "find_tool", lambda name: Path("/bin/true"))
 
-    args = make_args(dir=str(tmp_path), health_check=True, quarantine=True, report_csv=str(tmp_path / "report.csv"))
+    args = make_args(
+        dir=str(tmp_path),
+        health_check=True,
+        quarantine=True,
+        report_csv=str(tmp_path / "report.csv"),
+    )
     monkeypatch.setattr(so.parser, "parse_args", lambda: args)
 
     # Monkeypatch verify_integrity: good->True, bad->False

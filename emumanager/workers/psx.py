@@ -1,51 +1,64 @@
 from __future__ import annotations
-from pathlib import Path
-from typing import Any, Callable, Optional
+
 import re
 import subprocess
+from pathlib import Path
+from typing import Any, Callable, Optional
 
 from emumanager.common.execution import find_tool
-from emumanager.psx import metadata as psx_meta
 from emumanager.psx import database as psx_db
+from emumanager.psx import metadata as psx_meta
 from emumanager.workers.common import (
-    GuiLogger, 
-    MSG_CANCELLED, 
-    find_target_dir, 
-    calculate_file_hash, 
+    MSG_CANCELLED,
+    GuiLogger,
+    calculate_file_hash,
     create_file_progress_cb,
     emit_verification_result,
-    make_result_collector
+    find_target_dir,
+    make_result_collector,
 )
-from emumanager.common.models import VerifyResult
 
 MSG_PSX_DIR_NOT_FOUND = "PS1 ROMs directory not found."
 PSX_SUBDIRS = ["roms/psx", "psx"]
+
 
 def _chdman_create(output: Path, input_path: Path) -> subprocess.Popen:
     chdman = find_tool("chdman")
     if not chdman:
         raise RuntimeError("'chdman' not found in PATH")
     # Use -i input -o output -f to force overwrite if exists? We'll avoid -f for safety.
-    return subprocess.Popen([str(chdman), "createcd", "-i", str(input_path), "-o", str(output)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    return subprocess.Popen(
+        [str(chdman), "createcd", "-i", str(input_path), "-o", str(output)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+
 
 def _collect_psx_inputs_for_conversion(target_dir: Path) -> list[Path]:
     """Collect candidate source files for PS1 conversion, preferring CUE over BIN.
 
-    Also skip all BIN files in any directory that contains a CUE (handles multi-bin cuesheets).
+    Also skip all BIN files in any directory that contains a CUE.
     """
-    raw = [p for p in target_dir.rglob("*") if p.is_file() and p.suffix.lower() in {".cue", ".bin", ".iso"}]
+    raw = [
+        p
+        for p in target_dir.rglob("*")
+        if p.is_file() and p.suffix.lower() in {".cue", ".bin", ".iso"}
+    ]
     cue_dirs = {p.parent for p in raw if p.suffix.lower() == ".cue"}
     filtered: list[Path] = []
     for f in raw:
         suf = f.suffix.lower()
         if suf == ".bin":
-            # Skip if matching CUE exists or any CUE exists in same directory (multi-bin)
+            # Skip if matching CUE exists or any CUE exists in same directory
             if f.with_suffix(".cue").exists() or f.parent in cue_dirs:
                 continue
         filtered.append(f)
     return filtered
 
-def _convert_one_with_chdman(src: Path, logger: GuiLogger, dry_run: bool) -> tuple[bool, bool]:
+
+def _convert_one_with_chdman(
+    src: Path, logger: GuiLogger, dry_run: bool
+) -> tuple[bool, bool]:
     """Run chdman for a single source. Returns (converted, skipped)."""
     out = src.with_suffix(".chd")
     if out.exists():
@@ -71,7 +84,10 @@ def _convert_one_with_chdman(src: Path, logger: GuiLogger, dry_run: bool) -> tup
         logger.error(f"Conversion error for {src.name}: {e}")
         return False, False
 
-def worker_psx_convert(base_path: Path, args: Any, log_cb: Callable[[str], None]) -> str:
+
+def worker_psx_convert(
+    base_path: Path, args: Any, log_cb: Callable[[str], None]
+) -> str:
     """Convert PS1 CUE/BIN/ISO to CHD using chdman."""
     logger = GuiLogger(log_cb)
     target_dir = find_target_dir(base_path, PSX_SUBDIRS)
@@ -110,6 +126,7 @@ def worker_psx_convert(base_path: Path, args: Any, log_cb: Callable[[str], None]
         progress_cb(1.0, "PS1 Conversion complete")
     return f"PS1 Conversion complete. Converted: {converted}, Skipped: {skipped}"
 
+
 def _dedup_psx_verify_files(files: list[Path]) -> list[Path]:
     """Deduplicate PS1 verification inputs.
 
@@ -131,6 +148,7 @@ def _dedup_psx_verify_files(files: list[Path]) -> list[Path]:
         return _filtered
     except Exception:
         return files
+
 
 def _process_psx_file(
     f: Path,
@@ -166,19 +184,23 @@ def _process_psx_file(
 
     logger.info(f"{info_str} -> {f.name}")
     emit_verification_result(
-        per_file_cb, 
-        f, 
+        per_file_cb,
+        f,
         status="VERIFIED" if serial else "UNKNOWN",
         serial=serial,
         title=psx_db.db.get_title(serial) if serial else None,
         md5=md5 if deep_verify else None,
-        sha1=sha1 if deep_verify else None
+        sha1=sha1 if deep_verify else None,
     )
     return "found" if serial else "unknown"
 
 
-
-def worker_psx_verify(base_path: Path, args: Any, log_cb: Callable[[str], None], list_files_fn: Callable[[Path], list[Path]]) -> str:
+def worker_psx_verify(
+    base_path: Path,
+    args: Any,
+    log_cb: Callable[[str], None],
+    list_files_fn: Callable[[Path], list[Path]],
+) -> str:
     logger = GuiLogger(log_cb)
     target_dir = find_target_dir(base_path, PSX_SUBDIRS)
     if not target_dir:
@@ -212,7 +234,11 @@ def worker_psx_verify(base_path: Path, args: Any, log_cb: Callable[[str], None],
     # Optional rich result hooks (used by GUI table integration)
     per_file_cb_attr = getattr(args, "per_file_cb", None)
     results_list_attr = getattr(args, "results", None)
-    collector = make_result_collector(per_file_cb_attr, results_list_attr) if (callable(per_file_cb_attr) or isinstance(results_list_attr, list)) else None
+    collector = (
+        make_result_collector(per_file_cb_attr, results_list_attr)
+        if (callable(per_file_cb_attr) or isinstance(results_list_attr, list))
+        else None
+    )
 
     for i, f in enumerate(files):
         if cancel_event and cancel_event.is_set():
@@ -239,7 +265,10 @@ def worker_psx_verify(base_path: Path, args: Any, log_cb: Callable[[str], None],
         progress_cb(1.0, "PS1 Verification complete")
     return f"Scan complete. Identified: {found}, Unknown: {unknown}"
 
-def _organize_psx_file(f: Path, args: Any, logger: GuiLogger) -> tuple[bool, Optional[str]]:
+
+def _organize_psx_file(
+    f: Path, args: Any, logger: GuiLogger
+) -> tuple[bool, Optional[str]]:
     if f.suffix.lower() not in {".bin", ".cue", ".iso", ".chd", ".gz", ".img"}:
         return False, None
     # If CUE present, prefer reading serial from BIN alongside
@@ -253,7 +282,7 @@ def _organize_psx_file(f: Path, args: Any, logger: GuiLogger) -> tuple[bool, Opt
         logger.warning(f"Could not extract serial from {f.name}")
         return False, None
     title = psx_db.db.get_title(serial) or "Unknown Title"
-    safe_title = re.sub(r'[<>:"/\\|?*]', '', title).strip()
+    safe_title = re.sub(r'[<>:"/\\|?*]', "", title).strip()
     new_name = f"{safe_title} [{serial}]{f.suffix}"
     new_path = f.parent / new_name
     if f.name == new_name or new_path.exists():
@@ -267,7 +296,13 @@ def _organize_psx_file(f: Path, args: Any, logger: GuiLogger) -> tuple[bool, Opt
         logger.error(f"Failed to rename {f.name}: {e}")
         return False, None
 
-def worker_psx_organize(base_path: Path, args: Any, log_cb: Callable[[str], None], list_files_fn: Callable[[Path], list[Path]]) -> str:
+
+def worker_psx_organize(
+    base_path: Path,
+    args: Any,
+    log_cb: Callable[[str], None],
+    list_files_fn: Callable[[Path], list[Path]],
+) -> str:
     logger = GuiLogger(log_cb)
     target_dir = find_target_dir(base_path, PSX_SUBDIRS)
     if not target_dir:

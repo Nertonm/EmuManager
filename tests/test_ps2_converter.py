@@ -1,6 +1,6 @@
+import shutil
 import subprocess
 from pathlib import Path
-import shutil
 
 import pytest
 
@@ -49,7 +49,9 @@ def test_happy_path(monkeypatch, tmp_path):
 
     # Run conversion
     backup = tmp_path / "_LIXO_CSO"
-    results = ps2_converter.convert_directory(directory=tmp_path, dry_run=False, backup_dir=backup, verbose=True)
+    results = ps2_converter.convert_directory(
+        directory=tmp_path, dry_run=False, backup_dir=backup, verbose=True
+    )
 
     assert len(results) == 1
     res = results[0]
@@ -91,7 +93,13 @@ def test_remove_original(monkeypatch, tmp_path):
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     # Run conversion with remove_original=True
-    results = ps2_converter.convert_directory(directory=tmp_path, dry_run=False, backup_dir=tmp_path / "_LIXO_CSO", verbose=True, remove_original=True)
+    results = ps2_converter.convert_directory(
+        directory=tmp_path,
+        dry_run=False,
+        backup_dir=tmp_path / "_LIXO_CSO",
+        verbose=True,
+        remove_original=True,
+    )
 
     assert len(results) == 1
     res = results[0]

@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import List, Optional
+
 
 @dataclass
 class VerifyResult:
@@ -11,6 +12,7 @@ class VerifyResult:
     md5: Optional[str] = None
     sha256: Optional[str] = None
     full_path: Optional[str] = None
+
 
 @dataclass
 class VerifyReport:

@@ -4,43 +4,42 @@ This module contains the MainWindow class and related UI helpers. It is
 GUI-library-agnostic in the sense that callers should import the Qt classes
 from the binding they prefer and pass them when constructing the window.
 """
+
 from __future__ import annotations
 
+import threading
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
-from datetime import datetime
-import threading
 
 from .gui_ui import Ui_MainWindow
-from .common.models import VerifyResult
 from .gui_workers import (
-    worker_organize,
-    worker_health_check,
     worker_clean_junk,
+    worker_compress_single,
+    worker_decompress_single,
+    worker_dolphin_convert,
+    worker_dolphin_organize,
+    worker_dolphin_verify,
+    worker_hash_verify,
+    worker_health_check,
+    worker_n3ds_organize,
+    worker_n3ds_verify,
+    worker_organize,
+    worker_ps2_convert,
+    worker_ps2_organize,
+    worker_ps2_verify,
+    worker_ps3_organize,
+    worker_ps3_verify,
+    worker_psp_compress,
+    worker_psp_organize,
+    worker_psp_verify,
+    worker_psx_convert,
+    worker_psx_organize,
+    worker_psx_verify,
+    worker_recompress_single,
     worker_switch_compress,
     worker_switch_decompress,
-    worker_recompress_single,
-    worker_decompress_single,
-    worker_compress_single,
-    worker_ps2_convert,
-    worker_ps2_verify,
-    worker_ps2_organize,
-    worker_psx_convert,
-    worker_psx_verify,
-    worker_psx_organize,
-    worker_ps3_verify,
-    worker_ps3_organize,
-    worker_psp_verify,
-    worker_psp_organize,
-    worker_psp_compress,
-    worker_n3ds_verify,
-    worker_n3ds_organize,
-    worker_dolphin_convert,
-    worker_dolphin_verify,
-    worker_dolphin_organize,
-    worker_hash_verify
 )
-
 
 # Constants
 MSG_NO_ROM = "No ROM selected"
@@ -102,10 +101,10 @@ class MainWindowBase:
         self._last_base = None
         self._env = {}  # Cache for environment tools/paths
         self.window = qt.QMainWindow()
-        
+
         # Setup UI
         self.ui.setupUi(self.window, qt)
-        
+
         # Setup close handler
         self._original_close_event = self.window.closeEvent
         self.window.closeEvent = self._on_close_event
@@ -113,7 +112,7 @@ class MainWindowBase:
         # Alias common widgets for convenience and compatibility
         self.log = self.ui.log
         self.status = self.ui.statusbar
-        
+
         # Alias settings widgets
         self.chk_dry_run = self.ui.chk_dry_run
         self.spin_level = self.ui.spin_level
@@ -133,8 +132,12 @@ class MainWindowBase:
             # Define a QObject to hold the signal
             class LogSignaler(self._qtcore.QObject):
                 # Try both PyQt6 and PySide6 signal names
-                log_signal = self._qtcore.pyqtSignal(str) if hasattr(self._qtcore, "pyqtSignal") else self._qtcore.Signal(str)
-            
+                log_signal = (
+                    self._qtcore.pyqtSignal(str)
+                    if hasattr(self._qtcore, "pyqtSignal")
+                    else self._qtcore.Signal(str)
+                )
+
             self._signaler = LogSignaler()
             self._signaler.log_signal.connect(self._log_msg_slot)
         else:
@@ -142,12 +145,12 @@ class MainWindowBase:
 
         # Connect Signals
         self._connect_signals()
-        
+
         # Initialize settings if possible
         if self._qtcore:
             self._settings = self._qtcore.QSettings("EmuManager", "Manager")
             self._load_settings()
-        
+
         # Enhance UI: toolbar and context menus
         try:
             self._setup_toolbar()
@@ -168,10 +171,12 @@ class MainWindowBase:
         if hasattr(self.ui, "edit_filter"):
             self.ui.edit_filter.textChanged.connect(self._on_filter_text)
         if hasattr(self.ui, "btn_clear_filter"):
-            self.ui.btn_clear_filter.clicked.connect(lambda: self.ui.edit_filter.setText(""))
+            self.ui.btn_clear_filter.clicked.connect(
+                lambda: self.ui.edit_filter.setText("")
+            )
         self.ui.sys_list.itemClicked.connect(self._on_system_selected)
         self.ui.rom_list.itemDoubleClicked.connect(self._on_rom_double_clicked)
-        
+
         # Switch Actions
         self.ui.btn_compress.clicked.connect(self.on_compress_selected)
         self.ui.btn_recompress.clicked.connect(self.on_recompress_selected)
@@ -183,7 +188,7 @@ class MainWindowBase:
         self.ui.btn_health.clicked.connect(self.on_health_check)
         self.ui.btn_switch_compress.clicked.connect(self.on_switch_compress)
         self.ui.btn_switch_decompress.clicked.connect(self.on_switch_decompress)
-        
+
         # Tools Tab - PS1
         self.ui.btn_psx_convert.clicked.connect(self.on_psx_convert)
         self.ui.btn_psx_verify.clicked.connect(self.on_psx_verify)
@@ -193,7 +198,7 @@ class MainWindowBase:
         self.ui.btn_ps2_convert.clicked.connect(self.on_ps2_convert)
         self.ui.btn_ps2_verify.clicked.connect(self.on_ps2_verify)
         self.ui.btn_ps2_organize.clicked.connect(self.on_ps2_organize)
-        
+
         # Tools Tab - PS3
         self.ui.btn_ps3_verify.clicked.connect(self.on_ps3_verify)
         self.ui.btn_ps3_organize.clicked.connect(self.on_ps3_organize)
@@ -207,7 +212,7 @@ class MainWindowBase:
         self.ui.btn_dolphin_organize.clicked.connect(self.on_dolphin_organize)
         self.ui.btn_dolphin_convert.clicked.connect(self.on_dolphin_convert)
         self.ui.btn_dolphin_verify.clicked.connect(self.on_dolphin_verify)
-        
+
         # Tools Tab - General
         self.ui.btn_clean_junk.clicked.connect(self.on_clean_junk)
 
@@ -215,7 +220,9 @@ class MainWindowBase:
         self.ui.btn_select_dat.clicked.connect(self.on_select_dat)
         self.ui.btn_verify_dat.clicked.connect(self.on_verify_dat)
         if hasattr(self.ui, "combo_verif_filter"):
-            self.ui.combo_verif_filter.currentTextChanged.connect(self.on_verification_filter_changed)
+            self.ui.combo_verif_filter.currentTextChanged.connect(
+                self.on_verification_filter_changed
+            )
         if hasattr(self.ui, "btn_export_csv"):
             self.ui.btn_export_csv.clicked.connect(self.on_export_verification_csv)
         # Key handling on ROM list (Enter/Return to Compress)
@@ -224,9 +231,13 @@ class MainWindowBase:
         except Exception:
             pass
         if hasattr(self.ui, "table_results"):
-            self.ui.table_results.itemDoubleClicked.connect(self._on_verification_item_dblclick)
+            self.ui.table_results.itemDoubleClicked.connect(
+                self._on_verification_item_dblclick
+            )
         if hasattr(self.ui, "combo_verif_filter"):
-            self.ui.combo_verif_filter.currentTextChanged.connect(self.on_verification_filter_changed)
+            self.ui.combo_verif_filter.currentTextChanged.connect(
+                self.on_verification_filter_changed
+            )
         if hasattr(self.ui, "btn_export_csv"):
             self.ui.btn_export_csv.clicked.connect(self.on_export_verification_csv)
 
@@ -296,22 +307,26 @@ class MainWindowBase:
 
         self.act_exit = qt.QAction("Exit", self.window)
         self.act_exit.setShortcut("Ctrl+Q")
+
         def _exit():
             try:
                 self.window.close()
             except Exception:
                 pass
+
         self.act_exit.triggered.connect(_exit)
 
     def _create_view_actions(self, qt):
         self.act_toggle_log = qt.QAction("Toggle Log", self.window)
         self.act_toggle_log.setShortcut("Ctrl+L")
+
         def _toggle_log():
             try:
                 vis = self.ui.log_dock.isVisible()
                 self.ui.log_dock.setVisible(not vis)
             except Exception:
                 pass
+
         self.act_toggle_log.triggered.connect(_toggle_log)
 
         self.act_toggle_toolbar = qt.QAction("Show Toolbar", self.window)
@@ -319,6 +334,7 @@ class MainWindowBase:
             self.act_toggle_toolbar.setCheckable(True)
         except Exception:
             pass
+
         def _toggle_tb(checked=None):
             try:
                 tb = getattr(self, "_toolbar", None)
@@ -330,16 +346,19 @@ class MainWindowBase:
                         tb.setVisible(bool(checked))
             except Exception:
                 pass
+
         self.act_toggle_toolbar.triggered.connect(_toggle_tb)
 
         self.act_focus_filter = qt.QAction("Focus ROM Filter", self.window)
         self.act_focus_filter.setShortcut("Ctrl+F")
+
         def _focus_filter():
             try:
                 if hasattr(self.ui, "edit_filter"):
                     self.ui.edit_filter.setFocus()
             except Exception:
                 pass
+
         self.act_focus_filter.triggered.connect(_focus_filter)
 
         # Reset layout
@@ -446,75 +465,80 @@ class MainWindowBase:
             pass
 
     def _setup_menubar(self):
-            """Create the top menubar with File, Tools, and View menus."""
-            qt = self._qtwidgets
-            try:
-                self._ensure_common_actions()
-                mb = qt.QMenuBar(self.window)
-                self.window.setMenuBar(mb)
+        """Create the top menubar with File, Tools, and View menus."""
+        qt = self._qtwidgets
+        try:
+            self._ensure_common_actions()
+            mb = qt.QMenuBar(self.window)
+            self.window.setMenuBar(mb)
 
-                # File menu
-                m_file = mb.addMenu("File")
-                m_file.addAction(self.act_open_library)
-                m_file.addAction(self.act_refresh_list)
-                m_file.addAction(self.act_add_rom)
-                m_file.addSeparator()
-                m_file.addAction(self.act_exit)
+            # File menu
+            m_file = mb.addMenu("File")
+            m_file.addAction(self.act_open_library)
+            m_file.addAction(self.act_refresh_list)
+            m_file.addAction(self.act_add_rom)
+            m_file.addSeparator()
+            m_file.addAction(self.act_exit)
 
-                # Tools menu
-                m_tools = mb.addMenu("Tools")
-                m_tools.addAction(self.act_init_structure)
-                m_tools.addSeparator()
-                m_tools.addAction(self.act_organize)
-                m_tools.addAction(self.act_health)
-                m_tools.addSeparator()
-                m_tools.addAction(self.act_switch_compress)
-                m_tools.addAction(self.act_switch_decompress)
-                m_tools.addSeparator()
-                m_tools.addAction(self.act_psx_convert)
-                m_tools.addAction(self.act_psx_verify)
-                m_tools.addAction(self.act_psx_organize)
-                m_tools.addSeparator()
-                m_tools.addAction(self.act_ps2_convert)
-                m_tools.addAction(self.act_ps2_verify)
-                m_tools.addAction(self.act_ps2_organize)
-                m_tools.addSeparator()
-                m_tools.addAction(self.act_ps3_verify)
-                m_tools.addAction(self.act_ps3_organize)
-                m_tools.addSeparator()
-                m_tools.addAction(self.act_psp_verify)
-                m_tools.addAction(self.act_psp_organize)
-                m_tools.addAction(self.act_psp_compress)
-                m_tools.addSeparator()
-                m_tools.addAction(self.act_n3ds_verify)
-                m_tools.addAction(self.act_n3ds_organize)
-                m_tools.addSeparator()
-                m_tools.addAction(self.act_dol_convert)
-                m_tools.addAction(self.act_dol_verify)
-                m_tools.addAction(self.act_dol_organize)
-                m_tools.addSeparator()
-                m_tools.addAction(self.act_clean_junk)
-                m_tools.addSeparator()
-                m_tools.addAction(self.act_verify_dat)
-                m_tools.addAction(self.act_export_csv)
+            # Tools menu
+            m_tools = mb.addMenu("Tools")
+            m_tools.addAction(self.act_init_structure)
+            m_tools.addSeparator()
+            m_tools.addAction(self.act_organize)
+            m_tools.addAction(self.act_health)
+            m_tools.addSeparator()
+            m_tools.addAction(self.act_switch_compress)
+            m_tools.addAction(self.act_switch_decompress)
+            m_tools.addSeparator()
+            m_tools.addAction(self.act_psx_convert)
+            m_tools.addAction(self.act_psx_verify)
+            m_tools.addAction(self.act_psx_organize)
+            m_tools.addSeparator()
+            m_tools.addAction(self.act_ps2_convert)
+            m_tools.addAction(self.act_ps2_verify)
+            m_tools.addAction(self.act_ps2_organize)
+            m_tools.addSeparator()
+            m_tools.addAction(self.act_ps3_verify)
+            m_tools.addAction(self.act_ps3_organize)
+            m_tools.addSeparator()
+            m_tools.addAction(self.act_psp_verify)
+            m_tools.addAction(self.act_psp_organize)
+            m_tools.addAction(self.act_psp_compress)
+            m_tools.addSeparator()
+            m_tools.addAction(self.act_n3ds_verify)
+            m_tools.addAction(self.act_n3ds_organize)
+            m_tools.addSeparator()
+            m_tools.addAction(self.act_dol_convert)
+            m_tools.addAction(self.act_dol_verify)
+            m_tools.addAction(self.act_dol_organize)
+            m_tools.addSeparator()
+            m_tools.addAction(self.act_clean_junk)
+            m_tools.addSeparator()
+            m_tools.addAction(self.act_verify_dat)
+            m_tools.addAction(self.act_export_csv)
 
-                # View menu
-                m_view = mb.addMenu("View")
-                m_view.addAction(self.act_toggle_log)
-                m_view.addAction(self.act_toggle_toolbar)
-                m_view.addSeparator()
-                m_view.addAction(self.act_focus_filter)
-                m_view.addSeparator()
-                m_view.addAction(self.act_reset_layout)
-            except Exception:
-                pass
+            # View menu
+            m_view = mb.addMenu("View")
+            m_view.addAction(self.act_toggle_log)
+            m_view.addAction(self.act_toggle_toolbar)
+            m_view.addSeparator()
+            m_view.addAction(self.act_focus_filter)
+            m_view.addSeparator()
+            m_view.addAction(self.act_reset_layout)
+        except Exception:
+            pass
 
     def _setup_rom_context_menu(self):
         """Add a context menu to the ROM list for quick actions."""
         qt = self._qtwidgets
         try:
-            policy = qt.Qt.ContextMenuPolicy.CustomContextMenu if hasattr(qt.Qt, "ContextMenuPolicy") else qt.Qt.CustomContextMenu
+            policy = (
+                qt.Qt.ContextMenuPolicy.CustomContextMenu
+                if hasattr(qt.Qt, "ContextMenuPolicy")
+                else qt.Qt.CustomContextMenu
+            )
             self.ui.rom_list.setContextMenuPolicy(policy)
+
             def _show_menu(pos):
                 menu = qt.QMenu(self.ui.rom_list)
                 a1 = menu.addAction("Compress")
@@ -534,6 +558,7 @@ class MainWindowBase:
                     self._open_selected_rom_folder()
                 elif act == a5:
                     self._copy_selected_rom_path()
+
             self.ui.rom_list.customContextMenuRequested.connect(_show_menu)
         except Exception:
             pass
@@ -544,7 +569,11 @@ class MainWindowBase:
         try:
             if not hasattr(self.ui, "table_results"):
                 return
-            policy = qt.Qt.ContextMenuPolicy.CustomContextMenu if hasattr(qt.Qt, "ContextMenuPolicy") else qt.Qt.CustomContextMenu
+            policy = (
+                qt.Qt.ContextMenuPolicy.CustomContextMenu
+                if hasattr(qt.Qt, "ContextMenuPolicy")
+                else qt.Qt.CustomContextMenu
+            )
             self.ui.table_results.setContextMenuPolicy(policy)
 
             def _show_menu(pos):
@@ -567,7 +596,13 @@ class MainWindowBase:
         a_sha1 = menu.addAction("Copy SHA1")
         a_md5 = menu.addAction("Copy MD5")
         a_sha256 = menu.addAction("Copy SHA256")
-        actions = {"open": a_open, "crc": a_crc, "sha1": a_sha1, "md5": a_md5, "sha256": a_sha256}
+        actions = {
+            "open": a_open,
+            "crc": a_crc,
+            "sha1": a_sha1,
+            "md5": a_md5,
+            "sha256": a_sha256,
+        }
         return menu, actions
 
     def _handle_verification_action(self, qt, act, actions, res):
@@ -619,6 +654,7 @@ class MainWindowBase:
     def _open_file_location(self, path: Path):
         try:
             import subprocess
+
             if path.is_dir():
                 subprocess.run(["xdg-open", str(path)], check=False)
             else:
@@ -627,8 +663,12 @@ class MainWindowBase:
             self.log_msg(f"Failed to open location: {path}")
 
     # Background/task helpers
-    def _run_in_background(self, func: Callable[[], object], done_cb: Optional[Callable[[object], None]] = None):
-        """Run func() in a thread and call done_cb(result) in the GUI thread when ready."""
+    def _run_in_background(
+        self,
+        func: Callable[[], object],
+        done_cb: Optional[Callable[[object], None]] = None,
+    ):
+        """Run func() in a thread and call done_cb(result) in the GUI thread."""
         self._cancel_event.clear()
         future = self._submit_task(func)
         self._active_future = future
@@ -642,13 +682,18 @@ class MainWindowBase:
     def _submit_task(self, func: Callable[[], object]):
         if self._executor:
             return self._executor.submit(func)
-        
+
         # Synchronous fallback
         class _F:
-            def __init__(self, res): self._res = res
-            def done(self): return True
-            def result(self): return self._res
-        
+            def __init__(self, res):
+                self._res = res
+
+            def done(self):
+                return True
+
+            def result(self):
+                return self._res
+
         try:
             res = func()
         except Exception as e:
@@ -658,7 +703,7 @@ class MainWindowBase:
     def _start_polling_timer(self, future, done_cb):
         timer = self._qtcore.QTimer(self.window)
         timer.setInterval(200)
-        
+
         def _check():
             if not future.done():
                 return
@@ -667,7 +712,7 @@ class MainWindowBase:
                 result = future.result()
             except Exception as e:
                 result = e
-            
+
             if done_cb:
                 try:
                     done_cb(result)
@@ -734,7 +779,7 @@ class MainWindowBase:
             pass
 
     def _restore_ui_settings(self):
-        """Restore checkboxes, toolbar visibility, filters, splitter, and table widths."""
+        """Restore checkboxes, toolbar visibility, filters, splitter, and widths."""
         try:
             self._restore_checkboxes()
             self._restore_extras()
@@ -747,15 +792,37 @@ class MainWindowBase:
 
     def _restore_checkboxes(self):
         try:
-            self.chk_dry_run.setChecked(str(self._settings.value("settings/dry_run", "false")).lower() == "true")
+            self.chk_dry_run.setChecked(
+                str(self._settings.value("settings/dry_run", "false")).lower() == "true"
+            )
             self.spin_level.setValue(int(self._settings.value("settings/level", 3)))
-            self.combo_profile.setCurrentText(str(self._settings.value("settings/profile", "None")))
-            self.chk_rm_originals.setChecked(str(self._settings.value("settings/rm_originals", "false")).lower() == "true")
-            self.chk_quarantine.setChecked(str(self._settings.value("settings/quarantine", "false")).lower() == "true")
-            self.chk_deep_verify.setChecked(str(self._settings.value("settings/deep_verify", "false")).lower() == "true")
-            self.chk_recursive.setChecked(str(self._settings.value("settings/recursive", "true")).lower() == "true")
-            self.chk_process_selected.setChecked(str(self._settings.value("settings/process_selected", "false")).lower() == "true")
-            self.chk_standardize_names.setChecked(str(self._settings.value("settings/standardize_names", "false")).lower() == "true")
+            self.combo_profile.setCurrentText(
+                str(self._settings.value("settings/profile", "None"))
+            )
+            self.chk_rm_originals.setChecked(
+                str(self._settings.value("settings/rm_originals", "false")).lower()
+                == "true"
+            )
+            self.chk_quarantine.setChecked(
+                str(self._settings.value("settings/quarantine", "false")).lower()
+                == "true"
+            )
+            self.chk_deep_verify.setChecked(
+                str(self._settings.value("settings/deep_verify", "false")).lower()
+                == "true"
+            )
+            self.chk_recursive.setChecked(
+                str(self._settings.value("settings/recursive", "true")).lower()
+                == "true"
+            )
+            self.chk_process_selected.setChecked(
+                str(self._settings.value("settings/process_selected", "false")).lower()
+                == "true"
+            )
+            self.chk_standardize_names.setChecked(
+                str(self._settings.value("settings/standardize_names", "false")).lower()
+                == "true"
+            )
         except Exception:
             pass
 
@@ -767,7 +834,9 @@ class MainWindowBase:
             pass
         try:
             if hasattr(self.ui, "edit_filter"):
-                self.ui.edit_filter.setText(str(self._settings.value("ui/rom_filter", "")))
+                self.ui.edit_filter.setText(
+                    str(self._settings.value("ui/rom_filter", ""))
+                )
             if hasattr(self.ui, "combo_verif_filter"):
                 idx = int(self._settings.value("ui/verif_filter_idx", 0))
                 self.ui.combo_verif_filter.setCurrentIndex(idx)
@@ -784,7 +853,10 @@ class MainWindowBase:
 
     def _restore_toolbar_visibility(self):
         try:
-            tb_vis = str(self._settings.value("ui/toolbar_visible", "true")).lower() == "true"
+            tb_vis = (
+                str(self._settings.value("ui/toolbar_visible", "true")).lower()
+                == "true"
+            )
             if hasattr(self, "_toolbar") and self._toolbar:
                 self._toolbar.setVisible(tb_vis)
             if hasattr(self, "act_toggle_toolbar"):
@@ -807,7 +879,11 @@ class MainWindowBase:
 
     def _restore_last_system(self):
         try:
-            self._last_system = str(self._settings.value(LAST_SYSTEM_KEY)) if self._settings.value(LAST_SYSTEM_KEY) else None
+            self._last_system = (
+                str(self._settings.value(LAST_SYSTEM_KEY))
+                if self._settings.value(LAST_SYSTEM_KEY)
+                else None
+            )
         except Exception:
             self._last_system = None
 
@@ -816,7 +892,9 @@ class MainWindowBase:
         try:
             # Geometry/state
             try:
-                self._settings.setValue("ui/window_geometry", self.window.saveGeometry())
+                self._settings.setValue(
+                    "ui/window_geometry", self.window.saveGeometry()
+                )
                 self._settings.setValue("ui/window_state", self.window.saveState())
             except Exception:
                 # legacy
@@ -828,7 +906,7 @@ class MainWindowBase:
             pass
 
     def _persist_ui_settings(self):
-        """Persist checkboxes, filters, splitter, toolbar visibility, and table widths."""
+        """Persist checkboxes, filters, splitter, toolbar visibility, and widths."""
         try:
             self._persist_checkbox_settings()
             self._persist_extras()
@@ -839,15 +917,33 @@ class MainWindowBase:
 
     def _persist_checkbox_settings(self):
         try:
-            self._settings.setValue("settings/dry_run", str(self.chk_dry_run.isChecked()))
+            self._settings.setValue(
+                "settings/dry_run", str(self.chk_dry_run.isChecked())
+            )
             self._settings.setValue("settings/level", self.spin_level.value())
-            self._settings.setValue("settings/profile", self.combo_profile.currentText())
-            self._settings.setValue("settings/rm_originals", str(self.chk_rm_originals.isChecked()))
-            self._settings.setValue("settings/quarantine", str(self.chk_quarantine.isChecked()))
-            self._settings.setValue("settings/deep_verify", str(self.chk_deep_verify.isChecked()))
-            self._settings.setValue("settings/recursive", str(self.chk_recursive.isChecked()))
-            self._settings.setValue("settings/process_selected", str(self.chk_process_selected.isChecked()))
-            self._settings.setValue("settings/standardize_names", str(self.chk_standardize_names.isChecked()))
+            self._settings.setValue(
+                "settings/profile", self.combo_profile.currentText()
+            )
+            self._settings.setValue(
+                "settings/rm_originals", str(self.chk_rm_originals.isChecked())
+            )
+            self._settings.setValue(
+                "settings/quarantine", str(self.chk_quarantine.isChecked())
+            )
+            self._settings.setValue(
+                "settings/deep_verify", str(self.chk_deep_verify.isChecked())
+            )
+            self._settings.setValue(
+                "settings/recursive", str(self.chk_recursive.isChecked())
+            )
+            self._settings.setValue(
+                "settings/process_selected",
+                str(self.chk_process_selected.isChecked()),
+            )
+            self._settings.setValue(
+                "settings/standardize_names",
+                str(self.chk_standardize_names.isChecked()),
+            )
         except Exception:
             pass
 
@@ -857,7 +953,10 @@ class MainWindowBase:
             if hasattr(self.ui, "edit_filter"):
                 self._settings.setValue("ui/rom_filter", self.ui.edit_filter.text())
             if hasattr(self.ui, "combo_verif_filter"):
-                self._settings.setValue("ui/verif_filter_idx", self.ui.combo_verif_filter.currentIndex())
+                self._settings.setValue(
+                    "ui/verif_filter_idx",
+                    self.ui.combo_verif_filter.currentIndex(),
+                )
         except Exception:
             pass
 
@@ -870,7 +969,10 @@ class MainWindowBase:
     def _persist_table_widths(self):
         try:
             if hasattr(self.ui, "table_results"):
-                widths = [self.ui.table_results.columnWidth(i) for i in range(self.ui.table_results.columnCount())]
+                widths = [
+                    self.ui.table_results.columnWidth(i)
+                    for i in range(self.ui.table_results.columnCount())
+                ]
                 self._settings.setValue("ui/verif_table_widths", widths)
         except Exception:
             pass
@@ -897,7 +999,7 @@ class MainWindowBase:
             self.ui.btn_add.setEnabled(enabled)
             self.ui.btn_clear.setEnabled(enabled)
             self.ui.btn_open_library.setEnabled(enabled)
-            
+
             # Also disable/enable tool buttons
             self.ui.btn_organize.setEnabled(enabled)
             self.ui.btn_health.setEnabled(enabled)
@@ -913,22 +1015,26 @@ class MainWindowBase:
             self.ui.btn_dolphin_convert.setEnabled(enabled)
             self.ui.btn_dolphin_verify.setEnabled(enabled)
             self.ui.btn_clean_junk.setEnabled(enabled)
-            
+
             # Verification Tab
             self.ui.btn_select_dat.setEnabled(enabled)
-            if enabled and hasattr(self, "_current_dat_path") and self._current_dat_path:
+            if (
+                enabled
+                and hasattr(self, "_current_dat_path")
+                and self._current_dat_path
+            ):
                 self.ui.btn_verify_dat.setEnabled(True)
             else:
                 self.ui.btn_verify_dat.setEnabled(False)
-            
+
             # Compression buttons
             self.ui.btn_compress.setEnabled(enabled)
             self.ui.btn_recompress.setEnabled(enabled)
             self.ui.btn_decompress.setEnabled(enabled)
-            
+
             # Cancel button logic is inverse
             self.ui.btn_cancel.setEnabled(not enabled)
-            
+
             # Show/Hide progress bar
             self.ui.progress_bar.setVisible(not enabled)
             if enabled:
@@ -939,9 +1045,9 @@ class MainWindowBase:
 
     def progress_hook(self, percent: float, message: str):
         """Simple progress hook for compression helpers.
-        
+
         percent: 0.0 to 1.0
-        
+
         Updates the status bar and appends a short log message. Safe to be set
         as `args.progress_callback` in `switch_organizer`.
         """
@@ -952,7 +1058,7 @@ class MainWindowBase:
                 p = 0.0
             if p > 1.0:
                 p = 1.0
-            
+
             # Update progress bar
             try:
                 if not self.ui.progress_bar.isVisible():
@@ -968,8 +1074,6 @@ class MainWindowBase:
         except Exception:
             pass
 
-
-
     # The following methods interact with manager; keep them small and testable
     def on_init(self):
         qt = self._qtwidgets
@@ -977,7 +1081,7 @@ class MainWindowBase:
         if not base:
             self.log_msg(MSG_SELECT_BASE)
             return
-        
+
         try:
             yes_btn = qt.QMessageBox.StandardButton.Yes
             no_btn = qt.QMessageBox.StandardButton.No
@@ -985,7 +1089,12 @@ class MainWindowBase:
             yes_btn = qt.QMessageBox.Yes
             no_btn = qt.QMessageBox.No
 
-        dry = qt.QMessageBox.question(self.window, "Dry-run?", "Run in dry-run (no changes)?", yes_btn | no_btn)
+        dry = qt.QMessageBox.question(
+            self.window,
+            "Dry-run?",
+            "Run in dry-run (no changes)?",
+            yes_btn | no_btn,
+        )
         dry_run = dry == yes_btn
         self.log_msg(f"Running init on: {base} (dry={dry_run})")
 
@@ -1027,7 +1136,9 @@ class MainWindowBase:
     def _auto_select_last_system(self):
         try:
             if getattr(self, "_last_system", None):
-                items = [self.sys_list.item(i).text() for i in range(self.sys_list.count())]
+                items = [
+                    self.sys_list.item(i).text() for i in range(self.sys_list.count())
+                ]
                 if self._last_system in items:
                     idx = items.index(self._last_system)
                     self.sys_list.setCurrentRow(idx)
@@ -1062,7 +1173,9 @@ class MainWindowBase:
         dry_run = self._ask_yes_no("Dry-run?", "Run in dry-run (no changes)?")
 
         def _work_add():
-            return self._manager.cmd_add_rom(src, base, system=system, move=move, dry_run=dry_run)
+            return self._manager.cmd_add_rom(
+                src, base, system=system, move=move, dry_run=dry_run
+            )
 
         def _done_add(result):
             if isinstance(result, Exception):
@@ -1098,8 +1211,10 @@ class MainWindowBase:
             if guessed not in items:
                 items.insert(0, guessed)
             idx = items.index(guessed)
-        
-        system, ok = qt.QInputDialog.getItem(self.window, "Select System", "Target System:", items, idx, True)
+
+        system, ok = qt.QInputDialog.getItem(
+            self.window, "Select System", "Target System:", items, idx, True
+        )
         return system if ok and system else None
 
     def _ask_yes_no(self, title: str, msg: str) -> bool:
@@ -1110,7 +1225,7 @@ class MainWindowBase:
         except AttributeError:
             yes_btn = qt.QMessageBox.Yes
             no_btn = qt.QMessageBox.No
-        
+
         ans = qt.QMessageBox.question(self.window, title, msg, yes_btn | no_btn)
         return ans == yes_btn
 
@@ -1125,10 +1240,10 @@ class MainWindowBase:
                     self._settings.setValue("ui/last_system", system)
             except Exception:
                 pass
-            
+
             # Toggle Switch actions
             if hasattr(self.ui, "grp_switch_actions"):
-                is_switch = (system.lower() == "switch")
+                is_switch = system.lower() == "switch"
                 self.ui.grp_switch_actions.setVisible(is_switch)
             # Apply current filter if present
             if hasattr(self.ui, "edit_filter"):
@@ -1148,13 +1263,13 @@ class MainWindowBase:
         files = []
         if not root.exists():
             return files
-            
+
         for p in root.rglob("*"):
             if not p.is_file():
                 continue
             if p.name.startswith("."):
                 continue
-            
+
             try:
                 rel = p.relative_to(root)
                 if any(part.startswith(".") for part in rel.parts):
@@ -1162,7 +1277,7 @@ class MainWindowBase:
                 files.append(p)
             except ValueError:
                 continue
-        
+
         files.sort(key=lambda p: str(p).lower())
         return files
 
@@ -1171,13 +1286,13 @@ class MainWindowBase:
         dirs = []
         if not root.exists():
             return dirs
-            
+
         for p in root.rglob("*"):
             if not p.is_dir():
                 continue
             if p.name.startswith("."):
                 continue
-            
+
             try:
                 rel = p.relative_to(root)
                 if any(part.startswith(".") for part in rel.parts):
@@ -1185,8 +1300,8 @@ class MainWindowBase:
                 dirs.append(p)
             except ValueError:
                 continue
-        
-        # Sort reverse to ensure we process children before parents (useful for deletion)
+
+        # Sort reverse to ensure we process children before parents
         dirs.sort(key=lambda p: str(p), reverse=True)
         return dirs
 
@@ -1195,7 +1310,7 @@ class MainWindowBase:
         files = []
         if not root.exists():
             return files
-            
+
         for p in root.iterdir():
             if not p.is_file():
                 continue
@@ -1226,7 +1341,7 @@ class MainWindowBase:
                 files = [p.relative_to(roms_dir) for p in full_files]
                 # Store for filtering
                 self._current_roms = [str(p) for p in files]
-                
+
             if self.rom_list is not None:
                 self.rom_list.clear()
                 for f in files:
@@ -1282,8 +1397,8 @@ class MainWindowBase:
                 return
 
             args = self._get_common_args()
-            # Single file compression usually doesn't remove original unless specified, 
-            # but let's respect the checkbox if it's checked, or default to False if not clear.
+            # Single file compression usually doesn't remove original unless specified,
+            # but let's respect the checkbox if it's checked.
             # The GUI checkbox chk_rm_originals is used in _get_common_args.
 
             def _work():
@@ -1397,8 +1512,11 @@ class MainWindowBase:
         try:
             self._cancel_event.set()
             from emumanager.common.execution import cancel_current_process
+
             ok = cancel_current_process()
-            self.log_msg("Cancel requested" + (" — cancelled" if ok else " — nothing to cancel"))
+            self.log_msg(
+                "Cancel requested" + (" — cancelled" if ok else " — nothing to cancel")
+            )
         except Exception:
             self.log_msg("Cancel requested — failed to call cancel")
 
@@ -1408,33 +1526,42 @@ class MainWindowBase:
             return
 
         try:
-            from emumanager.switch.main_helpers import configure_environment
             from emumanager.common.execution import find_tool
+            from emumanager.switch.main_helpers import configure_environment
 
             # Create a dummy args object for configure_environment
             class Args:
                 dir = str(base_path)
-                keys = str(base_path / "keys.txt") # Default assumption
+                keys = str(base_path / "keys.txt")  # Default assumption
                 compress = False
                 decompress = False
-            
-            # We need to find keys.txt or ask user, but for now let's assume it's in base or we use a default
-            # If keys are not found, configure_environment might fail or warn. 
+
+            # We need to find keys.txt or ask user, but for now let's assume it's in
+            # base. If keys are not found, configure_environment might fail or warn.
             # Let's try to find keys in common locations if not at base/keys.txt
             keys_path = base_path / "keys.txt"
             if not keys_path.exists():
-                 keys_path = base_path / "prod.keys"
-            
+                keys_path = base_path / "prod.keys"
+
             args = Args()
             args.keys = str(keys_path)
 
             # Mock logger to capture output to GUI log
             class GuiLogger:
-                def info(_s, msg, *a): self.log_msg(msg % a if a else msg)
-                def warning(_s, msg, *a): self.log_msg("WARN: " + (msg % a if a else msg))
-                def error(_s, msg, *a): self.log_msg("ERROR: " + (msg % a if a else msg))
-                def debug(_s, msg, *a): pass # ignore debug
-                def exception(_s, msg, *a): self.log_msg("EXCEPTION: " + (msg % a if a else msg))
+                def info(_s, msg, *a):
+                    self.log_msg(msg % a if a else msg)
+
+                def warning(_s, msg, *a):
+                    self.log_msg("WARN: " + (msg % a if a else msg))
+
+                def error(_s, msg, *a):
+                    self.log_msg("ERROR: " + (msg % a if a else msg))
+
+                def debug(_s, msg, *a):
+                    pass  # ignore debug
+
+                def exception(_s, msg, *a):
+                    self.log_msg("EXCEPTION: " + (msg % a if a else msg))
 
             self._env = configure_environment(args, GuiLogger(), find_tool)
             self.log_msg(f"Environment configured for {base_path}")
@@ -1442,13 +1569,10 @@ class MainWindowBase:
             self.log_msg(f"Failed to configure environment: {e}")
             self._env = {}
 
-
-
-
-
     def _get_common_args(self):
         class Args:
             pass
+
         args = Args()
         args.dry_run = self.chk_dry_run.isChecked()
         args.level = self.spin_level.value()
@@ -1457,8 +1581,8 @@ class MainWindowBase:
         args.rm_originals = self.chk_rm_originals.isChecked()
         args.quarantine = self.chk_quarantine.isChecked()
         args.deep_verify = self.chk_deep_verify.isChecked()
-        args.clean_junk = False # Handled separately
-        args.organize = False # Handled separately
+        args.clean_junk = False  # Handled separately
+        args.organize = False  # Handled separately
         args.compress = False
         args.decompress = False
         args.recompress = False
@@ -1477,20 +1601,20 @@ class MainWindowBase:
         if not self._last_base:
             self.log_msg(MSG_SELECT_BASE)
             return
-        
+
         self._ensure_env(self._last_base)
 
         args = self._get_common_args()
         args.organize = True
-        
+
         def _work():
             return worker_organize(
-                self._last_base, 
-                self._env, 
-                args, 
-                self.log_msg, 
+                self._last_base,
+                self._env,
+                args,
+                self.log_msg,
                 self._get_list_files_fn(),
-                progress_cb=getattr(self, "progress_hook", None)
+                progress_cb=getattr(self, "progress_hook", None),
             )
 
         def _done(res):
@@ -1507,18 +1631,18 @@ class MainWindowBase:
         if not self._last_base:
             self.log_msg(MSG_SELECT_BASE)
             return
-        
+
         self._ensure_env(self._last_base)
-        
+
         args = self._get_common_args()
-        
+
         def _work():
             return worker_health_check(
-                self._last_base, 
-                self._env, 
-                args, 
-                self.log_msg, 
-                self._get_list_files_fn()
+                self._last_base,
+                self._env,
+                args,
+                self.log_msg,
+                self._get_list_files_fn(),
             )
 
         def _done(res):
@@ -1535,16 +1659,16 @@ class MainWindowBase:
         if not self._last_base:
             self.log_msg(MSG_SELECT_BASE)
             return
-        
+
         args = self._get_common_args()
-        
+
         def _work():
             return worker_clean_junk(
-                self._last_base, 
-                args, 
-                self.log_msg, 
+                self._last_base,
+                args,
+                self.log_msg,
                 self._get_list_files_fn(),
-                self._list_dirs_recursive
+                self._list_dirs_recursive,
             )
 
         def _done(res):
@@ -1558,20 +1682,16 @@ class MainWindowBase:
         if not self._last_base:
             self.log_msg(MSG_SELECT_BASE)
             return
-        
+
         args = self._get_common_args()
-        
+
         def _work():
-            return worker_ps2_convert(
-                self._last_base,
-                args,
-                self.log_msg
-            )
-            
+            return worker_ps2_convert(self._last_base, args, self.log_msg)
+
         def _done(res):
             self.log_msg(str(res))
             self._set_ui_enabled(True)
-            
+
         self._set_ui_enabled(False)
         self._run_in_background(_work, _done)
 
@@ -1580,15 +1700,14 @@ class MainWindowBase:
             self.log_msg(MSG_SELECT_BASE)
             return
         args = self._get_common_args()
+
         def _work():
-            return worker_psx_convert(
-                self._last_base,
-                args,
-                self.log_msg
-            )
+            return worker_psx_convert(self._last_base, args, self.log_msg)
+
         def _done(res):
             self.log_msg(str(res))
             self._set_ui_enabled(True)
+
         self._set_ui_enabled(False)
         self._run_in_background(_work, _done)
 
@@ -1596,19 +1715,16 @@ class MainWindowBase:
         if not self._last_base:
             self.log_msg(MSG_SELECT_BASE)
             return
-        
+
         args = self._get_common_args()
         results_holder: list = []
         args.results = results_holder
-        
+
         def _work():
             return worker_ps2_verify(
-                self._last_base,
-                args,
-                self.log_msg,
-                self._get_list_files_fn()
+                self._last_base, args, self.log_msg, self._get_list_files_fn()
             )
-            
+
         def _done(res):
             try:
                 self._last_verify_results = results_holder
@@ -1617,7 +1733,7 @@ class MainWindowBase:
                 pass
             self.log_msg(str(res))
             self._set_ui_enabled(True)
-            
+
         self._set_ui_enabled(False)
         self._run_in_background(_work, _done)
 
@@ -1629,13 +1745,12 @@ class MainWindowBase:
         # Collect per-file results for GUI table
         results_holder: list = []
         args.results = results_holder
+
         def _work():
             return worker_psx_verify(
-                self._last_base,
-                args,
-                self.log_msg,
-                self._get_list_files_fn()
+                self._last_base, args, self.log_msg, self._get_list_files_fn()
             )
+
         def _done(res):
             # res is a summary string; populate table from collected per-file results
             try:
@@ -1645,6 +1760,7 @@ class MainWindowBase:
                 pass
             self.log_msg(str(res))
             self._set_ui_enabled(True)
+
         self._set_ui_enabled(False)
         self._run_in_background(_work, _done)
 
@@ -1652,20 +1768,20 @@ class MainWindowBase:
         if not self._last_base:
             self.log_msg(MSG_SELECT_BASE)
             return
-        
+
         args = self._get_common_args()
         results_holder: list = []
         args.results = results_holder
-        
+
         def _work():
             return worker_ps3_verify(
                 self._last_base,
                 args,
                 self.log_msg,
                 self._get_list_files_fn(),
-                self._list_dirs_recursive
+                self._list_dirs_recursive,
             )
-            
+
         def _done(res):
             try:
                 self._last_verify_results = results_holder
@@ -1674,7 +1790,7 @@ class MainWindowBase:
                 pass
             self.log_msg(str(res))
             self._set_ui_enabled(True)
-            
+
         self._set_ui_enabled(False)
         self._run_in_background(_work, _done)
 
@@ -1682,22 +1798,22 @@ class MainWindowBase:
         if not self._last_base:
             self.log_msg(MSG_SELECT_BASE)
             return
-        
+
         args = self._get_common_args()
-        
+
         def _work():
             return worker_ps3_organize(
                 self._last_base,
                 args,
                 self.log_msg,
                 self._get_list_files_fn(),
-                self._list_dirs_recursive
+                self._list_dirs_recursive,
             )
-            
+
         def _done(res):
             self.log_msg(str(res))
             self._set_ui_enabled(True)
-            
+
         self._set_ui_enabled(False)
         self._run_in_background(_work, _done)
 
@@ -1705,19 +1821,16 @@ class MainWindowBase:
         if not self._last_base:
             self.log_msg(MSG_SELECT_BASE)
             return
-        
+
         args = self._get_common_args()
         results_holder: list = []
         args.results = results_holder
-        
+
         def _work():
             return worker_psp_verify(
-                self._last_base,
-                args,
-                self.log_msg,
-                self._get_list_files_fn()
+                self._last_base, args, self.log_msg, self._get_list_files_fn()
             )
-            
+
         def _done(res):
             try:
                 self._last_verify_results = results_holder
@@ -1726,7 +1839,7 @@ class MainWindowBase:
                 pass
             self.log_msg(str(res))
             self._set_ui_enabled(True)
-            
+
         self._set_ui_enabled(False)
         self._run_in_background(_work, _done)
 
@@ -1734,21 +1847,18 @@ class MainWindowBase:
         if not self._last_base:
             self.log_msg(MSG_SELECT_BASE)
             return
-        
+
         args = self._get_common_args()
-        
+
         def _work():
             return worker_psp_organize(
-                self._last_base,
-                args,
-                self.log_msg,
-                self._get_list_files_fn()
+                self._last_base, args, self.log_msg, self._get_list_files_fn()
             )
-            
+
         def _done(res):
             self.log_msg(str(res))
             self._set_ui_enabled(True)
-            
+
         self._set_ui_enabled(False)
         self._run_in_background(_work, _done)
 
@@ -1756,19 +1866,16 @@ class MainWindowBase:
         if not self._last_base:
             self.log_msg(MSG_SELECT_BASE)
             return
-        
+
         args = self._get_common_args()
         results_holder: list = []
         args.results = results_holder
-        
+
         def _work():
             return worker_n3ds_verify(
-                self._last_base,
-                args,
-                self.log_msg,
-                self._get_list_files_fn()
+                self._last_base, args, self.log_msg, self._get_list_files_fn()
             )
-            
+
         def _done(res):
             try:
                 self._last_verify_results = results_holder
@@ -1777,7 +1884,7 @@ class MainWindowBase:
                 pass
             self.log_msg(str(res))
             self._set_ui_enabled(True)
-            
+
         self._set_ui_enabled(False)
         self._run_in_background(_work, _done)
 
@@ -1785,21 +1892,18 @@ class MainWindowBase:
         if not self._last_base:
             self.log_msg(MSG_SELECT_BASE)
             return
-        
+
         args = self._get_common_args()
-        
+
         def _work():
             return worker_n3ds_organize(
-                self._last_base,
-                args,
-                self.log_msg,
-                self._get_list_files_fn()
+                self._last_base, args, self.log_msg, self._get_list_files_fn()
             )
-            
+
         def _done(res):
             self.log_msg(str(res))
             self._set_ui_enabled(True)
-            
+
         self._set_ui_enabled(False)
         self._run_in_background(_work, _done)
 
@@ -1807,21 +1911,18 @@ class MainWindowBase:
         if not self._last_base:
             self.log_msg(MSG_SELECT_BASE)
             return
-        
+
         args = self._get_common_args()
-        
+
         def _work():
             return worker_dolphin_convert(
-                self._last_base,
-                args,
-                self.log_msg,
-                self._get_list_files_fn()
+                self._last_base, args, self.log_msg, self._get_list_files_fn()
             )
-            
+
         def _done(res):
             self.log_msg(str(res))
             self._set_ui_enabled(True)
-            
+
         self._set_ui_enabled(False)
         self._run_in_background(_work, _done)
 
@@ -1829,19 +1930,16 @@ class MainWindowBase:
         if not self._last_base:
             self.log_msg(MSG_SELECT_BASE)
             return
-        
+
         args = self._get_common_args()
         results_holder: list = []
         args.results = results_holder
-        
+
         def _work():
             return worker_dolphin_verify(
-                self._last_base,
-                args,
-                self.log_msg,
-                self._get_list_files_fn()
+                self._last_base, args, self.log_msg, self._get_list_files_fn()
             )
-            
+
         def _done(res):
             try:
                 self._last_verify_results = results_holder
@@ -1850,7 +1948,7 @@ class MainWindowBase:
                 pass
             self.log_msg(str(res))
             self._set_ui_enabled(True)
-            
+
         self._set_ui_enabled(False)
         self._run_in_background(_work, _done)
 
@@ -1858,21 +1956,18 @@ class MainWindowBase:
         if not self._last_base:
             self.log_msg(MSG_SELECT_BASE)
             return
-        
+
         args = self._get_common_args()
-        
+
         def _work():
             return worker_dolphin_organize(
-                self._last_base,
-                args,
-                self.log_msg,
-                self._get_list_files_fn()
+                self._last_base, args, self.log_msg, self._get_list_files_fn()
             )
-            
+
         def _done(res):
             self.log_msg(str(res))
             self._set_ui_enabled(True)
-            
+
         self._set_ui_enabled(False)
         self._run_in_background(_work, _done)
 
@@ -1880,21 +1975,18 @@ class MainWindowBase:
         if not self._last_base:
             self.log_msg(MSG_SELECT_BASE)
             return
-        
+
         args = self._get_common_args()
-        
+
         def _work():
             return worker_ps2_organize(
-                self._last_base,
-                args,
-                self.log_msg,
-                self._get_list_files_fn()
+                self._last_base, args, self.log_msg, self._get_list_files_fn()
             )
-            
+
         def _done(res):
             self.log_msg(str(res))
             self._set_ui_enabled(True)
-            
+
         self._set_ui_enabled(False)
         self._run_in_background(_work, _done)
 
@@ -1903,16 +1995,16 @@ class MainWindowBase:
             self.log_msg(MSG_SELECT_BASE)
             return
         args = self._get_common_args()
+
         def _work():
             return worker_psx_organize(
-                self._last_base,
-                args,
-                self.log_msg,
-                self._get_list_files_fn()
+                self._last_base, args, self.log_msg, self._get_list_files_fn()
             )
+
         def _done(res):
             self.log_msg(str(res))
             self._set_ui_enabled(True)
+
         self._set_ui_enabled(False)
         self._run_in_background(_work, _done)
 
@@ -1923,14 +2015,14 @@ class MainWindowBase:
             dlg.setFileMode(qt.QFileDialog.FileMode.Directory)
         except AttributeError:
             dlg.setFileMode(qt.QFileDialog.Directory)
-        
+
         if dlg.exec():
             base = Path(dlg.selectedFiles()[0])
             self._last_base = base
             self.ui.lbl_library.setText(str(base))
             self.ui.lbl_library.setStyleSheet("font-weight: bold; color: #3daee9;")
             self.log_msg(f"Library opened: {base}")
-            
+
             # Auto-refresh list if possible
             try:
                 self.on_list()
@@ -1941,18 +2033,18 @@ class MainWindowBase:
         if not self._last_base:
             self.log_msg(MSG_SELECT_BASE)
             return
-        
+
         self._ensure_env(self._last_base)
-        
+
         args = self._get_common_args()
-        
+
         def _work():
             return worker_switch_compress(
-                self._last_base, 
-                self._env, 
-                args, 
-                self.log_msg, 
-                self._get_list_files_fn()
+                self._last_base,
+                self._env,
+                args,
+                self.log_msg,
+                self._get_list_files_fn(),
             )
 
         def _done(res):
@@ -1969,18 +2061,18 @@ class MainWindowBase:
         if not self._last_base:
             self.log_msg(MSG_SELECT_BASE)
             return
-        
+
         self._ensure_env(self._last_base)
-        
+
         args = self._get_common_args()
-        
+
         def _work():
             return worker_switch_decompress(
-                self._last_base, 
-                self._env, 
-                args, 
-                self.log_msg, 
-                self._get_list_files_fn()
+                self._last_base,
+                self._env,
+                args,
+                self.log_msg,
+                self._get_list_files_fn(),
             )
 
         def _done(res):
@@ -2001,7 +2093,7 @@ class MainWindowBase:
         except AttributeError:
             dlg.setFileMode(qt.QFileDialog.ExistingFile)
         dlg.setNameFilter("DAT Files (*.dat *.xml)")
-        
+
         if dlg.exec():
             path = Path(dlg.selectedFiles()[0])
             self._current_dat_path = path
@@ -2014,25 +2106,22 @@ class MainWindowBase:
         if not self._last_base:
             self.log_msg(MSG_SELECT_BASE)
             return
-            
+
         if not hasattr(self, "_current_dat_path") or not self._current_dat_path:
             self.log_msg("Please select a DAT file first.")
             return
-            
+
         args = self._get_common_args()
         args.dat_path = self._current_dat_path
-        
+
         # Clear previous results
         self.ui.table_results.setRowCount(0)
-        
+
         def _work():
             return worker_hash_verify(
-                self._last_base,
-                args,
-                self.log_msg,
-                self._get_list_files_fn()
+                self._last_base, args, self.log_msg, self._get_list_files_fn()
             )
-            
+
         def _done(res):
             if hasattr(res, "results"):
                 self.log_msg(res.text)
@@ -2042,45 +2131,73 @@ class MainWindowBase:
             else:
                 self.log_msg(str(res))
             self._set_ui_enabled(True)
-            
+
         self._set_ui_enabled(False)
         self._run_in_background(_work, _done)
 
-    def _populate_verification_results(self, results, status_filter: Optional[str] = None):
-        filtered = [r for r in results if (not status_filter or r.status == status_filter)]
+    def _populate_verification_results(
+        self, results, status_filter: Optional[str] = None
+    ):
+        filtered = [
+            r for r in results if (not status_filter or r.status == status_filter)
+        ]
         self.ui.table_results.setRowCount(len(filtered))
         for i, r in enumerate(filtered):
             self._create_result_row(i, r)
 
     def _create_result_row(self, row_idx, result):
         qt = self._qtwidgets
-        
+
         # Status Item with Color
         item_status = qt.QTableWidgetItem(result.status)
         self._style_status_item(item_status, result.status)
         self.ui.table_results.setItem(row_idx, 0, item_status)
-        
+
         # Other columns
         self.ui.table_results.setItem(row_idx, 1, qt.QTableWidgetItem(result.filename))
-        self.ui.table_results.setItem(row_idx, 2, qt.QTableWidgetItem(result.match_name or ""))
+        self.ui.table_results.setItem(
+            row_idx, 2, qt.QTableWidgetItem(result.match_name or "")
+        )
         self.ui.table_results.setItem(row_idx, 3, qt.QTableWidgetItem(result.crc or ""))
-        self.ui.table_results.setItem(row_idx, 4, qt.QTableWidgetItem(result.sha1 or ""))
+        self.ui.table_results.setItem(
+            row_idx, 4, qt.QTableWidgetItem(result.sha1 or "")
+        )
         # New columns: MD5 and SHA256 (if deep verify)
         try:
-            self.ui.table_results.setItem(row_idx, 5, qt.QTableWidgetItem(getattr(result, "md5", "") or ""))
-            self.ui.table_results.setItem(row_idx, 6, qt.QTableWidgetItem(getattr(result, "sha256", "") or ""))
+            self.ui.table_results.setItem(
+                row_idx,
+                5,
+                qt.QTableWidgetItem(getattr(result, "md5", "") or ""),
+            )
+            self.ui.table_results.setItem(
+                row_idx,
+                6,
+                qt.QTableWidgetItem(getattr(result, "sha256", "") or ""),
+            )
         except Exception:
             pass
 
     def _style_status_item(self, item, status):
         qt = self._qtwidgets
         if status == "VERIFIED":
-            bg_color = self._qtgui.QColor(200, 255, 200) if self._qtgui else qt.QColor(0, 255, 0)
-            fg_color = self._qtgui.QColor(0, 100, 0) if self._qtgui else qt.QColor(0, 0, 0)
+            bg_color = (
+                self._qtgui.QColor(200, 255, 200)
+                if self._qtgui
+                else qt.QColor(0, 255, 0)
+            )
+            fg_color = (
+                self._qtgui.QColor(0, 100, 0) if self._qtgui else qt.QColor(0, 0, 0)
+            )
         else:
-            bg_color = self._qtgui.QColor(255, 200, 200) if self._qtgui else qt.QColor(255, 0, 0)
-            fg_color = self._qtgui.QColor(100, 0, 0) if self._qtgui else qt.QColor(0, 0, 0)
-            
+            bg_color = (
+                self._qtgui.QColor(255, 200, 200)
+                if self._qtgui
+                else qt.QColor(255, 0, 0)
+            )
+            fg_color = (
+                self._qtgui.QColor(100, 0, 0) if self._qtgui else qt.QColor(0, 0, 0)
+            )
+
         item.setBackground(bg_color)
         item.setForeground(fg_color)
 
@@ -2110,7 +2227,9 @@ class MainWindowBase:
         if not results:
             self.log_msg("No results to export.")
             return
-        path = self._ask_export_path(qt) or str((self._last_base or Path(".")) / "verification_results.csv")
+        path = self._ask_export_path(qt) or str(
+            (self._last_base or Path(".")) / "verification_results.csv"
+        )
         self._write_verification_csv(path, results)
 
     def _get_filtered_verification_results(self):
@@ -2139,11 +2258,32 @@ class MainWindowBase:
     def _write_verification_csv(self, path, results):
         try:
             import csv
+
             with open(path, "w", newline="") as f:
                 w = csv.writer(f)
-                w.writerow(["Status", "File Name", "Game Name", "CRC32", "SHA1", "MD5", "SHA256"])
+                w.writerow(
+                    [
+                        "Status",
+                        "File Name",
+                        "Game Name",
+                        "CRC32",
+                        "SHA1",
+                        "MD5",
+                        "SHA256",
+                    ]
+                )
                 for r in results:
-                    w.writerow([r.status, r.filename, r.match_name or "", r.crc or "", r.sha1 or "", getattr(r, "md5", "") or "", getattr(r, "sha256", "") or ""]) 
+                    w.writerow(
+                        [
+                            r.status,
+                            r.filename,
+                            r.match_name or "",
+                            r.crc or "",
+                            r.sha1 or "",
+                            getattr(r, "md5", "") or "",
+                            getattr(r, "sha256", "") or "",
+                        ]
+                    )
             self.log_msg(f"Exported CSV: {path}")
         except Exception as e:
             self.log_msg(f"Export CSV error: {e}")
@@ -2152,41 +2292,38 @@ class MainWindowBase:
         if not self._last_base:
             self.log_msg(MSG_SELECT_BASE)
             return
-            
+
         args = self._get_common_args()
         # Add specific args if needed, e.g. compression level
         args.level = 9
         args.rm_originals = self.ui.chk_rm_originals.isChecked()
-        
+
         def _work():
             return worker_psp_compress(
-                self._last_base,
-                args,
-                self.log_msg,
-                self._get_list_files_fn()
+                self._last_base, args, self.log_msg, self._get_list_files_fn()
             )
-            
+
         def _done(res):
             self.log_msg(str(res))
-            
+
         self._run_background_task(_work, _done)
 
     def _list_files_selected(self, root: Path) -> list[Path]:
         """Return only selected files from the UI, resolved to absolute paths."""
         if not self.rom_list or not self.sys_list:
             return []
-            
+
         selected_items = self.rom_list.selectedItems()
         if not selected_items:
             return []
-            
+
         sys_item = self.sys_list.currentItem()
         if not sys_item:
             return []
-            
+
         system = sys_item.text()
         roms_dir = Path(self._last_base) / "roms" / system
-        
+
         files = []
         for item in selected_items:
             rel_path = item.text()
@@ -2194,5 +2331,5 @@ class MainWindowBase:
             # Only include if it exists (sanity check)
             if full_path.exists():
                 files.append(full_path)
-                
+
         return files

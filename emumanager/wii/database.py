@@ -1,7 +1,7 @@
-
 import csv
 from pathlib import Path
 from typing import Dict, Optional
+
 
 class WiiDatabase:
     def __init__(self):
@@ -29,6 +29,7 @@ class WiiDatabase:
 
     def get_title(self, game_id: str) -> Optional[str]:
         return self._db.get(game_id.upper())
+
 
 # Global instance
 db = WiiDatabase()

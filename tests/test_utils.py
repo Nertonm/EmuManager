@@ -1,11 +1,11 @@
 from switch_organizer import (
-    sanitize_name,
     determine_region,
+    determine_type,
     get_base_id,
     get_file_hash,
-    parse_languages,
-    determine_type,
     get_metadata,
+    parse_languages,
+    sanitize_name,
 )
 
 
@@ -58,7 +58,7 @@ def test_safe_move_creates_unique(tmp_path):
     dest_dir = tmp_path / "dest"
     dest_dir.mkdir()
     dest = dest_dir / "test.nsp"
-    # create existing file with different content to force collision rename (not duplicate)
+    # create existing file with different content to force collision rename
     dest.write_bytes(b"different")
 
     # import a minimal args shim
@@ -82,6 +82,7 @@ def test_get_metadata_nsz_decompression_fallback(monkeypatch, tmp_path):
     a .nsz file. The code should attempt decompression (nsz) into a tempdir
     and then run the metadata tool on the decompressed file."""
     import types
+
     import switch_organizer as so
 
     # Prepare a fake .nsz file
@@ -94,7 +95,7 @@ def test_get_metadata_nsz_decompression_fallback(monkeypatch, tmp_path):
     so.IS_NSTOOL = True
     so.KEYS_PATH = tmp_path / "prod.keys"
 
-    # Create a controlled extraction dir that our monkeypatched TemporaryDirectory will yield
+    # Create a controlled extraction dir that our monkeypatched TempDir yields
     extract_dir = tmp_path / "extract"
     extract_dir.mkdir()
 
@@ -124,7 +125,12 @@ def test_get_metadata_nsz_decompression_fallback(monkeypatch, tmp_path):
             return types.SimpleNamespace(stdout="decompressed", stderr="", returncode=0)
         # metadata tool on decompressed file -> return full metadata
         if str(so.TOOL_METADATA) in cmd_str and str(extract_dir) in cmd_str:
-            return types.SimpleNamespace(stdout="Name: Some Game\nTitle ID: 0100ABCDEF000001\nDisplay Version: 1.0", stderr="", returncode=0)
+            return types.SimpleNamespace(
+                stdout="Name: Some Game\nTitle ID: 0100ABCDEF000001\n"
+                "Display Version: 1.0",
+                stderr="",
+                returncode=0,
+            )
         # default fallback
         return types.SimpleNamespace(stdout="", stderr="", returncode=1)
 

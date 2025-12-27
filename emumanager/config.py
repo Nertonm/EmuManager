@@ -1,4 +1,5 @@
 """Configuration and constants for EmuManager package."""
+
 from __future__ import annotations
 
 from typing import Dict
@@ -23,10 +24,10 @@ EXT_TO_SYSTEM: Dict[str, str] = {
     ".cia": "3ds",
     ".cci": "3ds",
     ".gcm": "gamecube",
-    ".rvz": "gamecube", # Dolphin (GC/Wii)
+    ".rvz": "gamecube",  # Dolphin (GC/Wii)
     ".gcz": "gamecube",  # Legacy Dolphin compressed format (GC/Wii)
     ".wbfs": "wii",
-    ".wad": "wii",      # WiiWare titles
+    ".wad": "wii",  # WiiWare titles
     ".wud": "wiiu",
     ".wux": "wiiu",
     ".wua": "wiiu",
@@ -54,5 +55,5 @@ EXT_TO_SYSTEM: Dict[str, str] = {
     ".xex": "xbox360",
     # Retro/Arcade
     ".a26": "atari2600",
-    ".zip": "mame", # Highly ambiguous (could be any retro system)
+    ".zip": "mame",  # Highly ambiguous (could be any retro system)
 }

@@ -1,6 +1,5 @@
 import importlib
 
-
 from tests.helpers import Args
 
 
@@ -104,7 +103,9 @@ def test_handle_compression_dry_run_skips_recompress(monkeypatch, tmp_path):
     def should_not_be_called(*a, **k):
         raise AssertionError("recompress helper was called during dry_run")
 
-    monkeypatch.setattr(comp_mod, "try_multiple_recompress_attempts", should_not_be_called)
+    monkeypatch.setattr(
+        comp_mod, "try_multiple_recompress_attempts", should_not_be_called
+    )
     monkeypatch.setattr(comp_mod, "handle_produced_file", should_not_be_called)
 
     res = so.handle_compression(fp)

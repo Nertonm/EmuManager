@@ -1,7 +1,7 @@
-
 import csv
 from pathlib import Path
 from typing import Dict, Optional
+
 
 class PS2Database:
     def __init__(self):
@@ -20,11 +20,13 @@ class PS2Database:
                 reader = csv.reader(f)
                 for row in reader:
                     if len(row) >= 2:
-                        serial = row[0].strip().upper().replace("_", "-").replace(".", "")
+                        serial = (
+                            row[0].strip().upper().replace("_", "-").replace(".", "")
+                        )
                         # Normalize serial to XXXX-YYYYY
                         if len(serial) == 9 and serial[4] != "-":
-                             serial = serial[:4] + "-" + serial[4:]
-                        
+                            serial = serial[:4] + "-" + serial[4:]
+
                         title = row[1].strip()
                         self._db[serial] = title
         except Exception:
@@ -33,6 +35,7 @@ class PS2Database:
     def get_title(self, serial: str) -> Optional[str]:
         # Serial expected in XXXX-YYYYY format
         return self._db.get(serial)
+
 
 # Global instance
 db = PS2Database()

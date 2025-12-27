@@ -1,13 +1,23 @@
 from __future__ import annotations
+
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from emumanager.common.models import VerifyReport, VerifyResult
 from emumanager.verification import dat_parser, hasher
-from emumanager.workers.common import GuiLogger, MSG_CANCELLED, create_file_progress_cb
-from emumanager.common.models import VerifyResult, VerifyReport
+from emumanager.workers.common import (
+    MSG_CANCELLED,
+    GuiLogger,
+    create_file_progress_cb,
+)
 
 
-def worker_hash_verify(base_path: Path, args: Any, log_cb: Callable[[str], None], list_files_fn: Callable[[Path], list[Path]]) -> VerifyReport:
+def worker_hash_verify(
+    base_path: Path,
+    args: Any,
+    log_cb: Callable[[str], None],
+    list_files_fn: Callable[[Path], list[Path]],
+) -> VerifyReport:
     """Worker function for DAT-based hash verification."""
     logger = GuiLogger(log_cb)
     report = VerifyReport(text="")
@@ -56,29 +66,39 @@ def worker_hash_verify(base_path: Path, args: Any, log_cb: Callable[[str], None]
             logger.info(f"✅ VERIFIED: {f.name} -> {res.match_name}")
         elif res.status == "MISMATCH":
             mismatch += 1
-            logger.warning(f"⚠️ MISMATCH: {f.name} (Expected: {res.match_name}, CRC: {res.crc}, SHA1: {res.sha1}, MD5: {res.md5})")
+            logger.warning(
+                f"⚠️ MISMATCH: {f.name} "
+                f"(Expected: {res.match_name}, CRC: {res.crc}, "
+                f"SHA1: {res.sha1}, MD5: {res.md5})"
+            )
         else:
             unknown += 1
-            logger.warning(f"❌ UNKNOWN: {f.name} (CRC: {res.crc}, SHA1: {res.sha1}, MD5: {res.md5})")
-        
+            logger.warning(
+                f"❌ UNKNOWN: {f.name} "
+                f"(CRC: {res.crc}, SHA1: {res.sha1}, MD5: {res.md5})"
+            )
+
         report.results.append(res)
-            
+
     if progress_cb:
         progress_cb(1.0, "Verification complete")
-        
-    report.text = f"Verification complete. Verified: {verified}, Unknown: {unknown}, Mismatch: {mismatch}"
+
+    report.text = (
+        f"Verification complete. Verified: {verified}, "
+        f"Unknown: {unknown}, Mismatch: {mismatch}"
+    )
     return report
 
 
 def _check_mismatch(db, crc, md5, sha1) -> Optional[str]:
-    """Check if CRC matches but MD5/SHA1 do not. Returns match name if mismatch detected."""
+    """Check if CRC matches but MD5/SHA1 do not. Returns match name if mismatch."""
     if not crc or not (md5 or sha1):
         return None
-        
+
     crc_candidates = []
     if hasattr(db, "crc_index") and isinstance(db.crc_index, dict):
         crc_candidates = db.crc_index.get(crc.lower(), [])
-    
+
     if not crc_candidates or not isinstance(crc_candidates, list):
         return None
 
@@ -86,12 +106,14 @@ def _check_mismatch(db, crc, md5, sha1) -> Optional[str]:
         md5_ok = (not md5) or (cand.md5 and cand.md5.lower() == md5.lower())
         sha1_ok = (not sha1) or (cand.sha1 and cand.sha1.lower() == sha1.lower())
         if md5_ok and sha1_ok:
-            return None # Found a full match (or at least consistent one), so no mismatch error
+            return None  # Found a full match (or at least consistent one)
 
     return crc_candidates[0].game_name + " (Hash Mismatch)"
 
 
-def _verify_single_file(f: Path, db, args, progress_cb, start_prog, file_weight) -> VerifyResult:
+def _verify_single_file(
+    f: Path, db, args, progress_cb, start_prog, file_weight
+) -> VerifyResult:
     file_prog_cb = create_file_progress_cb(progress_cb, start_prog, file_weight, f.name)
 
     if progress_cb:
@@ -119,14 +141,14 @@ def _verify_single_file(f: Path, db, args, progress_cb, start_prog, file_weight)
         sha1=sha1,
         md5=md5,
         sha256=sha256,
-        full_path=str(f)
+        full_path=str(f),
     )
 
     if match:
         res.status = "VERIFIED"
         res.match_name = match.game_name
         return res
-    
+
     mismatch_reason = _check_mismatch(db, crc, md5, sha1)
     if mismatch_reason:
         res.status = "MISMATCH"

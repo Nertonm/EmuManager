@@ -1,4 +1,5 @@
 import types
+
 import switch_organizer as so
 
 
@@ -104,4 +105,6 @@ def test_rm_originals_dry_run(monkeypatch, tmp_path):
     result = so.handle_compression(src)
 
     assert src.exists(), "Dry-run must not remove original"
-    assert result.suffix == ".nsz" or result == src.with_suffix(".nsz"), "In dry-run, function returns target .nsz path"
+    assert result.suffix == ".nsz" or result == src.with_suffix(".nsz"), (
+        "In dry-run, function returns target .nsz path"
+    )

@@ -4,6 +4,7 @@ This module is intentionally lazy about importing PySide6 so the package can be
 imported in environments without the GUI dependency. Call `main()` to run the
 application; if PySide6 is not installed a clear RuntimeError is raised.
 """
+
 from __future__ import annotations
 
 from importlib import import_module
@@ -35,7 +36,10 @@ def _ensure_qt() -> None:
             import_module("PySide6")
             return
         except Exception as e:  # pragma: no cover - dependency check
-            raise RuntimeError("PyQt6 (preferred) or PySide6 is required for the GUI. Install 'pyqt6' or 'pyside6'.") from e
+            raise RuntimeError(
+                "PyQt6 (preferred) or PySide6 is required for the GUI. "
+                "Install 'pyqt6' or 'pyside6'."
+            ) from e
 
 
 def _run_app():
@@ -53,9 +57,10 @@ def _run_app():
         from emumanager.gui_main import MainWindowBase
 
     app = QtWidgets.QApplication([])
-    
+
     # Check for headless mode (used by smoke tests)
     import sys
+
     if "--headless" in sys.argv:
         # Just instantiate the window to verify no crashes, then exit
         win_comp = MainWindowBase(QtWidgets, manager)

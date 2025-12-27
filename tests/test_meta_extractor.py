@@ -14,7 +14,9 @@ class DummyRes:
 def test_get_metadata_direct_parse():
     # Simulate run_cmd that returns stdout with Name and Title ID
     def run_cmd(cmd, *, filebase=None, timeout=None):
-        return DummyRes(stdout="Name: Test Game\nTitle ID: 0100ABCDEF000011\nDisplay Version: 2.0")
+        return DummyRes(
+            stdout="Name: Test Game\nTitle ID: 0100ABCDEF000011\nDisplay Version: 2.0"
+        )
 
     info = get_metadata_info(
         Path("/tmp/test.nsp"),
@@ -25,7 +27,12 @@ def test_get_metadata_direct_parse():
         tool_nsz=None,
         roms_dir=Path("."),
         cmd_timeout=30,
-        parse_tool_output=lambda s: {"name": "Test Game", "id": "0100ABCDEF000011", "ver": "2.0", "langs": "En"},
+        parse_tool_output=lambda s: {
+            "name": "Test Game",
+            "id": "0100ABCDEF000011",
+            "ver": "2.0",
+            "langs": "En",
+        },
         parse_languages=lambda s: "",
         detect_languages_from_filename=lambda n: "",
         determine_type=lambda tid, txt: "Base",
@@ -86,8 +93,8 @@ def test_get_metadata_native_fallback():
         assert info is not None
         assert info["id"] == "0100123456789000"
         # Name logic: split by [ID], strip brackets.
-        # If ID is not in filename, name_part = filepath.name.split(f"[{tid}]")[0] -> filepath.name
-        # Then re.sub(REGEX_BRACKETS, "", name_part) -> "Unknown Game.nsp" (minus brackets if any)
+        # If ID is not in filename, name_part = filepath.name.split(f"[{tid}]")[0]
+        # Then re.sub(REGEX_BRACKETS, "", name_part) -> "Unknown Game.nsp"
         # Wait, split returns list. If separator not found, returns [original_string].
         # So name_part will be "Unknown Game.nsp".
         # Then strip() -> "Unknown Game.nsp".

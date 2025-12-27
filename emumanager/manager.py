@@ -6,6 +6,7 @@ Provides the small CLI-like API that was previously `scripts/emumanager.py`.
 This module lives inside the `emumanager` package so it can be imported
 reliably by other modules/tests.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -26,7 +27,7 @@ def guess_system_for_file(path: Path) -> Optional[str]:
     - Direct mapping by extension when unambiguous.
     - For ambiguous extensions (.iso, .chd, .bin, .zip, .pkg), try:
       - Detect system hints from path segments (e.g., 'ps2', 'psx', 'wii').
-      - Detect known title IDs in filename (PS2: SLUS/SLES/SCUS/SCES; PSP: ULUS/ULES/NPJH/UCUS; PS3: BLUS/BLES/BCES).
+      - Detect known title IDs in filename (PS2: SLUS/SLES...; PS3: BLUS/BLES...).
     - Fall back to extension mapping if no better hint is found.
     """
 
@@ -34,7 +35,7 @@ def guess_system_for_file(path: Path) -> Optional[str]:
     ext = path.suffix.lower()
     mapped = EXT_TO_SYSTEM.get(ext)
 
-    # If extension already maps to a specific system and is not known ambiguous, return it
+    # If extension maps to a specific system and is not ambiguous, return it
     ambiguous_exts = {".iso", ".chd", ".bin", ".zip", ".pkg"}
     if mapped and ext not in ambiguous_exts:
         return mapped
@@ -77,12 +78,31 @@ def guess_system_for_file(path: Path) -> Optional[str]:
 
     # 2) Filename heuristics for disc identifiers
     # PS2 serials: SLUS-xxxxx, SLES-xxxxx, SCUS-xxxxx, SCES-xxxxx, SLPS-, SLPM-, etc.
-    ps2_tags = ("SLUS-", "SLES-", "SCUS-", "SCES-", "SLPS-", "SLPM-", "SLKA-", "SLED-")
+    ps2_tags = (
+        "SLUS-",
+        "SLES-",
+        "SCUS-",
+        "SCES-",
+        "SLPS-",
+        "SLPM-",
+        "SLKA-",
+        "SLED-",
+    )
     if any(tag in name for tag in ps2_tags):
         return "ps2"
 
     # PSP product codes: ULUS, ULES, NPJH, UCUS, etc.
-    psp_tags = ("ULUS", "ULES", "NPJH", "NPUG", "UCUS", "ULJM", "ULJS", "ULKS", "ULEM")
+    psp_tags = (
+        "ULUS",
+        "ULES",
+        "NPJH",
+        "NPUG",
+        "UCUS",
+        "ULJM",
+        "ULJS",
+        "ULKS",
+        "ULEM",
+    )
     if any(tag in name for tag in psp_tags):
         return "psp"
 
@@ -134,7 +154,13 @@ def cmd_list_systems(base_dir: Path):
     return systems
 
 
-def cmd_add_rom(src: Path, base_dir: Path, system: Optional[str], move: bool = False, dry_run: bool = False) -> Path:
+def cmd_add_rom(
+    src: Path,
+    base_dir: Path,
+    system: Optional[str],
+    move: bool = False,
+    dry_run: bool = False,
+) -> Path:
     logger = get_logger("manager")
     if not src.exists():
         logger.error("Source not found: %s", src)
@@ -162,14 +188,18 @@ def cmd_add_rom(src: Path, base_dir: Path, system: Optional[str], move: bool = F
 
 
 def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(prog="emumanager", description="Manage emulation collection")
+    p = argparse.ArgumentParser(
+        prog="emumanager", description="Manage emulation collection"
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
 
     sp = sub.add_parser("init", help="Create standard folder structure")
     sp.add_argument("base_dir", nargs="?", default=BASE_DEFAULT)
     sp.add_argument("--dry-run", action="store_true")
 
-    sp = sub.add_parser("list-systems", help="List configured systems (folders under roms)")
+    sp = sub.add_parser(
+        "list-systems", help="List configured systems (folders under roms)"
+    )
     sp.add_argument("base_dir", nargs="?", default=BASE_DEFAULT)
 
     sp = sub.add_parser("add-rom", help="Add a ROM file to the collection")
@@ -179,15 +209,23 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
     sp.add_argument("--move", action="store_true", help="Move file instead of copying")
     sp.add_argument("--dry-run", action="store_true")
 
-    sp = sub.add_parser("switch", help="Manage Switch ROMs (organize, compress, verify)", add_help=False)
-    sp.add_argument("args", nargs=argparse.REMAINDER, help="Arguments passed to switch organizer")
+    sp = sub.add_parser(
+        "switch",
+        help="Manage Switch ROMs (organize, compress, verify)",
+        add_help=False,
+    )
+    sp.add_argument(
+        "args",
+        nargs=argparse.REMAINDER,
+        help="Arguments passed to switch organizer",
+    )
 
     return p.parse_args(argv)
 
 
 def main(argv: List[str] | None = None) -> int:
     args = parse_args(argv)
-    
+
     if args.cmd == "init":
         return cmd_init(Path(args.base_dir), args.dry_run)
     elif args.cmd == "list-systems":
@@ -196,7 +234,13 @@ def main(argv: List[str] | None = None) -> int:
         return 0
     elif args.cmd == "add-rom":
         try:
-            cmd_add_rom(Path(args.src), Path(args.base_dir), args.system, args.move, args.dry_run)
+            cmd_add_rom(
+                Path(args.src),
+                Path(args.base_dir),
+                args.system,
+                args.move,
+                args.dry_run,
+            )
             return 0
         except Exception as e:
             print(f"Error: {e}")
@@ -206,7 +250,7 @@ def main(argv: List[str] | None = None) -> int:
         # We need to reconstruct argv for switch_cli
         # args.args contains the remainder
         return switch_cli.main(args.args)
-        
+
     return 0
 
 

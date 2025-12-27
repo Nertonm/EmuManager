@@ -2,7 +2,9 @@ from emumanager.switch import main_helpers as mh
 
 
 def test_build_new_filename_basic():
-    fname = mh.__dict__["build_new_filename"]("Cool Game", "0100ABCDEF000020", "v1", ".nsp")
+    fname = mh.__dict__["build_new_filename"](
+        "Cool Game", "0100ABCDEF000020", "v1", ".nsp"
+    )
     assert "Cool Game [0100ABCDEF000020]" in fname
     assert fname.endswith(".nsp")
 
@@ -23,7 +25,12 @@ def test_get_dest_folder_truncation(tmp_path):
 
 def test_make_catalog_entry(tmp_path):
     clean_name = "My Game"
-    meta = {"id": "0100ABCDEF000022", "type": "Base", "ver": "v1", "langs": "En"}
+    meta = {
+        "id": "0100ABCDEF000022",
+        "type": "Base",
+        "ver": "v1",
+        "langs": "En",
+    }
     suffix = ".nsp"
     target = tmp_path / "dest.nsp"
     row = mh.__dict__["make_catalog_entry"](clean_name, meta, suffix, target, "(World)")

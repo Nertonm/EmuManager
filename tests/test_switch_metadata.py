@@ -8,7 +8,10 @@ def test_parse_languages_empty():
 
 def test_parse_languages_common():
     out = "Languages: English, Japanese, Portuguese"
-    assert metadata.parse_languages(out) in ("[En,Ja,Pt]", "[En,Ja,PtBR]") or metadata.parse_languages(out).startswith("[")
+    assert metadata.parse_languages(out) in (
+        "[En,Ja,Pt]",
+        "[En,Ja,PtBR]",
+    ) or metadata.parse_languages(out).startswith("[")
 
 
 def test_detect_languages_from_filename():

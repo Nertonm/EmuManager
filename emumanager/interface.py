@@ -5,6 +5,7 @@ EmuManager - Interactive interface (package version)
 This module provides the same interactive REPL as the script shim but lives
 inside the `emumanager` package so it can be imported and tested easily.
 """
+
 from __future__ import annotations
 
 import shlex
@@ -49,7 +50,11 @@ def yes_no(text: str, default: bool = True) -> bool:
 
 
 def cmd_init_interactive():
-    base = Path(prompt("Diretório base de criação", str(DEFAULT_BASE))).expanduser().resolve()
+    base = (
+        Path(prompt("Diretório base de criação", str(DEFAULT_BASE)))
+        .expanduser()
+        .resolve()
+    )
     dry = yes_no("Executar em modo dry-run (sem alterações)?", default=False)
     print("Iniciando criação... (dry-run=%s)" % dry)
     rc = emu.cmd_init(base, dry_run=dry)
@@ -57,7 +62,11 @@ def cmd_init_interactive():
 
 
 def cmd_list_interactive():
-    base = Path(prompt("Diretório base (onde está o Acervo)", str(DEFAULT_BASE))).expanduser().resolve()
+    base = (
+        Path(prompt("Diretório base (onde está o Acervo)", str(DEFAULT_BASE)))
+        .expanduser()
+        .resolve()
+    )
     systems = emu.cmd_list_systems(base)
     if not systems:
         print("Nenhum sistema encontrado — execute 'init' primeiro.")
@@ -69,8 +78,15 @@ def cmd_list_interactive():
 
 def cmd_add_interactive():
     src = Path(prompt("Caminho para o ROM (arquivo)")).expanduser().resolve()
-    base = Path(prompt("Diretório base (onde colocar)", str(DEFAULT_BASE))).expanduser().resolve()
-    system = prompt("Sistema alvo (ex: nes) — deixe vazio para adivinhar", "").strip() or None
+    base = (
+        Path(prompt("Diretório base (onde colocar)", str(DEFAULT_BASE)))
+        .expanduser()
+        .resolve()
+    )
+    system = (
+        prompt("Sistema alvo (ex: nes) — deixe vazio para adivinhar", "").strip()
+        or None
+    )
     move = yes_no("Mover arquivo em vez de copiar?", default=False)
     dry = yes_no("Dry-run (simular)?", default=False)
 

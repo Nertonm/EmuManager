@@ -1,9 +1,11 @@
+import logging
 from pathlib import Path
 from typing import Optional
-import logging
+
 from emumanager.converters.dolphin_converter import DolphinConverter
 
 logger = logging.getLogger(__name__)
+
 
 def get_metadata(file_path: Path) -> dict:
     """
@@ -27,10 +29,10 @@ def get_metadata(file_path: Path) -> dict:
     meta = {}
     try:
         with open(file_path, "rb") as f:
-            header = f.read(0x200) # Read enough for header
+            header = f.read(0x200)  # Read enough for header
             if len(header) < 6:
                 return {}
-            
+
             if header.startswith(b"RVZ"):
                 return {}
 
@@ -47,16 +49,19 @@ def get_metadata(file_path: Path) -> dict:
             try:
                 # Read up to null byte
                 raw_name = header[0x20:0x60]
-                name = raw_name.split(b'\x00')[0].decode("utf-8", errors="ignore").strip()
+                name = (
+                    raw_name.split(b"\x00")[0].decode("utf-8", errors="ignore").strip()
+                )
                 if name:
                     meta["internal_name"] = name
             except Exception:
                 pass
-                
+
     except Exception as e:
         logger.error(f"Error reading GameCube header from {file_path}: {e}")
-    
+
     return meta
+
 
 def get_gamecube_serial(file_path: Path) -> Optional[str]:
     """

@@ -1,5 +1,5 @@
-from pathlib import Path
 import types
+from pathlib import Path
 
 from emumanager.switch import main_helpers as mh
 
@@ -45,14 +45,22 @@ def make_ctx(tmp_path, *, move_result=True, meta=None):
         "determine_region": determine_region,
         "handle_compression": handle_compression,
         "safe_move": safe_move,
-        "logger": types.SimpleNamespace(info=print, warning=print, debug=print, exception=print),
+        "logger": types.SimpleNamespace(
+            info=print, warning=print, debug=print, exception=print
+        ),
     }
 
 
 def test_process_one_file_success(tmp_path):
     f = tmp_path / "Game [0100ABCDEF000020].nsp"
     f.write_text("data")
-    meta = {"id": "0100ABCDEF000020", "name": "Game", "ver": "v1", "langs": "En", "type": "Base"}
+    meta = {
+        "id": "0100ABCDEF000020",
+        "name": "Game",
+        "ver": "v1",
+        "langs": "En",
+        "type": "Base",
+    }
     ctx = make_ctx(tmp_path, move_result=True, meta=meta)
 
     row, status = mh.process_one_file(f, ctx)

@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Callable, Optional
-import re
 
 from .nsz import parse_nsz_verify_output
 
 
-def verify_nsz(filepath: Path, run_cmd: Callable, *, tool_nsz: str = "nsz", timeout: Optional[int] = 30) -> bool:
+def verify_nsz(
+    filepath: Path,
+    run_cmd: Callable,
+    *,
+    tool_nsz: str = "nsz",
+    timeout: Optional[int] = 30,
+) -> bool:
     """Verify an NSZ/XCZ archive using the provided NSZ tool.
 
     Returns True when verification succeeded, False otherwise. The function
@@ -20,7 +26,7 @@ def verify_nsz(filepath: Path, run_cmd: Callable, *, tool_nsz: str = "nsz", time
 
     # If we got a CompletedProcess-like result, inspect it
     retcode = getattr(res, "returncode", None)
-    stdout = (getattr(res, "stdout", None) or "")
+    stdout = getattr(res, "stdout", None) or ""
 
     if isinstance(retcode, int) and retcode == 0:
         # Prefer trusting a zero exit code; still double-check textual hint
@@ -64,7 +70,7 @@ def verify_metadata_tool(
     except Exception:
         return False
 
-    stdout = (getattr(res, "stdout", None) or "")
+    stdout = getattr(res, "stdout", None) or ""
     retcode = getattr(res, "returncode", None)
 
     # Quick heuristics: return True if returncode is 0 and stdout non-empty
@@ -78,7 +84,13 @@ def verify_metadata_tool(
     return False
 
 
-def verify_hactool_deep(filepath: Path, run_cmd: Callable, *, keys_path: Optional[Path] = None, timeout: Optional[int] = 60) -> bool:
+def verify_hactool_deep(
+    filepath: Path,
+    run_cmd: Callable,
+    *,
+    keys_path: Optional[Path] = None,
+    timeout: Optional[int] = 60,
+) -> bool:
     """Attempt a deeper hactool-style verification pass.
 
     This runs the given tool (assumed to be hactool-like) with a minimal set

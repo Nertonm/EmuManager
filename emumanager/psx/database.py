@@ -2,6 +2,7 @@ import csv
 from pathlib import Path
 from typing import Dict, Optional
 
+
 class PSXDatabase:
     def __init__(self):
         self._db: Dict[str, str] = {}
@@ -15,7 +16,9 @@ class PSXDatabase:
                 reader = csv.reader(f)
                 for row in reader:
                     if len(row) >= 2:
-                        serial = row[0].strip().upper().replace("_", "-").replace(".", "")
+                        serial = (
+                            row[0].strip().upper().replace("_", "-").replace(".", "")
+                        )
                         if len(serial) == 9 and serial[4] != "-":
                             serial = serial[:4] + "-" + serial[4:]
                         title = row[1].strip()
@@ -29,6 +32,7 @@ class PSXDatabase:
     def clear(self):
         """Clear in-memory mappings (useful for tests or when no DB is provided)."""
         self._db.clear()
+
 
 # Global instance
 db = PSXDatabase()

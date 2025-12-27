@@ -26,6 +26,7 @@ ORIGINAL_SUBPROCESS_RUN = subprocess.run
 #  2. Descrições detalhadas dos comandos.
 # ==============================================================================
 
+TOOL_NSZ = None
 
 class Col:
     RESET = "\033[0m"
@@ -101,13 +102,20 @@ parser.add_argument(
     help="Diretório alvo das ROMs (Default: pasta atual)",
 )
 parser.add_argument(
-    "--keys", type=str, default="./prod.keys", help="Caminho do arquivo prod.keys"
+    "--keys",
+    type=str,
+    default="./prod.keys",
+    help="Caminho do arquivo prod.keys",
 )
 parser.add_argument(
-    "--dry-run", action="store_true", help="SIMULAÇÃO: Não move nem deleta arquivos"
+    "--dry-run",
+    action="store_true",
+    help="SIMULAÇÃO: Não move nem deleta arquivos",
 )
 parser.add_argument(
-    "--no-verify", action="store_true", help="Pula verificação de hash (SHA256/CRC)"
+    "--no-verify",
+    action="store_true",
+    help="Pula verificação de hash (SHA256/CRC)",
 )
 parser.add_argument(
     "--organize",
@@ -120,10 +128,14 @@ parser.add_argument(
     help="Remove arquivos inúteis (.txt, .nfo, .url, .lnk)",
 )
 parser.add_argument(
-    "--compress", action="store_true", help="Comprime ROMs (XCI/NSP) para formato NSZ"
+    "--compress",
+    action="store_true",
+    help="Comprime ROMs (XCI/NSP) para formato NSZ",
 )
 parser.add_argument(
-    "--decompress", action="store_true", help="Descomprime (NSZ) de volta para NSP"
+    "--decompress",
+    action="store_true",
+    help="Descomprime (NSZ) de volta para NSP",
 )
 
 parser.add_argument(
@@ -138,7 +150,10 @@ parser.add_argument(
     help="Recomprime arquivos já em .nsz/.xcz para o nível especificado (substitui o arquivo comprimido se bem-sucedido)",
 )
 parser.add_argument(
-    "--level", type=int, default=3, help="Nível de compressão Zstd (1-22). Padrão: 3 (balanced)"
+    "--level",
+    type=int,
+    default=3,
+    help="Nível de compressão Zstd (1-22). Padrão: 3 (balanced)",
 )
 
 parser.add_argument(
@@ -298,7 +313,10 @@ def _signal_handler(signum, frame):
     SHUTDOWN_REQUESTED = True
     try:
         if CURRENT_PROCESS is not None:
-            logger.warning("Killing active subprocess (pid=%s)", getattr(CURRENT_PROCESS, 'pid', 'unknown'))
+            logger.warning(
+                "Killing active subprocess (pid=%s)",
+                getattr(CURRENT_PROCESS, "pid", "unknown"),
+            )
             try:
                 CURRENT_PROCESS.kill()
             except Exception:
@@ -310,7 +328,13 @@ def _signal_handler(signum, frame):
         logger.debug("Error while attempting to kill current process on signal")
 
 
-def run_cmd(cmd, *, filebase: Optional[Path] = None, timeout: Optional[int] = None, check: bool = False):
+def run_cmd(
+    cmd,
+    *,
+    filebase: Optional[Path] = None,
+    timeout: Optional[int] = None,
+    check: bool = False,
+):
     """Run a subprocess command with timeout, capture output and optionally save to files.
 
     If filebase is provided, stdout/err will be stored as filebase + .out/.err
@@ -336,7 +360,9 @@ def run_cmd(cmd, *, filebase: Optional[Path] = None, timeout: Optional[int] = No
                 timeout=timeout,
             )
         except subprocess.TimeoutExpired as e:
-            logger.warning("Command timeout (%s s): %s", timeout, " ".join(map(str, cmd)))
+            logger.warning(
+                "Command timeout (%s s): %s", timeout, " ".join(map(str, cmd))
+            )
             res = e
         except Exception:
             logger.exception("Command execution failed (run): %s", cmd)
@@ -355,15 +381,23 @@ def run_cmd(cmd, *, filebase: Optional[Path] = None, timeout: Optional[int] = No
             CURRENT_PROCESS = proc
             try:
                 out, err = proc.communicate(timeout=timeout)
-                res = subprocess.CompletedProcess(cmd, proc.returncode, stdout=out, stderr=err)
+                res = subprocess.CompletedProcess(
+                    cmd, proc.returncode, stdout=out, stderr=err
+                )
             except subprocess.TimeoutExpired:
-                logger.warning("Command timeout (%s s): %s", timeout, " ".join(map(str, cmd)))
+                logger.warning(
+                    "Command timeout (%s s): %s",
+                    timeout,
+                    " ".join(map(str, cmd)),
+                )
                 try:
                     proc.kill()
                 except Exception:
                     logger.debug("Failed to kill timed-out subprocess")
                 out, err = proc.communicate()
-                res = subprocess.CompletedProcess(cmd, proc.returncode, stdout=out, stderr=err)
+                res = subprocess.CompletedProcess(
+                    cmd, proc.returncode, stdout=out, stderr=err
+                )
         except Exception:
             logger.exception("Command execution failed (popen): %s", cmd)
             raise
@@ -379,15 +413,21 @@ def run_cmd(cmd, *, filebase: Optional[Path] = None, timeout: Optional[int] = No
         errp = getattr(res, "stderr", None) or ""
         try:
             filebase.parent.mkdir(parents=True, exist_ok=True)
-            with open(str(filebase) + ".out", "w", encoding="utf-8", errors="ignore") as fo:
+            with open(
+                str(filebase) + ".out", "w", encoding="utf-8", errors="ignore"
+            ) as fo:
                 fo.write(outp)
-            with open(str(filebase) + ".err", "w", encoding="utf-8", errors="ignore") as fe:
+            with open(
+                str(filebase) + ".err", "w", encoding="utf-8", errors="ignore"
+            ) as fe:
                 fe.write(errp)
         except Exception:
             logger.debug("Failed to write command output files for %s", filebase)
 
     if check and isinstance(res, subprocess.CompletedProcess) and res.returncode != 0:
-        raise subprocess.CalledProcessError(res.returncode, cmd, output=res.stdout, stderr=res.stderr)
+        raise subprocess.CalledProcessError(
+            res.returncode, cmd, output=res.stdout, stderr=res.stderr
+        )
 
     return res
 
@@ -489,7 +529,9 @@ def detect_languages_from_filename(filename: str) -> str:
 
 
 # --- CONSTANTS / COMMON REGEX ---
-TITLE_ID_RE = re.compile(r"(?:Title ID|Program Id):\s*(?:0x)?([0-9a-f]{16})", re.IGNORECASE)
+TITLE_ID_RE = re.compile(
+    r"(?:Title ID|Program Id):\s*(?:0x)?([0-9a-f]{16})", re.IGNORECASE
+)
 INVALID_FILENAME_CHARS_RE = re.compile(r'[<>:"/\\|?*]')
 REGION_JPN = "(JPN)"
 SUFFIX_RECOMP = ".recomp"
@@ -501,10 +543,9 @@ COMPRESSION_PROFILE_LEVELS = {
 }
 
 
-
 def determine_type(title_id, text_output):
     # Prefer explicit textual hints
-    txt = (text_output or "")
+    txt = text_output or ""
     low = txt.lower()
     if "update" in low or "patch" in low:
         return "UPD"
@@ -634,7 +675,11 @@ def get_metadata(filepath):
 
         base = globals().get("ROMS_DIR", Path(".")) or Path(".")
         logbase = Path(base) / "logs" / "nsz" / (filepath.stem + ".meta")
-        res = run_cmd(cmd, filebase=logbase, timeout=getattr(globals().get("args", {}), "cmd_timeout", None))
+        res = run_cmd(
+            cmd,
+            filebase=logbase,
+            timeout=getattr(globals().get("args", {}), "cmd_timeout", None),
+        )
 
         name = re.search(
             r"(?:Name|Application Name):\s*(.*)", res.stdout, re.IGNORECASE
@@ -650,7 +695,9 @@ def get_metadata(filepath):
             if ver:
                 info["ver"] = ver.group(1).strip()
             # prefer parse from tool output, fallback to filename heuristics
-            langs_raw = parse_languages(res.stdout) or detect_languages_from_filename(filepath.name)
+            langs_raw = parse_languages(res.stdout) or detect_languages_from_filename(
+                filepath.name
+            )
             # normalize: store without surrounding brackets (easier downstream)
             if langs_raw and langs_raw.startswith("[") and langs_raw.endswith("]"):
                 langs_raw = langs_raw[1:-1]
@@ -660,7 +707,8 @@ def get_metadata(filepath):
         else:
             # tool ran but didn't return required fields
             logger.debug(
-                "metadata tool ran but returned incomplete data for %s", filepath
+                "metadata tool ran but returned incomplete data for %s",
+                filepath,
             )
             logger.debug("tool stdout:\n%s", getattr(res, "stdout", ""))
             logger.debug("tool stderr:\n%s", getattr(res, "stderr", ""))
@@ -679,7 +727,10 @@ def get_metadata(filepath):
         if fallback:
             return fallback
     except Exception:
-        logger.exception("get_metadata: decompression fallback raised unexpected exception for %s", filepath)
+        logger.exception(
+            "get_metadata: decompression fallback raised unexpected exception for %s",
+            filepath,
+        )
 
     # Fallback Regex
     tid_match = re.search(r"\[([0-9a-fA-F]{16})\]", filepath.name)
@@ -718,8 +769,14 @@ def _try_decompression_metadata(filepath, base_dir):
             for cmd in attempts:
                 try:
                     logger.debug("Trying decompression command: %s", " ".join(cmd))
-                    logbase = Path(base_dir) / "logs" / "nsz" / (filepath.stem + ".decomp")
-                    res = run_cmd(cmd, filebase=logbase, timeout=getattr(globals().get("args", {}), "cmd_timeout", None))
+                    logbase = (
+                        Path(base_dir) / "logs" / "nsz" / (filepath.stem + ".decomp")
+                    )
+                    res = run_cmd(
+                        cmd,
+                        filebase=logbase,
+                        timeout=getattr(globals().get("args", {}), "cmd_timeout", None),
+                    )
                     logger.debug("nsz stdout: %s", getattr(res, "stdout", ""))
                     logger.debug("nsz stderr: %s", getattr(res, "stderr", ""))
                 except Exception as de:
@@ -737,18 +794,36 @@ def _try_decompression_metadata(filepath, base_dir):
             if decompressed and decompressed.exists():
                 logger.debug("Found decompressed candidate: %s", decompressed)
                 try:
-                    cmd = [str(TOOL_METADATA), "-v" if IS_NSTOOL else "-k", str(decompressed)]
+                    cmd = [
+                        str(TOOL_METADATA),
+                        "-v" if IS_NSTOOL else "-k",
+                        str(decompressed),
+                    ]
                     if not IS_NSTOOL:
                         cmd.insert(2, str(KEYS_PATH))
                         cmd.insert(3, "-i")
 
-                    logbase2 = Path(base_dir) / "logs" / "nsz" / (decompressed.stem + ".meta")
-                    res2 = run_cmd(cmd, filebase=logbase2, timeout=getattr(globals().get("args", {}), "cmd_timeout", None))
-                    
-                    name = re.search(r"(?:Name|Application Name):\s*(.*)", getattr(res2, "stdout", ""), re.IGNORECASE)
+                    logbase2 = (
+                        Path(base_dir) / "logs" / "nsz" / (decompressed.stem + ".meta")
+                    )
+                    res2 = run_cmd(
+                        cmd,
+                        filebase=logbase2,
+                        timeout=getattr(globals().get("args", {}), "cmd_timeout", None),
+                    )
+
+                    name = re.search(
+                        r"(?:Name|Application Name):\s*(.*)",
+                        getattr(res2, "stdout", ""),
+                        re.IGNORECASE,
+                    )
                     tid = TITLE_ID_RE.search(getattr(res2, "stdout", ""))
-                    ver = re.search(r"(?:Display Version|Version):\s*(.*)", getattr(res2, "stdout", ""), re.IGNORECASE)
-                    
+                    ver = re.search(
+                        r"(?:Display Version|Version):\s*(.*)",
+                        getattr(res2, "stdout", ""),
+                        re.IGNORECASE,
+                    )
+
                     if name and tid:
                         info = {}
                         info["name"] = name.group(1).strip()
@@ -757,17 +832,31 @@ def _try_decompression_metadata(filepath, base_dir):
                             info["ver"] = ver.group(1).strip()
                         else:
                             info["ver"] = "v0"
-                        
-                        langs_raw = parse_languages(res2.stdout) or detect_languages_from_filename(decompressed.name if decompressed else filepath.name)
-                        if langs_raw and langs_raw.startswith("[") and langs_raw.endswith("]"):
+
+                        langs_raw = parse_languages(
+                            res2.stdout
+                        ) or detect_languages_from_filename(
+                            decompressed.name if decompressed else filepath.name
+                        )
+                        if (
+                            langs_raw
+                            and langs_raw.startswith("[")
+                            and langs_raw.endswith("]")
+                        ):
                             langs_raw = langs_raw[1:-1]
                         info["langs"] = langs_raw
                         info["type"] = determine_type(info["id"], res2.stdout)
                         return info
                     else:
-                        logger.debug("metadata from decompressed file incomplete for %s", filepath)
+                        logger.debug(
+                            "metadata from decompressed file incomplete for %s",
+                            filepath,
+                        )
                 except Exception:
-                    logger.exception("get_metadata: metadata tool failed on decompressed file %s", decompressed)
+                    logger.exception(
+                        "get_metadata: metadata tool failed on decompressed file %s",
+                        decompressed,
+                    )
     except Exception:
         logger.exception("decompression fallback failed for %s", filepath)
     return None
@@ -789,11 +878,29 @@ def verify_integrity(filepath, deep: bool = False, return_output: bool = False):
         # Primary check: use NSZ verify if it's an nsz/xcz and nsz tool exists
         if is_nsz and TOOL_NSZ:
             try:
-                logbase_n = Path(globals().get("ROMS_DIR", Path("."))) / "logs" / "nsz" / (filepath.stem + ".verify_nsz")
-                res_nsz = run_cmd([str(TOOL_NSZ), "--verify", str(filepath)], filebase=logbase_n, timeout=getattr(globals().get("args", {}), "cmd_timeout", None))
+                logbase_n = (
+                    Path(globals().get("ROMS_DIR", Path(".")))
+                    / "logs"
+                    / "nsz"
+                    / (filepath.stem + ".verify_nsz")
+                )
+                res_nsz = run_cmd(
+                    [str(TOOL_NSZ), "--verify", str(filepath)],
+                    filebase=logbase_n,
+                    timeout=getattr(globals().get("args", {}), "cmd_timeout", None),
+                )
                 # Use the verify helper but avoid re-running the tool by passing a lambda that returns the captured result
-                ok_nsz = verify_nsz(filepath, lambda *a, **k: res_nsz, tool_nsz=str(TOOL_NSZ))
-                results.append((ok_nsz, (getattr(res_nsz, "stdout", "") or "") + "\n" + (getattr(res_nsz, "stderr", "") or "")))
+                ok_nsz = verify_nsz(
+                    filepath, lambda *a, **k: res_nsz, tool_nsz=str(TOOL_NSZ)
+                )
+                results.append(
+                    (
+                        ok_nsz,
+                        (getattr(res_nsz, "stdout", "") or "")
+                        + "\n"
+                        + (getattr(res_nsz, "stderr", "") or ""),
+                    )
+                )
             except Exception as e:
                 logger.debug("nsz verify raised: %s", e)
                 results.append((False, str(e)))
@@ -804,10 +911,32 @@ def verify_integrity(filepath, deep: bool = False, return_output: bool = False):
             if not IS_NSTOOL:
                 cmd.insert(1, "-k")
                 cmd.insert(2, str(KEYS_PATH))
-            logbase_m = Path(globals().get("ROMS_DIR", Path("."))) / "logs" / "nsz" / (filepath.stem + ".verify_meta")
-            res_meta = run_cmd(cmd, filebase=logbase_m, timeout=getattr(globals().get("args", {}), "cmd_timeout", None))
-            ok_meta = verify_metadata_tool(filepath, lambda *a, **k: res_meta, tool_metadata=str(TOOL_METADATA), is_nstool=IS_NSTOOL, keys_path=KEYS_PATH)
-            results.append((ok_meta, (getattr(res_meta, "stdout", "") or "") + "\n" + (getattr(res_meta, "stderr", "") or "")))
+            logbase_m = (
+                Path(globals().get("ROMS_DIR", Path(".")))
+                / "logs"
+                / "nsz"
+                / (filepath.stem + ".verify_meta")
+            )
+            res_meta = run_cmd(
+                cmd,
+                filebase=logbase_m,
+                timeout=getattr(globals().get("args", {}), "cmd_timeout", None),
+            )
+            ok_meta = verify_metadata_tool(
+                filepath,
+                lambda *a, **k: res_meta,
+                tool_metadata=str(TOOL_METADATA),
+                is_nstool=IS_NSTOOL,
+                keys_path=KEYS_PATH,
+            )
+            results.append(
+                (
+                    ok_meta,
+                    (getattr(res_meta, "stdout", "") or "")
+                    + "\n"
+                    + (getattr(res_meta, "stderr", "") or ""),
+                )
+            )
         except Exception as e:
             logger.debug("metadata verify raised: %s", e)
             results.append((False, str(e)))
@@ -815,11 +944,33 @@ def verify_integrity(filepath, deep: bool = False, return_output: bool = False):
         # If deep requested and hactool available, attempt extra pass with hactool specifics
         if deep and TOOL_HACTOOL:
             try:
-                cmd = [str(TOOL_HACTOOL), "-k", str(KEYS_PATH), str(filepath)] if KEYS_PATH and KEYS_PATH.exists() else [str(TOOL_HACTOOL), str(filepath)]
-                logbase_h = Path(globals().get("ROMS_DIR", Path("."))) / "logs" / "nsz" / (filepath.stem + ".verify_hactool")
-                res_h = run_cmd(cmd, filebase=logbase_h, timeout=getattr(globals().get("args", {}), "cmd_timeout", None))
-                ok_h = verify_hactool_deep(filepath, lambda *a, **k: res_h, keys_path=KEYS_PATH)
-                results.append((ok_h, (getattr(res_h, "stdout", "") or "") + "\n" + (getattr(res_h, "stderr", "") or "")))
+                cmd = (
+                    [str(TOOL_HACTOOL), "-k", str(KEYS_PATH), str(filepath)]
+                    if KEYS_PATH and KEYS_PATH.exists()
+                    else [str(TOOL_HACTOOL), str(filepath)]
+                )
+                logbase_h = (
+                    Path(globals().get("ROMS_DIR", Path(".")))
+                    / "logs"
+                    / "nsz"
+                    / (filepath.stem + ".verify_hactool")
+                )
+                res_h = run_cmd(
+                    cmd,
+                    filebase=logbase_h,
+                    timeout=getattr(globals().get("args", {}), "cmd_timeout", None),
+                )
+                ok_h = verify_hactool_deep(
+                    filepath, lambda *a, **k: res_h, keys_path=KEYS_PATH
+                )
+                results.append(
+                    (
+                        ok_h,
+                        (getattr(res_h, "stdout", "") or "")
+                        + "\n"
+                        + (getattr(res_h, "stderr", "") or ""),
+                    )
+                )
             except Exception as e:
                 logger.debug("hactool deep verify raised: %s", e)
                 results.append((False, str(e)))
@@ -855,9 +1006,22 @@ def scan_for_virus(filepath):
 
     cmd = [str(tool), "--no-summary", str(filepath)]
     try:
-        logbase = Path(globals().get("ROMS_DIR", Path("."))) / "logs" / "nsz" / (filepath.stem + ".av")
-        res = run_cmd(cmd, filebase=logbase, timeout=getattr(globals().get("args", {}), "cmd_timeout", None))
-        out = (getattr(res, "stdout", "") or "") + "\n" + (getattr(res, "stderr", "") or "")
+        logbase = (
+            Path(globals().get("ROMS_DIR", Path(".")))
+            / "logs"
+            / "nsz"
+            / (filepath.stem + ".av")
+        )
+        res = run_cmd(
+            cmd,
+            filebase=logbase,
+            timeout=getattr(globals().get("args", {}), "cmd_timeout", None),
+        )
+        out = (
+            (getattr(res, "stdout", "") or "")
+            + "\n"
+            + (getattr(res, "stderr", "") or "")
+        )
         # clamscan/clamdscan: 0 = OK, 1 = infected, 2 = error
         rc = getattr(res, "returncode", None)
         if rc == 0:
@@ -877,18 +1041,34 @@ def detect_nsz_level(filepath) -> Optional[int]:
 
     Returns integer level or None if unknown.
     """
-    global TOOL_NSZ
     if not TOOL_NSZ:
         return None
     try:
         # Try common info switches
-        attempts = [[str(TOOL_NSZ), "--info", str(filepath)], [str(TOOL_NSZ), "-i", str(filepath)], [str(TOOL_NSZ), "info", str(filepath)]]
+        attempts = [
+            [str(TOOL_NSZ), "--info", str(filepath)],
+            [str(TOOL_NSZ), "-i", str(filepath)],
+            [str(TOOL_NSZ), "info", str(filepath)],
+        ]
         out = ""
         for cmd in attempts:
             try:
-                logbase_i = Path(globals().get("ROMS_DIR", Path("."))) / "logs" / "nsz" / (filepath.stem + ".info")
-                res = run_cmd(cmd, filebase=logbase_i, timeout=getattr(globals().get("args", {}), "cmd_timeout", None))
-                out = (getattr(res, "stdout", "") or "") + "\n" + (getattr(res, "stderr", "") or "")
+                logbase_i = (
+                    Path(globals().get("ROMS_DIR", Path(".")))
+                    / "logs"
+                    / "nsz"
+                    / (filepath.stem + ".info")
+                )
+                res = run_cmd(
+                    cmd,
+                    filebase=logbase_i,
+                    timeout=getattr(globals().get("args", {}), "cmd_timeout", None),
+                )
+                out = (
+                    (getattr(res, "stdout", "") or "")
+                    + "\n"
+                    + (getattr(res, "stderr", "") or "")
+                )
                 if out and len(out.strip()) > 0:
                     break
             except Exception:
@@ -898,7 +1078,11 @@ def detect_nsz_level(filepath) -> Optional[int]:
             return None
 
         # Look for typical patterns indicating zstd level
-        m = re.search(r"zstd(?: compression)? level\s*[:=\-]?\s*(\d+)", out, re.IGNORECASE)
+        m = re.search(
+            r"zstd(?: compression)? level\s*[:=\-]?\s*(\d+)",
+            out,
+            re.IGNORECASE,
+        )
         if not m:
             m = re.search(r"compression level\s*[:=\-]?\s*(\d+)", out, re.IGNORECASE)
         if not m:
@@ -920,7 +1104,11 @@ def _handle_recompression(filepath):
             cur = detect_nsz_level(filepath)
             if cur is not None and args.level > cur:
                 should_recompress = True
-                logger.info("Detected existing zstd level %s -> will recompress to %s", cur, args.level)
+                logger.info(
+                    "Detected existing zstd level %s -> will recompress to %s",
+                    cur,
+                    args.level,
+                )
         except Exception:
             logger.debug("Failed to detect existing nsz level for %s", filepath)
 
@@ -932,35 +1120,93 @@ def _handle_recompression(filepath):
             with tempfile.TemporaryDirectory(prefix="nsz_recomp_") as td:
                 tmpdir = Path(td)
                 attempts = [
-                    [str(TOOL_NSZ), "-C", "-l", str(args.level), "-o", str(tmpdir), str(filepath)],
-                    [str(TOOL_NSZ), "-C", "-l", str(args.level), str(filepath), "-o", str(tmpdir)],
-                    [str(TOOL_NSZ), "-C", "-l", str(args.level), str(filepath)],
+                    [
+                        str(TOOL_NSZ),
+                        "-C",
+                        "-l",
+                        str(args.level),
+                        "-o",
+                        str(tmpdir),
+                        str(filepath),
+                    ],
+                    [
+                        str(TOOL_NSZ),
+                        "-C",
+                        "-l",
+                        str(args.level),
+                        str(filepath),
+                        "-o",
+                        str(tmpdir),
+                    ],
+                    [
+                        str(TOOL_NSZ),
+                        "-C",
+                        "-l",
+                        str(args.level),
+                        str(filepath),
+                    ],
                 ]
                 # delegate attempts execution to compression helper
-                from emumanager.switch.compression import try_multiple_recompress_attempts
+                from emumanager.switch.compression import (
+                    try_multiple_recompress_attempts,
+                )
 
                 produced = try_multiple_recompress_attempts(
                     tmpdir,
                     attempts,
-                    lambda *a, **k: run_cmd(a[0], filebase=Path(globals().get("ROMS_DIR", Path("."))) / "logs" / "nsz" / (filepath.stem + SUFFIX_RECOMP), timeout=getattr(globals().get("args", {}), "cmd_timeout", None)),
-                    progress_callback=getattr(globals().get("args", {}), "progress_callback", None),
+                    lambda *a, **k: run_cmd(
+                        a[0],
+                        filebase=Path(globals().get("ROMS_DIR", Path(".")))
+                        / "logs"
+                        / "nsz"
+                        / (filepath.stem + SUFFIX_RECOMP),
+                        timeout=getattr(globals().get("args", {}), "cmd_timeout", None),
+                    ),
+                    progress_callback=getattr(
+                        globals().get("args", {}), "progress_callback", None
+                    ),
                 )
 
                 if produced:
                     # delegate handling of produced file to compression helper
-                    from emumanager.switch.compression import handle_produced_file
+                    from emumanager.switch.compression import (
+                        handle_produced_file,
+                    )
 
                     new_file = produced[0]
                     try:
-                        result_path = handle_produced_file(new_file, filepath, lambda *a, **k: run_cmd(a[0], filebase=Path(globals().get("ROMS_DIR", Path("."))) / "logs" / "nsz" / (filepath.stem + SUFFIX_RECOMP), timeout=getattr(globals().get("args", {}), "cmd_timeout", None)), verify_fn=lambda p, rc: verify_integrity(p, deep=False), args=args, roms_dir=ROMS_DIR)
+                        result_path = handle_produced_file(
+                            new_file,
+                            filepath,
+                            lambda *a, **k: run_cmd(
+                                a[0],
+                                filebase=Path(globals().get("ROMS_DIR", Path(".")))
+                                / "logs"
+                                / "nsz"
+                                / (filepath.stem + SUFFIX_RECOMP),
+                                timeout=getattr(
+                                    globals().get("args", {}),
+                                    "cmd_timeout",
+                                    None,
+                                ),
+                            ),
+                            verify_fn=lambda p, rc: verify_integrity(p, deep=False),
+                            args=args,
+                            roms_dir=ROMS_DIR,
+                        )
                         if result_path == filepath:
                             print(f" {Col.GREEN}[OK]{Col.RESET}")
-                            logger.info("Recompression succeeded and file replaced: %s", filepath.name)
+                            logger.info(
+                                "Recompression succeeded and file replaced: %s",
+                                filepath.name,
+                            )
                             return filepath
                         # if returned other path, return it as candidate
                         return result_path
                     except Exception:
-                        logger.exception("Error handling recompressed file for %s", filepath)
+                        logger.exception(
+                            "Error handling recompressed file for %s", filepath
+                        )
                         return filepath
 
             print(f" {Col.RED}[FALHA]{Col.RESET}")
@@ -981,7 +1227,15 @@ def _handle_new_compression(filepath):
 
         compressed_candidate = compress_file(
             filepath,
-            lambda *a, **k: run_cmd(a[0], filebase=Path(globals().get("ROMS_DIR", Path("."))) / "logs" / "nsz" / (filepath.stem + ".compress"), timeout=getattr(globals().get("args", {}), "cmd_timeout", None), check=k.get("check", False)),
+            lambda *a, **k: run_cmd(
+                a[0],
+                filebase=Path(globals().get("ROMS_DIR", Path(".")))
+                / "logs"
+                / "nsz"
+                / (filepath.stem + ".compress"),
+                timeout=getattr(globals().get("args", {}), "cmd_timeout", None),
+                check=k.get("check", False),
+            ),
             tool_nsz=str(TOOL_NSZ),
             level=args.level,
             args=args,
@@ -997,7 +1251,10 @@ def _handle_new_compression(filepath):
         # If user requested removal of originals, verify compressed file and then remove source
         if args.rm_originals and not args.dry_run and compressed_candidate:
             try:
-                if compressed_candidate.exists() and compressed_candidate.stat().st_size > 0:
+                if (
+                    compressed_candidate.exists()
+                    and compressed_candidate.stat().st_size > 0
+                ):
                     ok = True
                     try:
                         ok = verify_integrity(compressed_candidate, deep=False)
@@ -1009,9 +1266,15 @@ def _handle_new_compression(filepath):
 
                             safe_unlink(filepath, logger)
                         except Exception:
-                            logger.exception("Falha ao remover arquivo original depois de comprimir: %s", filepath)
+                            logger.exception(
+                                "Falha ao remover arquivo original depois de comprimir: %s",
+                                filepath,
+                            )
                     else:
-                        logger.warning("Arquivo comprimido gerado, mas não passou na verificação: %s", compressed_candidate)
+                        logger.warning(
+                            "Arquivo comprimido gerado, mas não passou na verificação: %s",
+                            compressed_candidate,
+                        )
                         if getattr(args, "keep_on_failure", False):
                             try:
                                 qdir = args.quarantine_dir
@@ -1023,9 +1286,15 @@ def _handle_new_compression(filepath):
                                     quarantine_dir.mkdir(parents=True, exist_ok=True)
                                     dest = quarantine_dir / compressed_candidate.name
                                     shutil.move(str(compressed_candidate), str(dest))
-                                    logger.info("Moved failed compressed artifact to quarantine: %s", dest)
+                                    logger.info(
+                                        "Moved failed compressed artifact to quarantine: %s",
+                                        dest,
+                                    )
                             except Exception:
-                                logger.exception("Failed moving failed compressed artifact to quarantine: %s", compressed_candidate)
+                                logger.exception(
+                                    "Failed moving failed compressed artifact to quarantine: %s",
+                                    compressed_candidate,
+                                )
             except Exception:
                 logger.exception("Erro ao validar/remover original para %s", filepath)
 
@@ -1043,7 +1312,23 @@ def _handle_decompression(filepath):
         print("   📦 Descomprimindo...", end="", flush=True)
         from emumanager.switch.compression import decompress_and_find_candidate
 
-        candidate = decompress_and_find_candidate(filepath, lambda *a, **k: run_cmd(a[0], filebase=Path(globals().get("ROMS_DIR", Path("."))) / "logs" / "nsz" / (filepath.stem + ".decomp_act"), timeout=getattr(globals().get("args", {}), "cmd_timeout", None)), tool_nsz=str(TOOL_NSZ), tool_metadata=str(TOOL_METADATA) if TOOL_METADATA else None, is_nstool=IS_NSTOOL, keys_path=KEYS_PATH, args=args, roms_dir=ROMS_DIR)
+        candidate = decompress_and_find_candidate(
+            filepath,
+            lambda *a, **k: run_cmd(
+                a[0],
+                filebase=Path(globals().get("ROMS_DIR", Path(".")))
+                / "logs"
+                / "nsz"
+                / (filepath.stem + ".decomp_act"),
+                timeout=getattr(globals().get("args", {}), "cmd_timeout", None),
+            ),
+            tool_nsz=str(TOOL_NSZ),
+            tool_metadata=str(TOOL_METADATA) if TOOL_METADATA else None,
+            is_nstool=IS_NSTOOL,
+            keys_path=KEYS_PATH,
+            args=args,
+            roms_dir=ROMS_DIR,
+        )
 
         if candidate:
             print(f" {Col.GREEN}[OK]{Col.RESET}")
@@ -1079,7 +1364,9 @@ def safe_move(source, dest):
     try:
         from emumanager.common.fileops import safe_move as _safe_move_impl
 
-        return _safe_move_impl(source, dest, args=args, get_file_hash=get_file_hash, logger=logger)
+        return _safe_move_impl(
+            source, dest, args=args, get_file_hash=get_file_hash, logger=logger
+        )
     except Exception:
         # Fallback: attempt a simple move
         try:
@@ -1123,9 +1410,17 @@ def main():
             prof = args.compression_profile
             if prof in COMPRESSION_PROFILE_LEVELS:
                 args.level = COMPRESSION_PROFILE_LEVELS[prof]
-                logger.info("Perfil de compressão '%s' selecionado -> nível %s", prof, args.level)
+                logger.info(
+                    "Perfil de compressão '%s' selecionado -> nível %s",
+                    prof,
+                    args.level,
+                )
             else:
-                logger.warning("Perfil de compressão desconhecido '%s', mantendo --level=%s", prof, args.level)
+                logger.warning(
+                    "Perfil de compressão desconhecido '%s', mantendo --level=%s",
+                    prof,
+                    args.level,
+                )
     except Exception:
         logger.exception("Erro ao aplicar compression_profile")
 
@@ -1136,7 +1431,10 @@ def main():
             logger.warning("Nivel de compressao %s muito baixo; ajustando para 1", lvl)
             lvl = 1
         if lvl > 22:
-            logger.warning("Nivel de compressao %s acima do permitido; ajustando para 22", lvl)
+            logger.warning(
+                "Nivel de compressao %s acima do permitido; ajustando para 22",
+                lvl,
+            )
             lvl = 22
         args.level = lvl
     except Exception:
@@ -1196,7 +1494,15 @@ def main():
         # Delegate the health-check to the extracted helper to keep main readable
         from emumanager.switch.main_helpers import run_health_check
 
-        run_health_check(files, args, ROMS_DIR, verify_integrity, scan_for_virus, safe_move, logger)
+        run_health_check(
+            files,
+            args,
+            ROMS_DIR,
+            verify_integrity,
+            scan_for_virus,
+            safe_move,
+            logger,
+        )
         # If user only requested health-check (no other actions), exit with code on problems
         any([args.organize, args.compress, args.decompress, args.clean_junk])
         catalog: List[List[Any]] = []
@@ -1255,7 +1561,13 @@ def main():
     if args.clean_junk and not args.dry_run:
         print("🧹 Limpando lixo...")
         for junk in ROMS_DIR.rglob("*"):
-            if junk.suffix.lower() in {".txt", ".nfo", ".url", ".lnk", ".website"}:
+            if junk.suffix.lower() in {
+                ".txt",
+                ".nfo",
+                ".url",
+                ".lnk",
+                ".website",
+            }:
                 try:
                     junk.unlink()
                 except Exception as e:

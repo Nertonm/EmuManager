@@ -25,9 +25,15 @@ def test_parse_none():
 
 
 def test_parse_multiple_languages():
-    stdout = "Application Name: Some Game\nSupported Languages: English, Portuguese, Korean\nProgram Id: 0x0100AAAABBBBCCCC\n"
+    stdout = (
+        "Application Name: Some Game\n"
+        "Supported Languages: English, Portuguese, Korean\n"
+        "Program Id: 0x0100AAAABBBBCCCC\n"
+    )
     parsed = parse_tool_output(stdout)
     assert parsed["name"] == "Some Game"
     assert parsed["id"] == "0100AAAABBBBCCCC"
     # expect En and Pt (and Ko)
-    assert "En" in parsed["langs"] and "Pt" in parsed["langs"] and "Ko" in parsed["langs"]
+    assert (
+        "En" in parsed["langs"] and "Pt" in parsed["langs"] and "Ko" in parsed["langs"]
+    )

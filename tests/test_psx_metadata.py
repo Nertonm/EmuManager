@@ -1,4 +1,3 @@
-from pathlib import Path
 from unittest.mock import patch
 
 from emumanager.psx import metadata
@@ -39,5 +38,8 @@ def test_get_psx_serial_chd(tmp_path):
     f = tmp_path / "game.chd"
     f.write_bytes(b"fake chd header")
     # Patch the CHD reader to avoid needing chdman
-    with patch("emumanager.psx.metadata._read_header_chd", return_value=b"BOOT = cdrom:\\SLUS_005.94;1"):
+    with patch(
+        "emumanager.psx.metadata._read_header_chd",
+        return_value=b"BOOT = cdrom:\\SLUS_005.94;1",
+    ):
         assert metadata.get_psx_serial(f) == "SLUS-00594"

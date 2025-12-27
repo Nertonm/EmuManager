@@ -2,6 +2,7 @@ import csv
 from pathlib import Path
 from typing import Optional
 
+
 class PSPDatabase:
     def __init__(self):
         self.data = {}
@@ -9,7 +10,7 @@ class PSPDatabase:
     def load_from_csv(self, csv_path: Path):
         if not csv_path.exists():
             return
-        
+
         try:
             with open(csv_path, "r", encoding="utf-8") as f:
                 reader = csv.reader(f)
@@ -25,5 +26,6 @@ class PSPDatabase:
         if not serial:
             return None
         return self.data.get(serial.upper().replace("-", ""))
+
 
 db = PSPDatabase()

@@ -1,9 +1,7 @@
 from pathlib import Path
-from unittest.mock import patch
 
+from emumanager.workers.psx import worker_psx_organize, worker_psx_verify
 from tests.helpers import Args
-
-from emumanager.workers.psx import worker_psx_verify, worker_psx_organize
 
 
 def _list_files_recursive(base: Path):
@@ -76,7 +74,10 @@ def test_worker_psx_verify_cue_bin_combo(tmp_path):
     # Create both CUE and BIN; serial inside BIN
     cue = psx_dir / "combo.cue"
     binf = psx_dir / "combo.bin"
-    cue.write_text("FILE \"combo.bin\" BINARY\n TRACK 01 MODE2/2352\n INDEX 01 00:00:00\n", encoding="utf-8")
+    cue.write_text(
+        'FILE "combo.bin" BINARY\n TRACK 01 MODE2/2352\n INDEX 01 00:00:00\n',
+        encoding="utf-8",
+    )
     binf.write_bytes(b"BOOT = cdrom:\\SLUS_005.94;1")
 
     args = Args()

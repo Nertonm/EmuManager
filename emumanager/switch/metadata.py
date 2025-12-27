@@ -10,12 +10,15 @@ This module contains pure functions that can be unit-tested independently:
 These helpers avoid depending on heavy external globals and allow incremental
 migration of the larger legacy script.
 """
+
 from __future__ import annotations
 
 import re
 from typing import Optional
 
-TITLE_ID_RE = re.compile(r"(?:Title ID|Program Id):\s*(?:0x)?([0-9A-FA-F]{16})", re.IGNORECASE)
+TITLE_ID_RE = re.compile(
+    r"(?:Title ID|Program Id):\s*(?:0x)?([0-9A-FA-F]{16})", re.IGNORECASE
+)
 INVALID_FILENAME_CHARS_RE = re.compile(r'[<>:"/\\|?*]')
 
 
@@ -82,7 +85,7 @@ def detect_languages_from_filename(filename: str) -> str:
     up = filename.upper()
     found = []
     for key, code in token_map.items():
-        # match token when it's delimited by non-alphanumeric characters or string boundaries
+        # match token when it's delimited by non-alphanumeric characters
         pattern = rf"(?<![A-Z0-9]){re.escape(key)}(?![A-Z0-9])"
         if re.search(pattern, up):
             found.append(code)
@@ -153,7 +156,7 @@ def determine_type(title_id: Optional[str], text_output: Optional[str]) -> str:
         try:
             tid_int = int(title_id, 16)
             suffix = tid_int & 0xFFF
-            
+
             if suffix == 0x000:
                 return "Base"
             if suffix == 0x800:
@@ -173,13 +176,18 @@ REG_CHN = "(CHN)"
 REG_BRA = "(BRA)"
 REG_WORLD = "(World)"
 
+
 def determine_region(filename: str, langs_str: Optional[str]) -> str:
     """Guess human-friendly region label from filename or languages string.
 
-    Returns a small suffix like '(JPN)', '(USA)', '(World)' or empty string when unknown.
+    Returns a small suffix like '(JPN)', '(USA)' or empty string when unknown.
     """
     # Check filename first with regex
-    m = re.search(r"\b(USA|EUR|EUR-?JPN|JPN|KOR|CHN|ASIA|WORLD|REGION FREE|EUROPE|JAPAN|BRA|PT-?BR)\b", filename, re.IGNORECASE)
+    m = re.search(
+        r"\b(USA|EUR|EUR-?JPN|JPN|KOR|CHN|ASIA|WORLD|REGION FREE|EUROPE|JAPAN|BRA)\b",
+        filename,
+        re.IGNORECASE,
+    )
     if m:
         reg = m.group(1).upper()
         if "WORLD" in reg or "REGION" in reg or "EN" in reg:

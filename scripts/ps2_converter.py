@@ -5,6 +5,7 @@ when executed from the `scripts/` directory and re-exports the canonical
 implementation under `emumanager.converters.ps2_converter` so tests that import
 `scripts.ps2_converter` continue to work.
 """
+
 import sys
 from pathlib import Path
 

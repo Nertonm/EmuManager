@@ -47,7 +47,9 @@ def test_replace_if_verified_replaces(tmp_path):
         # verify returns true for this test
         return True
 
-    result = replace_if_verified(tmpf, dest, run_cmd, verify_fn=verify_fn, dry_run=False)
+    result = replace_if_verified(
+        tmpf, dest, run_cmd, verify_fn=verify_fn, dry_run=False
+    )
     assert result is True
     assert dest.exists()
 
@@ -104,7 +106,14 @@ def test_handle_produced_file_success(tmp_path):
 
     from emumanager.switch.compression import handle_produced_file
 
-    result = handle_produced_file(produced, original, run_cmd, verify_fn, args=type("A", (), {"keep_on_failure": False, "dry_run": False}), roms_dir=roms_dir)
+    result = handle_produced_file(
+        produced,
+        original,
+        run_cmd,
+        verify_fn,
+        args=type("A", (), {"keep_on_failure": False, "dry_run": False}),
+        roms_dir=roms_dir,
+    )
     assert result == original
     assert original.exists()
 
@@ -122,7 +131,14 @@ def test_compress_file_returns_candidate(tmp_path):
 
     from emumanager.switch.compression import compress_file
 
-    cand = compress_file(src, run_cmd, tool_nsz="nsz", level=3, args=type("A", (), {"cmd_timeout": None}), roms_dir=tmp_path)
+    cand = compress_file(
+        src,
+        run_cmd,
+        tool_nsz="nsz",
+        level=3,
+        args=type("A", (), {"cmd_timeout": None}),
+        roms_dir=tmp_path,
+    )
     assert cand is not None
     assert cand.name.endswith(".nsz")
 
@@ -135,6 +151,7 @@ def test_decompress_and_find_candidate(tmp_path):
     cand.write_text("inner")
     # set mtimes
     import os
+
     os.utime(comp, None)
     os.utime(cand, None)
 
@@ -143,6 +160,19 @@ def test_decompress_and_find_candidate(tmp_path):
 
     from emumanager.switch.compression import decompress_and_find_candidate
 
-    found = decompress_and_find_candidate(comp, run_cmd, tool_nsz="nsz", tool_metadata=None, is_nstool=True, keys_path=None, args=type("A", (), {"cmd_timeout": None, "dry_run": False, "keep_on_failure": False}), roms_dir=tmp_path)
+    found = decompress_and_find_candidate(
+        comp,
+        run_cmd,
+        tool_nsz="nsz",
+        tool_metadata=None,
+        is_nstool=True,
+        keys_path=None,
+        args=type(
+            "A",
+            (),
+            {"cmd_timeout": None, "dry_run": False, "keep_on_failure": False},
+        ),
+        roms_dir=tmp_path,
+    )
     assert found is not None
     assert found.exists()

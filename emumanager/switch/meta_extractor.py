@@ -5,11 +5,13 @@ and optionally falls back to decompressing NSZ/XCZ files to extract inner
 NSP/XCI metadata. All external actions (running commands, file system
 locations) are provided as parameters so the function stays testable.
 """
+
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Optional, Callable
 import re
+from pathlib import Path
+from typing import Callable, Optional
+
 from emumanager.switch.pfs0 import SwitchPFS0Parser
 
 REGEX_TITLE_ID = r"\[([0-9a-fA-F]{16})\]"
@@ -23,7 +25,7 @@ def _try_decompress(
     tmpdir: Path,
     base: Path,
     run_cmd: Callable,
-    cmd_timeout: Optional[int]
+    cmd_timeout: Optional[int],
 ) -> Optional[Path]:
     attempts = [
         [str(tool_nsz), "-D", "-o", str(tmpdir), str(filepath)],
@@ -73,7 +75,11 @@ def _extract_with_tool(
             info["name"] = parsed.get("name")
             info["id"] = parsed.get("id").upper() if parsed.get("id") else None
             info["ver"] = parsed.get("ver") or "v0"
-            langs_raw = parsed.get("langs") or parse_languages(getattr(res, "stdout", "")) or detect_languages_from_filename(filepath.name)
+            langs_raw = (
+                parsed.get("langs")
+                or parse_languages(getattr(res, "stdout", ""))
+                or detect_languages_from_filename(filepath.name)
+            )
             if langs_raw and langs_raw.startswith("[") and langs_raw.endswith("]"):
                 langs_raw = langs_raw[1:-1]
             info["langs"] = langs_raw
@@ -104,8 +110,10 @@ def _extract_with_decompression(
 
             with tempfile.TemporaryDirectory(prefix="nsz_extract_") as td:
                 tmpdir = Path(td)
-                decompressed = _try_decompress(tool_nsz, filepath, tmpdir, base, run_cmd, cmd_timeout)
-                
+                decompressed = _try_decompress(
+                    tool_nsz, filepath, tmpdir, base, run_cmd, cmd_timeout
+                )
+
                 if decompressed and decompressed.exists():
                     return _extract_with_tool(
                         decompressed,
@@ -133,20 +141,26 @@ def _extract_with_native_parser(
         parser = SwitchPFS0Parser(filepath)
         tid = parser.get_title_id()
         if tid:
-            info = {"name": None, "id": tid, "ver": "v0", "type": "DLC", "langs": ""}
+            info = {
+                "name": None,
+                "id": tid,
+                "ver": "v0",
+                "type": "DLC",
+                "langs": "",
+            }
             info["type"] = determine_type(tid, None)
-            
+
             # Try to get version from filename if not found
             ver_match = re.search(REGEX_VERSION, filepath.name)
             if ver_match:
                 info["ver"] = f"v{ver_match.group(1)}"
-            
+
             # Try to get name from filename
             name_part = filepath.name.split(f"[{tid}]")[0]
             name_part = re.sub(REGEX_BRACKETS, "", name_part).strip()
             if name_part:
                 info["name"] = name_part
-            
+
             return info
     except Exception:
         pass
@@ -178,8 +192,17 @@ def get_metadata_info(
     # Primary attempt: run metadata tool on the given file
     if tool_metadata:
         res = _extract_with_tool(
-            filepath, tool_metadata, is_nstool, keys_path, cmd_timeout, base,
-            run_cmd, parse_tool_output, parse_languages, detect_languages_from_filename, determine_type
+            filepath,
+            tool_metadata,
+            is_nstool,
+            keys_path,
+            cmd_timeout,
+            base,
+            run_cmd,
+            parse_tool_output,
+            parse_languages,
+            detect_languages_from_filename,
+            determine_type,
         )
         if res:
             return res
@@ -187,8 +210,18 @@ def get_metadata_info(
         # Fallback: if compressed and TOOL_NSZ available
         if tool_nsz:
             res = _extract_with_decompression(
-                filepath, tool_nsz, tool_metadata, is_nstool, keys_path, cmd_timeout, base,
-                run_cmd, parse_tool_output, parse_languages, detect_languages_from_filename, determine_type
+                filepath,
+                tool_nsz,
+                tool_metadata,
+                is_nstool,
+                keys_path,
+                cmd_timeout,
+                base,
+                run_cmd,
+                parse_tool_output,
+                parse_languages,
+                detect_languages_from_filename,
+                determine_type,
             )
             if res:
                 return res

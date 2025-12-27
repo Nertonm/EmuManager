@@ -4,13 +4,16 @@ This module centralizes the regex-based parsing of stdout from tools like
 `nstool`/`hactool` so that parsing can be unit-tested without invoking
 external commands.
 """
+
 from __future__ import annotations
 
 import re
 from typing import Dict, Optional
 
 # Reuse a Title ID pattern similar to the legacy script
-TITLE_ID_RE = re.compile(r"(?:Title ID|Program Id):\s*(?:0x)?([0-9A-Fa-f]{16})", re.IGNORECASE)
+TITLE_ID_RE = re.compile(
+    r"(?:Title ID|Program Id):\s*(?:0x)?([0-9A-Fa-f]{16})", re.IGNORECASE
+)
 
 
 def parse_tool_output(stdout: Optional[str]) -> Dict[str, Optional[str]]:

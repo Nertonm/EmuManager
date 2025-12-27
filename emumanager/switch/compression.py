@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Callable, List, Optional
-import shutil
 import os
 import re
+import shutil
+from pathlib import Path
+from typing import Callable, List, Optional
 
 # Optional textual progress for long-running compression attempts.
 try:  # pragma: no cover - optional dependency
@@ -13,7 +13,9 @@ except Exception:  # pragma: no cover - optional dependency
     tqdm = None
 
 
-def build_nsz_command(src: Path, dst: Path, *, level: int = 3, tool_nsz: str = "nsz") -> List[str]:
+def build_nsz_command(
+    src: Path, dst: Path, *, level: int = 3, tool_nsz: str = "nsz"
+) -> List[str]:
     """Build a recompression command for the NSZ tool.
 
     This deliberately uses a small, testable and explicit flag layout so unit
@@ -23,7 +25,16 @@ def build_nsz_command(src: Path, dst: Path, *, level: int = 3, tool_nsz: str = "
     return [str(tool_nsz), "--out", str(dst), "--level", str(level), str(src)]
 
 
-def recompress_candidate(src: Path, dst: Path, run_cmd: Callable, *, level: int = 3, tool_nsz: str = "nsz", timeout: Optional[int] = 120, progress_callback: Optional[Callable[[float, str], None]] = None):
+def recompress_candidate(
+    src: Path,
+    dst: Path,
+    run_cmd: Callable,
+    *,
+    level: int = 3,
+    tool_nsz: str = "nsz",
+    timeout: Optional[int] = 120,
+    progress_callback: Optional[Callable[[float, str], None]] = None,
+):
     """Attempt to recompress `src` into `dst` using the provided `run_cmd`.
 
     Returns the run_cmd result (CompletedProcess-like object) or raises on
@@ -52,7 +63,14 @@ def recompress_candidate(src: Path, dst: Path, run_cmd: Callable, *, level: int 
         raise
 
 
-def try_multiple_recompress_attempts(tmpdir: Path, attempts: List[List[str]], run_cmd: Callable, *, timeout: Optional[int] = 120, progress_callback: Optional[Callable[[float, str], None]] = None) -> List[Path]:
+def try_multiple_recompress_attempts(
+    tmpdir: Path,
+    attempts: List[List[str]],
+    run_cmd: Callable,
+    *,
+    timeout: Optional[int] = 120,
+    progress_callback: Optional[Callable[[float, str], None]] = None,
+) -> List[Path]:
     """Run a sequence of recompression attempts (each attempt is a full cmd list).
 
     After running attempts, inspect `tmpdir` for any produced `.nsz` files and
@@ -67,7 +85,9 @@ def try_multiple_recompress_attempts(tmpdir: Path, attempts: List[List[str]], ru
         # report progress per-attempt
         if progress_callback:
             try:
-                progress_callback(float(idx) / max(1, total), f"attempt:{idx+1}/{total}")
+                progress_callback(
+                    float(idx) / max(1, total), f"attempt:{idx + 1}/{total}"
+                )
             except Exception:
                 pass
         try:
@@ -76,14 +96,20 @@ def try_multiple_recompress_attempts(tmpdir: Path, attempts: List[List[str]], ru
             # ignore and try next
             if progress_callback:
                 try:
-                    progress_callback(float(idx + 1) / max(1, total), f"attempt_failed:{idx+1}/{total}")
+                    progress_callback(
+                        float(idx + 1) / max(1, total),
+                        f"attempt_failed:{idx + 1}/{total}",
+                    )
                 except Exception:
                     pass
             continue
         else:
             if progress_callback:
                 try:
-                    progress_callback(float(idx + 1) / max(1, total), f"attempt_success:{idx+1}/{total}")
+                    progress_callback(
+                        float(idx + 1) / max(1, total),
+                        f"attempt_success:{idx + 1}/{total}",
+                    )
                 except Exception:
                     pass
 
@@ -91,7 +117,14 @@ def try_multiple_recompress_attempts(tmpdir: Path, attempts: List[List[str]], ru
     return produced
 
 
-def handle_produced_file(produced: Path, original: Path, run_cmd: Callable, verify_fn: Callable[[Path, Callable], bool], args, roms_dir: Path) -> Path:
+def handle_produced_file(
+    produced: Path,
+    original: Path,
+    run_cmd: Callable,
+    verify_fn: Callable[[Path, Callable], bool],
+    args,
+    roms_dir: Path,
+) -> Path:
     """Handle a single produced recompressed file.
 
     Moves a produced file next to the original, verifies it using verify_fn,
@@ -100,8 +133,9 @@ def handle_produced_file(produced: Path, original: Path, run_cmd: Callable, veri
     produced target path or original depending on failure modes).
     """
     target_tmp = original.parent / produced.name
+
     def _call_progress(pct: float, msg: str):
-        # backward-compatible no-op unless caller provides callback via args.progress_callback
+        # backward-compatible no-op unless caller provides callback
         try:
             cb = getattr(args, "progress_callback", None)
             if cb:
@@ -136,7 +170,9 @@ def handle_produced_file(produced: Path, original: Path, run_cmd: Callable, veri
             if original.exists():
                 original.unlink()
             shutil.move(str(target_tmp), str(original))
-            if hasattr(args, "progress_callback") and getattr(args, "progress_callback"):
+            if hasattr(args, "progress_callback") and getattr(
+                args, "progress_callback"
+            ):
                 _call_progress(1.0, "replace:done")
             return original
         except Exception:
@@ -155,7 +191,9 @@ def handle_produced_file(produced: Path, original: Path, run_cmd: Callable, veri
                 quarantine_dir.mkdir(parents=True, exist_ok=True)
                 dest = quarantine_dir / target_tmp.name
                 shutil.move(str(target_tmp), str(dest))
-                if hasattr(args, "progress_callback") and getattr(args, "progress_callback"):
+                if hasattr(args, "progress_callback") and getattr(
+                    args, "progress_callback"
+                ):
                     _call_progress(1.0, "quarantine:moved")
                 return original
         except Exception:
@@ -164,7 +202,15 @@ def handle_produced_file(produced: Path, original: Path, run_cmd: Callable, veri
     return original
 
 
-def compress_file(filepath: Path, run_cmd: Callable, *, tool_nsz: str = "nsz", level: int = 3, args=None, roms_dir: Path = Path(".")) -> Optional[Path]:
+def compress_file(
+    filepath: Path,
+    run_cmd: Callable,
+    *,
+    tool_nsz: str = "nsz",
+    level: int = 3,
+    args=None,
+    roms_dir: Path = Path("."),
+) -> Optional[Path]:
     """Compress `filepath` using tool_nsz and return the compressed candidate path.
 
     The function uses run_cmd to execute compression and then looks for the
@@ -179,11 +225,21 @@ def compress_file(filepath: Path, run_cmd: Callable, *, tool_nsz: str = "nsz", l
                 pass
 
         if tqdm and not getattr(args, "progress_callback", None):
-            # a single-shot progress indicator for the compression step when no GUI callback
+            # a single-shot progress indicator for the compression step
             with tqdm(total=1, desc=f"Compressing {filepath.name}", unit="op"):
-                run_cmd([str(tool_nsz), "-C", "-l", str(level), str(filepath)], filebase=logbase_c, timeout=getattr(args, "cmd_timeout", None) if args else None, check=True)
+                run_cmd(
+                    [str(tool_nsz), "-C", "-l", str(level), str(filepath)],
+                    filebase=logbase_c,
+                    timeout=getattr(args, "cmd_timeout", None) if args else None,
+                    check=True,
+                )
         else:
-            run_cmd([str(tool_nsz), "-C", "-l", str(level), str(filepath)], filebase=logbase_c, timeout=getattr(args, "cmd_timeout", None) if args else None, check=True)
+            run_cmd(
+                [str(tool_nsz), "-C", "-l", str(level), str(filepath)],
+                filebase=logbase_c,
+                timeout=getattr(args, "cmd_timeout", None) if args else None,
+                check=True,
+            )
 
         if getattr(args, "progress_callback", None):
             try:
@@ -206,7 +262,17 @@ def compress_file(filepath: Path, run_cmd: Callable, *, tool_nsz: str = "nsz", l
     return candidates[0] if candidates else None
 
 
-def decompress_and_find_candidate(filepath: Path, run_cmd: Callable, *, tool_nsz: str = "nsz", tool_metadata: Optional[str] = None, is_nstool: bool = True, keys_path: Optional[Path] = None, args=None, roms_dir: Path = Path(".")) -> Optional[Path]:
+def decompress_and_find_candidate(
+    filepath: Path,
+    run_cmd: Callable,
+    *,
+    tool_nsz: str = "nsz",
+    tool_metadata: Optional[str] = None,
+    is_nstool: bool = True,
+    keys_path: Optional[Path] = None,
+    args=None,
+    roms_dir: Path = Path("."),
+) -> Optional[Path]:
     """Decompress `filepath` and attempt to find the inner candidate file.
 
     Returns the chosen candidate Path (or None) following the same heuristics
@@ -217,9 +283,17 @@ def decompress_and_find_candidate(filepath: Path, run_cmd: Callable, *, tool_nsz
     try:
         if tqdm:
             with tqdm(total=1, desc=f"Decompressing {filepath.name}", unit="op"):
-                run_cmd([str(tool_nsz), "-D", "-o", str(parent), str(filepath)], filebase=logbase_d, timeout=getattr(args, "cmd_timeout", None) if args else None)
+                run_cmd(
+                    [str(tool_nsz), "-D", "-o", str(parent), str(filepath)],
+                    filebase=logbase_d,
+                    timeout=getattr(args, "cmd_timeout", None) if args else None,
+                )
         else:
-            run_cmd([str(tool_nsz), "-D", "-o", str(parent), str(filepath)], filebase=logbase_d, timeout=getattr(args, "cmd_timeout", None) if args else None)
+            run_cmd(
+                [str(tool_nsz), "-D", "-o", str(parent), str(filepath)],
+                filebase=logbase_d,
+                timeout=getattr(args, "cmd_timeout", None) if args else None,
+            )
     except Exception:
         return None
 
@@ -244,7 +318,11 @@ def decompress_and_find_candidate(filepath: Path, run_cmd: Callable, *, tool_nsz
                 continue
 
     if chosen:
-        if filepath.exists() and not getattr(args, "dry_run", False) and not getattr(args, "keep_on_failure", False):
+        if (
+            filepath.exists()
+            and not getattr(args, "dry_run", False)
+            and not getattr(args, "keep_on_failure", False)
+        ):
             try:
                 filepath.unlink()
             except Exception:
@@ -268,20 +346,35 @@ def decompress_and_find_candidate(filepath: Path, run_cmd: Callable, *, tool_nsz
             try:
                 # Use run_cmd for metadata probe so tests can mock it
                 if tool_metadata:
-                    cmd = [str(tool_metadata), "-v" if is_nstool else "-k", str(cand)]
+                    cmd = [
+                        str(tool_metadata),
+                        "-v" if is_nstool else "-k",
+                        str(cand),
+                    ]
                     if not is_nstool and keys_path:
                         cmd.insert(2, str(keys_path))
                         cmd.insert(3, "-i")
-                    res_probe = run_cmd(cmd, timeout=getattr(args, "cmd_timeout", None) if args else None)
+                    res_probe = run_cmd(
+                        cmd,
+                        timeout=getattr(args, "cmd_timeout", None) if args else None,
+                    )
                     tid_probe = None
                     out = getattr(res_probe, "stdout", "") or ""
                     m = re.search(r"\[([0-9A-Fa-f]{16})\]", out)
                     if m:
                         tid_probe = m
                     if tid_probe:
-                        arch_tid_match = re.search(r"\[([0-9A-Fa-f]{16})\]", filepath.name)
-                        if arch_tid_match and arch_tid_match.group(1).upper() == tid_probe.group(1).upper():
-                            if filepath.exists() and not getattr(args, "dry_run", False):
+                        arch_tid_match = re.search(
+                            r"\[([0-9A-Fa-f]{16})\]", filepath.name
+                        )
+                        if (
+                            arch_tid_match
+                            and arch_tid_match.group(1).upper()
+                            == tid_probe.group(1).upper()
+                        ):
+                            if filepath.exists() and not getattr(
+                                args, "dry_run", False
+                            ):
                                 try:
                                     filepath.unlink()
                                 except Exception:
@@ -301,7 +394,14 @@ def decompress_and_find_candidate(filepath: Path, run_cmd: Callable, *, tool_nsz
     return None
 
 
-def replace_if_verified(tmp_file: Path, dest: Path, run_cmd: Callable, *, verify_fn: Callable[[Path, Callable], bool], dry_run: bool = False) -> bool:
+def replace_if_verified(
+    tmp_file: Path,
+    dest: Path,
+    run_cmd: Callable,
+    *,
+    verify_fn: Callable[[Path, Callable], bool],
+    dry_run: bool = False,
+) -> bool:
     """Replace `dest` with `tmp_file` if `verify_fn(tmp_file, run_cmd)` returns True.
 
     If `dry_run` is True, the function will not perform filesystem modifications

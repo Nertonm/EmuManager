@@ -15,24 +15,34 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Callable, Optional, Any
+from typing import Any, Callable, Optional
 
 
 def _is_exact_duplicate_fast(s: Path, d: Path) -> bool:
     try:
-        return os.path.getsize(s) == os.path.getsize(d) and int(os.path.getmtime(s)) == int(os.path.getmtime(d))
+        return os.path.getsize(s) == os.path.getsize(d) and int(
+            os.path.getmtime(s)
+        ) == int(os.path.getmtime(d))
     except Exception:
         return False
 
 
-def _is_exact_duplicate_strict(s: Path, d: Path, get_file_hash: Callable[[Path], str]) -> bool:
+def _is_exact_duplicate_strict(
+    s: Path, d: Path, get_file_hash: Callable[[Path], str]
+) -> bool:
     try:
         return get_file_hash(s) == get_file_hash(d)
     except Exception:
         return False
 
 
-def _choose_duplicate_target(source: Path, dst: Path, args: Any, get_file_hash: Callable[[Path], str], logger: Any) -> Optional[Path]:
+def _choose_duplicate_target(
+    source: Path,
+    dst: Path,
+    args: Any,
+    get_file_hash: Callable[[Path], str],
+    logger: Any,
+) -> Optional[Path]:
     """Return None if exact duplicate handled (source removed), else a new path."""
     try:
         if getattr(args, "dup_check", "fast") == "strict":
@@ -83,7 +93,14 @@ def _try_atomic_replace(source: Path, dest: Path, logger: Any) -> bool:
         return False
 
 
-def _copy_and_replace(source: Path, dest: Path, dest_parent: Path, args: Any, get_file_hash: Callable[[Path], str], logger: Any) -> bool:
+def _copy_and_replace(
+    source: Path,
+    dest: Path,
+    dest_parent: Path,
+    args: Any,
+    get_file_hash: Callable[[Path], str],
+    logger: Any,
+) -> bool:
     tmp_path = None
     try:
         fd, tmp_name = tempfile.mkstemp(prefix=".emumgr_tmp_", dir=str(dest_parent))
@@ -128,7 +145,9 @@ def _copy_and_replace(source: Path, dest: Path, dest_parent: Path, args: Any, ge
         return False
 
 
-def _verify_hashes(src: Path, dst: Path, get_file_hash: Callable[[Path], str], logger: Any) -> bool:
+def _verify_hashes(
+    src: Path, dst: Path, get_file_hash: Callable[[Path], str], logger: Any
+) -> bool:
     try:
         return get_file_hash(src) == get_file_hash(dst)
     except Exception as e:
@@ -181,7 +200,9 @@ def safe_move(
         if dest.exists() and source.resolve() != dest.resolve():
             chosen = _choose_duplicate_target(source, dest, args, get_file_hash, logger)
             if chosen is None:
-                logger.debug("safe_move: duplicate detected, source removed: %s", source)
+                logger.debug(
+                    "safe_move: duplicate detected, source removed: %s", source
+                )
                 return False
             # attempt rename/move to chosen
             try:

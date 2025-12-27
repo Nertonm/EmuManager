@@ -1,4 +1,5 @@
 import types
+
 import switch_organizer as so
 
 
@@ -42,7 +43,11 @@ def test_recompress_explicit(monkeypatch, tmp_path):
     prod_dir.mkdir()
 
     # Monkeypatch TemporaryDirectory to yield our prod_dir
-    monkeypatch.setattr(so.tempfile, "TemporaryDirectory", lambda prefix=None: DummyTemp(prod_dir))
+    monkeypatch.setattr(
+        so.tempfile,
+        "TemporaryDirectory",
+        lambda prefix=None: DummyTemp(prod_dir),
+    )
 
     # Fake subprocess.run: when called with nsz -C create a new .nsz inside prod_dir
     def fake_run(cmd, **kwargs):
@@ -56,7 +61,7 @@ def test_recompress_explicit(monkeypatch, tmp_path):
     monkeypatch.setattr(so.subprocess, "run", fake_run)
     # ensure verification passes
     monkeypatch.setattr(so, "verify_integrity", lambda f, deep=False: True)
-    # make detect_nsz_level return lower than target so recompress would have been triggered
+    # make detect_nsz_level return lower than target so recompress is triggered
     monkeypatch.setattr(so, "detect_nsz_level", lambda f: 1)
 
     res = so.handle_compression(src)
@@ -74,7 +79,11 @@ def test_recompress_verify_fail(monkeypatch, tmp_path):
 
     prod_dir = tmp_path / "recomp_out2"
     prod_dir.mkdir()
-    monkeypatch.setattr(so.tempfile, "TemporaryDirectory", lambda prefix=None: DummyTemp(prod_dir))
+    monkeypatch.setattr(
+        so.tempfile,
+        "TemporaryDirectory",
+        lambda prefix=None: DummyTemp(prod_dir),
+    )
 
     def fake_run(cmd, **kwargs):
         if str(so.TOOL_NSZ) in " ".join(map(str, cmd)) and "-C" in cmd:
@@ -100,7 +109,7 @@ def test_recompress_dry_run(monkeypatch, tmp_path):
     so.TOOL_NSZ = tmp_path / "nsz"
     so.args = setup_args(A(), compress=True, recompress=True, dry_run=True, level=19)
 
-    # If dry-run, subprocess.run should not be called; we'll set a fake that raises if called
+    # If dry-run, subprocess.run should not be called; we'll set a fake that raises
     def fake_run(cmd, **kwargs):
         raise RuntimeError("should not call nsz in dry-run")
 

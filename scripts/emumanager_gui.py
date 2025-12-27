@@ -3,6 +3,7 @@
 This preserves the old scripts-based workflow while the real implementation
 lives under `emumanager.gui`.
 """
+
 import sys
 from pathlib import Path
 
@@ -40,6 +41,7 @@ def _headless_smoke_test() -> int:
     It will call the manager API in dry-run mode on a temporary directory.
     """
     import tempfile
+
     from emumanager import manager
 
     tmp = Path(tempfile.mkdtemp(prefix="emumanager_smoke_"))

@@ -1,10 +1,10 @@
-import subprocess
-import os
 import logging
+import os
+import shutil
+import subprocess
 import threading
 from pathlib import Path
-from typing import Optional, List, Union, Set, Any
-import shutil
+from typing import Any, List, Optional, Set, Union
 
 logger = logging.getLogger(__name__)
 
@@ -12,29 +12,32 @@ _RUNNING_PROCESSES: Set[subprocess.Popen] = set()
 _LOCK = threading.Lock()
 ORIGINAL_SUBPROCESS_RUN = subprocess.run
 
+
 def _register_process(proc: subprocess.Popen) -> None:
     with _LOCK:
         _RUNNING_PROCESSES.add(proc)
 
+
 def _unregister_process(proc: subprocess.Popen) -> None:
     with _LOCK:
         _RUNNING_PROCESSES.discard(proc)
+
 
 def cancel_current_process() -> bool:
     """Attempt to kill all currently running subprocesses managed by this module.
 
     This is used by the GUI to request cancellation of long-running
     external commands. It will try to kill, then terminate the processes.
-    
+
     Returns:
         bool: True if any process was cancelled, False otherwise.
     """
     with _LOCK:
         procs = list(_RUNNING_PROCESSES)
-    
+
     if not procs:
         return False
-    
+
     cancelled_any = False
     for proc in procs:
         try:
@@ -48,12 +51,13 @@ def cancel_current_process() -> bool:
                 pass
     return cancelled_any
 
+
 def find_tool(name: str) -> Optional[Path]:
     """Find an executable in the system PATH or in the current directory.
-    
+
     Args:
         name: The name of the executable to find.
-        
+
     Returns:
         Optional[Path]: The path to the executable if found, None otherwise.
     """
@@ -61,7 +65,7 @@ def find_tool(name: str) -> Optional[Path]:
     p = shutil.which(name)
     if p:
         return Path(p).resolve()
-    
+
     # Fallback to local files
     local = Path(f"./{name}").resolve()
     if local.exists():
@@ -69,10 +73,13 @@ def find_tool(name: str) -> Optional[Path]:
     local_exe = Path(f"./{name}.exe").resolve()
     if local_exe.exists():
         return local_exe
-        
+
     return None
 
-def _run_with_popen(cmd: List[str], timeout: Optional[int], si: Any) -> subprocess.CompletedProcess:
+
+def _run_with_popen(
+    cmd: List[str], timeout: Optional[int], si: Any
+) -> subprocess.CompletedProcess:
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -98,7 +105,9 @@ def _run_with_popen(cmd: List[str], timeout: Optional[int], si: Any) -> subproce
         _unregister_process(proc)
 
 
-def _run_with_subprocess_run(cmd: List[str], timeout: Optional[int]) -> Union[subprocess.CompletedProcess, subprocess.TimeoutExpired]:
+def _run_with_subprocess_run(
+    cmd: List[str], timeout: Optional[int]
+) -> Union[subprocess.CompletedProcess, subprocess.TimeoutExpired]:
     try:
         return subprocess.run(
             cmd,
@@ -117,23 +126,23 @@ def _run_with_subprocess_run(cmd: List[str], timeout: Optional[int]) -> Union[su
 
 
 def run_cmd(
-    cmd: List[str], 
-    *, 
-    filebase: Optional[Path] = None, 
-    timeout: Optional[int] = None, 
-    check: bool = False
+    cmd: List[str],
+    *,
+    filebase: Optional[Path] = None,
+    timeout: Optional[int] = None,
+    check: bool = False,
 ) -> Union[subprocess.CompletedProcess, subprocess.TimeoutExpired]:
-    """Run a subprocess command with timeout, capture output and optionally save to files.
+    """Run a subprocess command with timeout, capture output and optionally save.
 
     If filebase is provided, stdout/err will be stored as filebase + .out/.err
     Returns completed process.
-    
+
     Args:
         cmd: The command to run as a list of strings.
         filebase: Optional path base to save stdout/stderr to.
         timeout: Optional timeout in seconds.
         check: If True, raise CalledProcessError if return code is non-zero.
-        
+
     Returns:
         subprocess.CompletedProcess or subprocess.TimeoutExpired
     """
@@ -158,14 +167,20 @@ def run_cmd(
         errp = getattr(res, "stderr", None) or ""
         try:
             filebase.parent.mkdir(parents=True, exist_ok=True)
-            with open(str(filebase) + ".out", "w", encoding="utf-8", errors="ignore") as fo:
+            with open(
+                str(filebase) + ".out", "w", encoding="utf-8", errors="ignore"
+            ) as fo:
                 fo.write(outp)
-            with open(str(filebase) + ".err", "w", encoding="utf-8", errors="ignore") as fe:
+            with open(
+                str(filebase) + ".err", "w", encoding="utf-8", errors="ignore"
+            ) as fe:
                 fe.write(errp)
         except Exception:
             logger.debug("Failed to write command output files for %s", filebase)
 
     if check and isinstance(res, subprocess.CompletedProcess) and res.returncode != 0:
-        raise subprocess.CalledProcessError(res.returncode, cmd, output=res.stdout, stderr=res.stderr)
-    
+        raise subprocess.CalledProcessError(
+            res.returncode, cmd, output=res.stdout, stderr=res.stderr
+        )
+
     return res

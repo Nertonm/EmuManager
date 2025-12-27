@@ -6,6 +6,7 @@ This file is a near-copy of the previous `scripts/architect_roms_master.py` but
 lives inside the `emumanager` package. It keeps the same public API (main,
 build_acervo, etc.) so existing code and tests keep working.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -35,6 +36,7 @@ COLORS = {
 
 class GracefulExit(Exception):
     """Raised when the program should exit gracefully due to a signal."""
+
     pass
 
 
@@ -103,7 +105,13 @@ def setup_retro(
     logger: logging.Logger,
 ):
     path = base_dir / "roms" / sys
-    folders = ["# Favoritos", "# Traduzidos PT-BR", "# Hacks & Mods", "A-M", "N-Z"]
+    folders = [
+        "# Favoritos",
+        "# Traduzidos PT-BR",
+        "# Hacks & Mods",
+        "A-M",
+        "N-Z",
+    ]
     for f in folders:
         (path / f).mkdir(parents=True, exist_ok=True)
 
@@ -154,7 +162,14 @@ def setup_arcade(
         "2. Não renomeie os ZIPs (a validação depende do nome exato/CRC).\n"
         "3. Use sets 'Non-Merged' para facilitar o gerenciamento individual."
     )
-    create_readme(path, name, ".zip (Full Non-Merged)", "https://docs.mamedev.org/", bios_status, notas)
+    create_readme(
+        path,
+        name,
+        ".zip (Full Non-Merged)",
+        "https://docs.mamedev.org/",
+        bios_status,
+        notas,
+    )
     logger.info("[Arcade]  %s :: Configured.", name)
     return sys
 
@@ -217,47 +232,278 @@ Arcade:
     logger.info("BIOS folder :: Configured.")
 
     # --- NINTENDO ---
-    setup_retro(base_dir, "nes", "Nintendo (NES)", ".nes, .zip", "https://emulation.gametechwiki.com/index.php/Nintendo_Entertainment_System_emulators", "Não", logger)
-    setup_retro(base_dir, "snes", "Super Nintendo", ".sfc (Pref), .smc, .zip", "https://docs.libretro.com/library/snes9x/", "Não", logger)
-    setup_retro(base_dir, "n64", "Nintendo 64", ".z64 (Big Endian), .n64", "https://m64p.github.io/", "Não", logger)
-    setup_retro(base_dir, "gba", "Game Boy Advance", ".gba", "https://mgba.io/", "Sim (bios.bin opcional, mas melhora compatibilidade)", logger)
-    setup_retro(base_dir, "nds", "Nintendo DS", ".nds", "https://melonds.kuribo64.net/", "Sim (bios7.bin, bios9.bin, firmware.bin)", logger)
+    setup_retro(
+        base_dir,
+        "nes",
+        "Nintendo (NES)",
+        ".nes, .zip",
+        "https://emulation.gametechwiki.com/index.php/Nintendo_Entertainment_System_emulators",
+        "Não",
+        logger,
+    )
+    setup_retro(
+        base_dir,
+        "snes",
+        "Super Nintendo",
+        ".sfc (Pref), .smc, .zip",
+        "https://docs.libretro.com/library/snes9x/",
+        "Não",
+        logger,
+    )
+    setup_retro(
+        base_dir,
+        "n64",
+        "Nintendo 64",
+        ".z64 (Big Endian), .n64",
+        "https://m64p.github.io/",
+        "Não",
+        logger,
+    )
+    setup_retro(
+        base_dir,
+        "gba",
+        "Game Boy Advance",
+        ".gba",
+        "https://mgba.io/",
+        "Sim (bios.bin opcional, mas melhora compatibilidade)",
+        logger,
+    )
+    setup_retro(
+        base_dir,
+        "nds",
+        "Nintendo DS",
+        ".nds",
+        "https://melonds.kuribo64.net/",
+        "Sim (bios7.bin, bios9.bin, firmware.bin)",
+        logger,
+    )
 
-    setup_moderno(base_dir, "3ds", "Nintendo 3DS", ".3ds (Encrypted), .cia, .3ds (Decrypted)", "https://citra-emu.org/wiki/dumping-game-cartridges/", "Não (exceto para Menu Home)", "Citra roda melhor ROMs 'Decrypted'. Arquivos CIA devem ser instalados.", ["Decrypted Games (Citra)", "CIA (Installers)", "DLC & Updates (CIA)"], logger=logger)
-    setup_moderno(base_dir, "gamecube", "GameCube", ".rvz, .iso", "https://br.dolphin-emu.org/docs/guides/ripping-games/", "Não", "Use formato RVZ para compressão sem perda. Dolphin é o padrão ouro.", ["ISOs (RVZ)", "Texture Packs"], logger=logger)
-    setup_moderno(base_dir, "wii", "Nintendo Wii", ".wbfs, .rvz", "https://br.dolphin-emu.org/", "Não", "Evite .ISO (são gigantes). WBFS é ideal para hardware real, RVZ para Dolphin.", ["WBFS (Games)", "WiiWare (WAD)"], logger=logger)
-    setup_moderno(base_dir, "wiiu", "Nintendo Wii U", ".rpx (Loadiine), .wua", "https://cemu.info/", "Sim (Online files opcionais)", "Use o formato .WUA no Cemu para agrupar Jogo + Update + DLC em um único arquivo.", ["Games (Loadiine_WUA)", "Installers (WUP)", "Updates & DLC"], logger=logger)
-    setup_moderno(base_dir, "switch", "Nintendo Switch", ".xci, .nsp, .nsz", "https://yuzu-emu.org/help/quickstart/", "SIM (CRÍTICO: prod.keys + Firmware)", "XCI são dumps de cartucho. NSP são dumps digitais (eShop). Updates são sempre NSP/NSZ.", ["Base Games (XCI-NSP)", "Updates & DLC (NSP-NSZ)", "Mods (LayeredFS)", "Shaders Cache"], logger=logger)
+    setup_moderno(
+        base_dir,
+        "3ds",
+        "Nintendo 3DS",
+        ".3ds (Encrypted), .cia, .3ds (Decrypted)",
+        "https://citra-emu.org/wiki/dumping-game-cartridges/",
+        "Não (exceto para Menu Home)",
+        "Citra roda melhor ROMs 'Decrypted'. Arquivos CIA devem ser instalados.",
+        ["Decrypted Games (Citra)", "CIA (Installers)", "DLC & Updates (CIA)"],
+        logger=logger,
+    )
+    setup_moderno(
+        base_dir,
+        "gamecube",
+        "GameCube",
+        ".rvz, .iso",
+        "https://br.dolphin-emu.org/docs/guides/ripping-games/",
+        "Não",
+        "Use formato RVZ para compressão sem perda. Dolphin é o padrão ouro.",
+        ["ISOs (RVZ)", "Texture Packs"],
+        logger=logger,
+    )
+    setup_moderno(
+        base_dir,
+        "wii",
+        "Nintendo Wii",
+        ".wbfs, .rvz",
+        "https://br.dolphin-emu.org/",
+        "Não",
+        "Evite .ISO (são gigantes). WBFS é ideal para hardware real, RVZ para Dolphin.",
+        ["WBFS (Games)", "WiiWare (WAD)"],
+        logger=logger,
+    )
+    setup_moderno(
+        base_dir,
+        "wiiu",
+        "Nintendo Wii U",
+        ".rpx (Loadiine), .wua",
+        "https://cemu.info/",
+        "Sim (Online files opcionais)",
+        "Use o formato .WUA no Cemu para agrupar Jogo + Update + DLC em um único "
+        "arquivo.",
+        ["Games (Loadiine_WUA)", "Installers (WUP)", "Updates & DLC"],
+        logger=logger,
+    )
+    setup_moderno(
+        base_dir,
+        "switch",
+        "Nintendo Switch",
+        ".xci, .nsp, .nsz",
+        "https://yuzu-emu.org/help/quickstart/",
+        "SIM (CRÍTICO: prod.keys + Firmware)",
+        "XCI são dumps de cartucho. NSP são dumps digitais (eShop). "
+        "Updates são sempre NSP/NSZ.",
+        [
+            "Base Games (XCI-NSP)",
+            "Updates & DLC (NSP-NSZ)",
+            "Mods (LayeredFS)",
+            "Shaders Cache",
+        ],
+        logger=logger,
+    )
 
     # --- SONY ---
-    setup_retro(base_dir, "psx", "PlayStation 1", ".chd, .cue/.bin, .m3u", "https://docs.libretro.com/library/beetle_psx_hw/", "Sim (scph5501.bin recomendado)", logger)
-    setup_moderno(base_dir, "ps2", "PlayStation 2", ".chd, .iso", "https://pcsx2.net/docs/usage/setup/", "Sim (scph10000.bin ou mais recente)", "Converta ISOs para .CHD usando 'chdman'. Economia drástica de espaço.", ["Games (CHD-ISO)", "Cheats_Widescreen"], logger=logger)
-    setup_moderno(base_dir, "psp", "PlayStation Portable", ".cso, .iso", "https://www.ppsspp.org/", "Não", "Jogos mini/PSN são pastas com EBOOT.PBP.", ["ISOs (CSO)", "PSN (EBOOT)"], logger=logger)
-    setup_moderno(base_dir, "psvita", "PlayStation Vita", ".pkg, .zip (Nonpdrm)", "https://vita3k.org/", "Sim (Firmware deve ser instalado)", "Vita3K instala arquivos .pkg ou pastas Zipadas (Nonpdrm).", ["NoPayStation (PKG)", "Nonpdrm (Extracted)"], logger=logger)
-    setup_moderno(base_dir, "ps3", "PlayStation 3", ".iso, Folder (JB)", "https://rpcs3.net/quickstart", "Sim (Instalar PS3UPDAT.PUP)", "Jogos de disco: ISO ou Pasta JB. Jogos digitais: PKG + RAP (Licença).", ["ISOs", "HDD_Games (BLUSxxxx)", "PKGs (Installers)", "RAP_Licenses"], logger=logger)
-    setup_moderno(base_dir, "ps4", "PlayStation 4", ".pkg (FPKG)", "https://github.com/red-prig/fpPS4", "Sim (Firmware desencriptado)", "Emulação experimental. Apenas FPKGs (Fake PKGs - Desbloqueados) funcionam.", ["FPKGs"], logger=logger)
+    setup_retro(
+        base_dir,
+        "psx",
+        "PlayStation 1",
+        ".chd, .cue/.bin, .m3u",
+        "https://docs.libretro.com/library/beetle_psx_hw/",
+        "Sim (scph5501.bin recomendado)",
+        logger,
+    )
+    setup_moderno(
+        base_dir,
+        "ps2",
+        "PlayStation 2",
+        ".chd, .iso",
+        "https://pcsx2.net/docs/usage/setup/",
+        "Sim (scph10000.bin ou mais recente)",
+        "Converta ISOs para .CHD usando 'chdman'. Economia drástica de espaço.",
+        ["Games (CHD-ISO)", "Cheats_Widescreen"],
+        logger=logger,
+    )
+    setup_moderno(
+        base_dir,
+        "psp",
+        "PlayStation Portable",
+        ".cso, .iso",
+        "https://www.ppsspp.org/",
+        "Não",
+        "Jogos mini/PSN são pastas com EBOOT.PBP.",
+        ["ISOs (CSO)", "PSN (EBOOT)"],
+        logger=logger,
+    )
+    setup_moderno(
+        base_dir,
+        "psvita",
+        "PlayStation Vita",
+        ".pkg, .zip (Nonpdrm)",
+        "https://vita3k.org/",
+        "Sim (Firmware deve ser instalado)",
+        "Vita3K instala arquivos .pkg ou pastas Zipadas (Nonpdrm).",
+        ["NoPayStation (PKG)", "Nonpdrm (Extracted)"],
+        logger=logger,
+    )
+    setup_moderno(
+        base_dir,
+        "ps3",
+        "PlayStation 3",
+        ".iso, Folder (JB)",
+        "https://rpcs3.net/quickstart",
+        "Sim (Instalar PS3UPDAT.PUP)",
+        "Jogos de disco: ISO ou Pasta JB. Jogos digitais: PKG + RAP (Licença).",
+        ["ISOs", "HDD_Games (BLUSxxxx)", "PKGs (Installers)", "RAP_Licenses"],
+        logger=logger,
+    )
+    setup_moderno(
+        base_dir,
+        "ps4",
+        "PlayStation 4",
+        ".pkg (FPKG)",
+        "https://github.com/red-prig/fpPS4",
+        "Sim (Firmware desencriptado)",
+        "Emulação experimental. Apenas FPKGs (Fake PKGs - Desbloqueados) funcionam.",
+        ["FPKGs"],
+        logger=logger,
+    )
 
     # --- SEGA ---
-    setup_retro(base_dir, "mastersystem", "Sega Master System", ".sms, .zip", "https://docs.libretro.com/library/genesis_plus_gx/", "Não (Bios apenas para logo de boot)", logger)
-    setup_retro(base_dir, "megadrive", "Sega Mega Drive", ".md, .gen, .zip", "https://docs.libretro.com/library/genesis_plus_gx/", "Não", logger)
-    setup_retro(base_dir, "saturn", "Sega Saturn", ".chd, .cue/.bin", "https://docs.libretro.com/library/beetle_saturn/", "Sim (Obrigatório: sega_101.bin)", logger)
-    setup_moderno(base_dir, "dreamcast", "Sega Dreamcast", ".chd, .gdi", "https://flycast.org/", "Sim (dc_boot.bin, dc_flash.bin)", "Evite CDI (rips de baixa qualidade). Prefira GDI original ou CHD.", ["Games (CHD-GDI)", "VMU_Saves"], logger=logger)
+    setup_retro(
+        base_dir,
+        "mastersystem",
+        "Sega Master System",
+        ".sms, .zip",
+        "https://docs.libretro.com/library/genesis_plus_gx/",
+        "Não (Bios apenas para logo de boot)",
+        logger,
+    )
+    setup_retro(
+        base_dir,
+        "megadrive",
+        "Sega Mega Drive",
+        ".md, .gen, .zip",
+        "https://docs.libretro.com/library/genesis_plus_gx/",
+        "Não",
+        logger,
+    )
+    setup_retro(
+        base_dir,
+        "saturn",
+        "Sega Saturn",
+        ".chd, .cue/.bin",
+        "https://docs.libretro.com/library/beetle_saturn/",
+        "Sim (Obrigatório: sega_101.bin)",
+        logger,
+    )
+    setup_moderno(
+        base_dir,
+        "dreamcast",
+        "Sega Dreamcast",
+        ".chd, .gdi",
+        "https://flycast.org/",
+        "Sim (dc_boot.bin, dc_flash.bin)",
+        "Evite CDI (rips de baixa qualidade). Prefira GDI original ou CHD.",
+        ["Games (CHD-GDI)", "VMU_Saves"],
+        logger=logger,
+    )
 
     # --- MICROSOFT & OUTROS ---
-    setup_retro(base_dir, "atari2600", "Atari 2600", ".a26, .bin, .zip", "https://docs.libretro.com/library/stella/", "Não", logger)
-    setup_moderno(base_dir, "xbox_classic", "Xbox Original", ".iso (XISO)", "https://xemu.app/docs/disc-images/", "Sim (Complexo: mcpx_1.0.bin + flash.bin + HDD Image)", "ISOs 'Redump' padrão NÃO funcionam. Converta para XISO com 'extract-xiso'.", ["XISO (Redump)", "HDD Ready"], logger=logger)
-    setup_moderno(base_dir, "xbox360", "Xbox 360", ".iso, .xex", "https://github.com/xenia-project/xenia", "Não (Geralmente)", "Xenia roda ISOs ou pastas extraídas (XEX/GOD).", ["ISOs", "XBLA (Arcade)", "Extracted (GOD/XEX)"], logger=logger)
+    setup_retro(
+        base_dir,
+        "atari2600",
+        "Atari 2600",
+        ".a26, .bin, .zip",
+        "https://docs.libretro.com/library/stella/",
+        "Não",
+        logger,
+    )
+    setup_moderno(
+        base_dir,
+        "xbox_classic",
+        "Xbox Original",
+        ".iso (XISO)",
+        "https://xemu.app/docs/disc-images/",
+        "Sim (Complexo: mcpx_1.0.bin + flash.bin + HDD Image)",
+        "ISOs 'Redump' padrão NÃO funcionam. Converta para XISO com 'extract-xiso'.",
+        ["XISO (Redump)", "HDD Ready"],
+        logger=logger,
+    )
+    setup_moderno(
+        base_dir,
+        "xbox360",
+        "Xbox 360",
+        ".iso, .xex",
+        "https://github.com/xenia-project/xenia",
+        "Não (Geralmente)",
+        "Xenia roda ISOs ou pastas extraídas (XEX/GOD).",
+        ["ISOs", "XBLA (Arcade)", "Extracted (GOD/XEX)"],
+        logger=logger,
+    )
 
     # --- ARCADE ---
-    setup_arcade(base_dir, "mame", "MAME (Arcade)", "Não (As BIOS são parte dos ROMsets)", logger)
-    setup_arcade(base_dir, "neogeo", "Neo-Geo", "Sim (neogeo.zip dentro da pasta de roms)", logger)
+    setup_arcade(
+        base_dir,
+        "mame",
+        "MAME (Arcade)",
+        "Não (As BIOS são parte dos ROMsets)",
+        logger,
+    )
+    setup_arcade(
+        base_dir,
+        "neogeo",
+        "Neo-Geo",
+        "Sim (neogeo.zip dentro da pasta de roms)",
+        logger,
+    )
     setup_arcade(base_dir, "fbneo", "Final Burn Neo", "Não (Incluído nos sets)", logger)
 
     # Final notes
     logger.info("COLLECTION BUILD COMPLETE!")
     if not dry_run:
         logger.info("Detailed log saved to: %s", log_file)
-    logger.info("Next steps: fill /bios, copy games and read _INFO_TECNICA.txt for each system.")
+    logger.info(
+        "Next steps: fill /bios, copy games and read _INFO_TECNICA.txt for each system."
+    )
 
 
 def _get_logger(base_dir: Path) -> logging.Logger:
@@ -278,10 +524,23 @@ def _get_logger(base_dir: Path) -> logging.Logger:
 
 
 def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Architect ROMs Master - estrutura de acervo de emulação")
-    p.add_argument("base_dir", nargs="?", default="./Acervo_Games_Ultimate", help="Diretório base de criação")
-    p.add_argument("--dry-run", action="store_true", help="Simula ações sem alterar o sistema de arquivos")
-    p.add_argument("--no-color", action="store_true", help="Desativa cores ANSI na saída")
+    p = argparse.ArgumentParser(
+        description="Architect ROMs Master - estrutura de acervo de emulação"
+    )
+    p.add_argument(
+        "base_dir",
+        nargs="?",
+        default="./Acervo_Games_Ultimate",
+        help="Diretório base de criação",
+    )
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Simula ações sem alterar o sistema de arquivos",
+    )
+    p.add_argument(
+        "--no-color", action="store_true", help="Desativa cores ANSI na saída"
+    )
     return p.parse_args(argv)
 
 

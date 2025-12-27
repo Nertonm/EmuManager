@@ -1,7 +1,8 @@
 import xml.etree.ElementTree as ET
-from pathlib import Path
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, List, Optional
+
 
 @dataclass
 class RomInfo:
@@ -11,6 +12,7 @@ class RomInfo:
     crc: Optional[str] = None
     md5: Optional[str] = None
     sha1: Optional[str] = None
+
 
 class DatDb:
     def __init__(self):
@@ -26,26 +28,28 @@ class DatDb:
             if crc not in self.crc_index:
                 self.crc_index[crc] = []
             self.crc_index[crc].append(rom)
-        
+
         if rom.md5:
             self.md5_index[rom.md5.lower()] = rom
-            
+
         if rom.sha1:
             self.sha1_index[rom.sha1.lower()] = rom
 
-    def lookup(self, crc: str = None, md5: str = None, sha1: str = None) -> Optional[RomInfo]:
+    def lookup(
+        self, crc: str = None, md5: str = None, sha1: str = None
+    ) -> Optional[RomInfo]:
         # Try SHA1 first (most unique)
         if sha1:
             res = self.sha1_index.get(sha1.lower())
             if res:
                 return res
-            
+
         # Try MD5
         if md5:
             res = self.md5_index.get(md5.lower())
             if res:
                 return res
-            
+
         # Try CRC (might have collisions, return first match or refine)
         if crc:
             matches = self.crc_index.get(crc.lower())
@@ -56,15 +60,16 @@ class DatDb:
                 # then we shouldn't be here if we checked them above.
                 # But if the user ONLY provided CRC, we return the first match.
                 return matches[0]
-                
+
         return None
+
 
 def parse_dat_file(dat_path: Path) -> DatDb:
     db = DatDb()
     try:
         tree = ET.parse(dat_path)
         root = tree.getroot()
-        
+
         # Parse Header
         header = root.find("header")
         if header is not None:
@@ -78,7 +83,7 @@ def parse_dat_file(dat_path: Path) -> DatDb:
         # Parse Games
         for game in root.findall("game"):
             game_name = game.get("name", "Unknown")
-            
+
             for rom in game.findall("rom"):
                 rom_name = rom.get("name", "Unknown")
                 size_str = rom.get("size", "0")
@@ -86,22 +91,22 @@ def parse_dat_file(dat_path: Path) -> DatDb:
                     size = int(size_str)
                 except ValueError:
                     size = 0
-                    
+
                 crc = rom.get("crc")
                 md5 = rom.get("md5")
                 sha1 = rom.get("sha1")
-                
+
                 info = RomInfo(
                     game_name=game_name,
                     rom_name=rom_name,
                     size=size,
                     crc=crc,
                     md5=md5,
-                    sha1=sha1
+                    sha1=sha1,
                 )
                 db.add_rom(info)
-                
+
     except Exception:
         pass
-        
+
     return db
