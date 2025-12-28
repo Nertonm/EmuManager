@@ -26,6 +26,10 @@ def test_check_tool_not_found(monkeypatch):
     monkeypatch.setattr(
         "emumanager.converters.dolphin_converter.find_tool", lambda x: None
     )
+    # Also ensure flatpak check fails
+    monkeypatch.setattr(
+        "emumanager.converters.dolphin_converter.shutil.which", lambda x: None
+    )
     conv = DolphinConverter()
     assert conv.check_tool() is False
 
@@ -70,7 +74,7 @@ def test_get_metadata_success(mock_run_cmd, converter, tmp_path):
 
     mock_run_cmd.return_value = MagicMock(
         returncode=0,
-        stdout=b"Game ID: GM4E01\nInternal Name: Mario Kart\nRevision: 0\n",
+        stdout="Game ID: GM4E01\nInternal Name: Mario Kart\nRevision: 0\n",
     )
 
     meta = converter.get_metadata(f)

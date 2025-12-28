@@ -42,6 +42,9 @@ class TestMainWindowLogic:
         return window
 
     def test_progress_hook_updates_ui(self, window):
+        # Force direct UI update path (no signal)
+        window._signaler = None
+        
         # Test 50% progress
         window.progress_hook(0.5, "Halfway there")
 
@@ -50,6 +53,9 @@ class TestMainWindowLogic:
         window.status.showMessage.assert_called_with("Halfway there")
 
     def test_progress_hook_clamping(self, window):
+        # Force direct UI update path (no signal)
+        window._signaler = None
+
         # Test > 100%
         window.progress_hook(1.5, "Done")
         window.ui.progress_bar.setValue.assert_called_with(100)

@@ -18,7 +18,7 @@ def make_ctx(tmp_path, *, move_result=True, meta=None):
     def sanitize_name(n):
         return n.replace(" ", "_")
 
-    def determine_region(tid):
+    def determine_region(tid, langs=None):
         return "(World)"
 
     def handle_compression(p):
