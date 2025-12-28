@@ -246,7 +246,10 @@ parser.add_argument(
     "--quarantine-dir",
     type=str,
     default=None,
-    help="Diretório onde mover arquivos em quarentena (default: _QUARANTINE dentro de --dir)",
+    help=(
+        "Diretório onde mover arquivos em quarentena (default: _QUARANTINE "
+        "dentro de --dir)"
+    ),
 )
 parser.add_argument(
     "--deep-verify",
@@ -360,7 +363,8 @@ def run_cmd(
     timeout: Optional[int] = None,
     check: bool = False,
 ):
-    """Run a subprocess command with timeout, capture output and optionally save to files.
+    """Run a subprocess command with timeout, capture output and optionally save
+    to files.
 
     If filebase is provided, stdout/err will be stored as filebase + .out/.err
     Returns completed process.
@@ -579,7 +583,8 @@ def determine_type(title_id, text_output):
     if "application" in low or "gamecard" in low or "program" in low:
         return "Base"
 
-    # Try ID heuristics: compare against base id (if title_id equals its base, it's likely a Base)
+    # Try ID heuristics: compare against base id (if title_id equals its base,
+    # it's likely a Base)
     if title_id:
         try:
             base = get_base_id(title_id)
@@ -667,7 +672,8 @@ def sanitize_name(name):
 
 
 def get_file_hash(filepath: Path) -> str:
-    """Retorna um hash SHA256 do arquivo. Em caso de falha, retorna o tamanho como string.
+    """Retorna um hash SHA256 do arquivo. Em caso de falha, retorna o tamanho
+    como string.
 
     Essa função é usada para detecção simples de duplicatas. Para arquivos grandes,
     o cálculo pode levar tempo.
@@ -748,7 +754,8 @@ def get_metadata(filepath):
     # extract metadata from the inner .nsp/.xci. We do this only if TOOL_NSZ
     # appears available.
     try:
-        # If compressed, try a temporary decompression fallback that returns a candidate file
+        # If compressed, try a temporary decompression fallback that returns a
+        # candidate file
         fallback = _try_decompression_metadata(filepath, base)
         if fallback:
             return fallback
@@ -917,7 +924,8 @@ def verify_integrity(
                     filebase=logbase_n,
                     timeout=getattr(globals().get("args", {}), "cmd_timeout", None),
                 )
-                # Use the verify helper but avoid re-running the tool by passing a lambda that returns the captured result
+                # Use the verify helper but avoid re-running the tool by passing a lambda
+                # that returns the captured result
                 ok_nsz = verify_nsz(
                     filepath, lambda *a, **k: res_nsz, tool_nsz=str(TOOL_NSZ)
                 )
@@ -969,7 +977,8 @@ def verify_integrity(
             logger.debug("metadata verify raised: %s", e)
             results.append((False, str(e)))
 
-        # If deep requested and hactool available, attempt extra pass with hactool specifics
+        # If deep requested and hactool available, attempt extra pass with
+        # hactool specifics
         if deep and TOOL_HACTOOL:
             try:
                 cmd = (
@@ -1065,7 +1074,8 @@ def scan_for_virus(filepath):
 
 
 def detect_nsz_level(filepath) -> Optional[int]:
-    """Try to detect zstd compression level used inside an .nsz/.xcz using nsz --info/-i output.
+    """Try to detect zstd compression level used inside an .nsz/.xcz using
+    nsz --info/-i output.
 
     Returns integer level or None if unknown.
     """
@@ -1276,7 +1286,8 @@ def _handle_new_compression(filepath):
 
         print(f" {Col.GREEN}[OK]{Col.RESET}")
 
-        # If user requested removal of originals, verify compressed file and then remove source
+        # If user requested removal of originals, verify compressed file and then
+        # remove source
         if args.rm_originals and not args.dry_run and compressed_candidate:
             try:
                 if (
@@ -1301,7 +1312,8 @@ def _handle_new_compression(filepath):
                             )
                     else:
                         logger.warning(
-                            "Arquivo comprimido gerado, mas não passou na verificação: %s",
+                            "Arquivo comprimido gerado, mas não passou na "
+                            "verificação: %s",
                             compressed_candidate,
                         )
                         if getattr(args, "keep_on_failure", False):
@@ -1316,12 +1328,14 @@ def _handle_new_compression(filepath):
                                     dest = quarantine_dir / compressed_candidate.name
                                     shutil.move(str(compressed_candidate), str(dest))
                                     logger.info(
-                                        "Moved failed compressed artifact to quarantine: %s",
+                                        "Moved failed compressed artifact to "
+                                        "quarantine: %s",
                                         dest,
                                     )
                             except Exception:
                                 logger.exception(
-                                    "Failed moving failed compressed artifact to quarantine: %s",
+                                    "Failed moving failed compressed artifact to "
+                                    "quarantine: %s",
                                     compressed_candidate,
                                 )
             except Exception:
@@ -1372,7 +1386,8 @@ def _handle_decompression(filepath):
 
 
 def handle_compression(filepath):
-    # Support recompressing already-compressed archives when requested or when requested level is higher
+    # Support recompressing already-compressed archives when requested or when
+    # requested level is higher
     if args.compress and filepath.suffix.lower() in {".nsz", ".xcz"}:
         res = _handle_recompression(filepath)
         if res:
@@ -1389,7 +1404,8 @@ def handle_compression(filepath):
 
 
 def safe_move(source, dest):
-    # thin wrapper delegating to the testable implementation in emumanager.common.fileops
+    # thin wrapper delegating to the testable implementation in
+    # emumanager.common.fileops
     try:
         from emumanager.common.fileops import safe_move as _safe_move_impl
 
@@ -1533,7 +1549,8 @@ def main():
             safe_move,
             logger,
         )
-        # If user only requested health-check (no other actions), exit with code on problems
+        # If user only requested health-check (no other actions), exit with code
+        # on problems
         any([args.organize, args.compress, args.decompress, args.clean_junk])
         catalog: List[List[Any]] = []
         stats = {"ok": 0, "erro": 0, "skipped": 0}
@@ -1619,7 +1636,9 @@ def main():
                 logger.debug(f"failed to remove dir {p}: {e}")
 
     print(
-        f"{Col.GREEN}✅ Sucesso: {stats['ok']} | ⚠️  Pulos/Dups: {stats['skipped']} | ❌ Erros: {stats['erro']}{Col.RESET}"
+        f"{Col.GREEN}✅ Sucesso: {stats['ok']} | "
+        f"⚠️  Pulos/Dups: {stats['skipped']} | "
+        f"❌ Erros: {stats['erro']}{Col.RESET}"
     )
 
 

@@ -297,7 +297,7 @@ def get_dest_folder(roms_dir: Path, region: str, type_str: str = "Base") -> Path
     # Map type to folder name
     # Base -> Base Games (XCI-NSP)
     # UPD/DLC -> Updates & DLC (NSP-NSZ)
-    
+
     if type_str == "Base":
         folder_name = "Base Games (XCI-NSP)"
     elif type_str in ("UPD", "DLC"):

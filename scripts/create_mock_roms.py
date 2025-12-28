@@ -12,7 +12,8 @@ from pathlib import Path
 # Ensure we can import from the package
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from emumanager import architect
+from emumanager import architect  # noqa: E402
+
 
 def create_dummy_file(path: Path, size_bytes: int = 1024):
     """Create a dummy file with random content."""
@@ -20,13 +21,20 @@ def create_dummy_file(path: Path, size_bytes: int = 1024):
     with open(path, "wb") as f:
         f.write(os.urandom(size_bytes))
 
+
 def create_text_file(path: Path, content: str = "Mock file"):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
 
+
 def main():
     parser = argparse.ArgumentParser(description="Create mock ROMs for testing")
-    parser.add_argument("target_dir", nargs="?", default="./mock_library", help="Target directory")
+    parser.add_argument(
+        "target_dir",
+        nargs="?",
+        default="./mock_library",
+        help="Target directory",
+    )
     args = parser.parse_args()
 
     base = Path(args.target_dir).resolve()
@@ -37,19 +45,25 @@ def main():
     architect.main([str(base)])
 
     roms = base / "roms"
-    
+
     # 2. Create Switch Mock Files
     print("Creating Switch mocks...")
     switch_dir = roms / "switch"
     # Valid files
-    create_dummy_file(switch_dir / "Super Mario Odyssey [0100000000010000][v0].nsp")
-    create_dummy_file(switch_dir / "The Legend of Zelda BOTW [01007EF00011E000][v0].xci")
+    create_dummy_file(
+        switch_dir / "Super Mario Odyssey [0100000000010000][v0].nsp"
+    )
+    create_dummy_file(
+        switch_dir / "The Legend of Zelda BOTW [01007EF00011E000][v0].xci"
+    )
     create_dummy_file(switch_dir / "Celeste [0100AC5003292000][v0].nsz")
     # Unorganized files
     create_dummy_file(switch_dir / "Unorganized_Game.nsp")
     # Junk
     create_text_file(switch_dir / "info.txt", "Some info")
-    create_text_file(switch_dir / "website.url", "[InternetShortcut]\nURL=http://google.com")
+    create_text_file(
+        switch_dir / "website.url", "[InternetShortcut]\nURL=http://google.com"
+    )
     # Keys (needed for tools)
     create_text_file(base / "keys.txt", "prod.keys mock content")
 
@@ -67,7 +81,7 @@ def main():
     gc_dir = roms / "gamecube"
     create_dummy_file(gc_dir / "Super Smash Bros Melee.iso")
     create_dummy_file(gc_dir / "Metroid Prime.rvz")
-    
+
     wii_dir = roms / "wii"
     create_dummy_file(wii_dir / "Wii Sports.wbfs")
     create_dummy_file(wii_dir / "Mario Kart Wii.iso")
@@ -97,6 +111,7 @@ def main():
 
     print("\nMock library created successfully!")
     print(f"Run the GUI and open: {base}")
+
 
 if __name__ == "__main__":
     main()

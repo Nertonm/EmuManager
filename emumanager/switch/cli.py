@@ -23,7 +23,8 @@ from emumanager.switch import meta_extractor, meta_parser
 from emumanager.logging_cfg import Col, get_fileops_logger
 from emumanager.verification.hasher import get_file_hash
 
-# Keep original reference so test monkeypatches (which replace subprocess.run) can be detected
+# Keep original reference so test monkeypatches (which replace subprocess.run)
+# can be detected
 ORIGINAL_SUBPROCESS_RUN = subprocess.run
 
 # ======================================================================
@@ -411,9 +412,12 @@ def verify_integrity(
                     filebase=logbase_n,
                     timeout=cmd_timeout,
                 )
-                # Use the verify helper but avoid re-running the tool by passing a lambda that returns the captured result
+                # Use the verify helper but avoid re-running the tool by passing a lambda
+                # that returns the captured result
                 ok_nsz = verify_nsz(
-                    filepath, lambda *a, **k: res_nsz, tool_nsz=str(tool_nsz)
+                    filepath,
+                    lambda *a, **k: res_nsz,
+                    tool_nsz=str(tool_nsz),
                 )
                 results.append(
                     (
@@ -459,7 +463,8 @@ def verify_integrity(
             logger.debug("metadata verify raised: %s", e)
             results.append((False, str(e)))
 
-        # If deep requested and hactool available, attempt extra pass with hactool specifics
+        # If deep requested and hactool available, attempt extra pass with
+        # hactool specifics
         if deep and tool_hactool:
             try:
                 cmd = (
@@ -543,7 +548,8 @@ def scan_for_virus(filepath, *, tool_clamscan, tool_clamdscan, roms_dir, cmd_tim
 
 
 def detect_nsz_level(filepath, *, tool_nsz, roms_dir, cmd_timeout) -> Optional[int]:
-    """Try to detect zstd compression level used inside an .nsz/.xcz using nsz --info/-i output.
+    """Try to detect zstd compression level used inside an .nsz/.xcz using
+    nsz --info/-i output.
 
     Returns integer level or None if unknown.
     """
@@ -608,7 +614,8 @@ def handle_compression(
     cmd_timeout,
     tool_hactool,
 ):
-    # Support recompressing already-compressed archives when requested or when requested level is higher
+    # Support recompressing already-compressed archives when requested or when
+    # requested level is higher
     if args.compress and filepath.suffix.lower() in {".nsz", ".xcz"}:
         return _handle_recompression(
             filepath,
@@ -826,7 +833,8 @@ def _handle_new_compression(
 
         print(f" {Col.GREEN}[OK]{Col.RESET}")
 
-        # If user requested removal of originals, verify compressed file and then remove source
+        # If user requested removal of originals, verify compressed file and then
+        # remove source
         if args.rm_originals and not args.dry_run and compressed_candidate:
             try:
                 if (
@@ -862,7 +870,8 @@ def _handle_new_compression(
                             )
                         except Exception:
                             logger.exception(
-                                "Falha ao remover arquivo original depois de comprimir: %s",
+                                "Falha ao remover arquivo original depois de "
+                                "comprimir: %s",
                                 filepath,
                             )
                     else:
@@ -882,12 +891,14 @@ def _handle_new_compression(
                                     dest = quarantine_dir / compressed_candidate.name
                                     shutil.move(str(compressed_candidate), str(dest))
                                     logger.info(
-                                        "Moved failed compressed artifact to quarantine: %s",
+                                        "Moved failed compressed artifact to "
+                                        "quarantine: %s",
                                         dest,
                                     )
                             except Exception:
                                 logger.exception(
-                                    "Failed moving failed compressed artifact to quarantine: %s",
+                                    "Failed moving failed compressed artifact to "
+                                    "quarantine: %s",
                                     compressed_candidate,
                                 )
             except Exception:
@@ -949,7 +960,8 @@ def _handle_decompression(
 
 
 def safe_move(source, dest, *, args, logger):
-    # thin wrapper delegating to the testable implementation in emumanager.common.fileops
+    # thin wrapper delegating to the testable implementation in
+    # emumanager.common.fileops
     try:
         from emumanager.common.fileops import safe_move as _safe_move_impl
 
@@ -1074,17 +1086,18 @@ def main(argv: Optional[List[str]] = None):
     stats = {"ok": 0, "erro": 0, "skipped": 0}
 
     # Create closures for dependencies to pass to helpers
-    verify_integrity_fn = lambda f, **k: verify_integrity(
-        f,
-        tool_nsz=TOOL_NSZ,
-        roms_dir=ROMS_DIR,
-        cmd_timeout=getattr(args, "cmd_timeout", None),
-        tool_metadata=TOOL_METADATA,
-        is_nstool=IS_NSTOOL,
-        keys_path=KEYS_PATH,
-        tool_hactool=TOOL_HACTOOL,
-        **k,
-    )
+    def verify_integrity_fn(f, **k):
+        return verify_integrity(
+            f,
+            tool_nsz=TOOL_NSZ,
+            roms_dir=ROMS_DIR,
+            cmd_timeout=getattr(args, "cmd_timeout", None),
+            tool_metadata=TOOL_METADATA,
+            is_nstool=IS_NSTOOL,
+            keys_path=KEYS_PATH,
+            tool_hactool=TOOL_HACTOOL,
+            **k,
+        )
 
     def scan_for_virus_fn(f):
         return scan_for_virus(
@@ -1104,10 +1117,10 @@ def main(argv: Optional[List[str]] = None):
             tool_metadata=TOOL_METADATA,
             is_nstool=IS_NSTOOL,
             keys_path=KEYS_PATH,
-        roms_dir=ROMS_DIR,
-        tool_nsz=TOOL_NSZ,
-        cmd_timeout=getattr(args, "cmd_timeout", None),
-    )
+            roms_dir=ROMS_DIR,
+            tool_nsz=TOOL_NSZ,
+            cmd_timeout=getattr(args, "cmd_timeout", None),
+        )
 
     def handle_compression_fn(f):
         return handle_compression(
@@ -1136,7 +1149,8 @@ def main(argv: Optional[List[str]] = None):
             safe_move_fn,
             logger,
         )
-        # If user only requested health-check (no other actions), exit with code on problems
+        # If user only requested health-check (no other actions), exit with code
+        # on problems
         other_actions = any(
             [args.organize, args.compress, args.decompress, args.clean_junk]
         )
@@ -1228,7 +1242,9 @@ def main(argv: Optional[List[str]] = None):
                 logger.debug(f"failed to remove dir {p}: {e}")
 
     print(
-        f"{Col.GREEN}✅ Sucesso: {stats['ok']} | ⚠️  Pulos/Dups: {stats['skipped']} | ❌ Erros: {stats['erro']}{Col.RESET}"
+        f"{Col.GREEN}✅ Sucesso: {stats['ok']} | "
+        f"⚠️  Pulos/Dups: {stats['skipped']} | "
+        f"❌ Erros: {stats['erro']}{Col.RESET}"
     )
 
 
