@@ -205,5 +205,19 @@ Consulte `CONTRIBUTING.md` para mais detalhes sobre como contribuir.
 
 ---
 
+## Legal Disclaimer
+
+**EmuManager** is a file management and organization tool. It **does not** contain, distribute, or promote the use of copyrighted material such as ROMs, ISOs, BIOS files, or proprietary keys.
+
+- **No ROMs Included**: You must provide your own legally obtained game backups.
+- **No BIOS/Keys Included**: System files required for emulation (like `boot9.bin` for 3DS or `prod.keys` for Switch) must be dumped from your own hardware.
+- **Usage**: This tool is intended for personal backup management. The developers are not responsible for any misuse of this software.
+
+## Copyright
+
+All trademarks, logos, and brand names are the property of their respective owners. All company, product, and service names used in this software are for identification purposes only. Use of these names, trademarks, and brands does not imply endorsement.
+
+---
+
 ## Licença
 Este projeto é licenciado sob a licença MIT. Veja o arquivo `LICENSE` para detalhes.
