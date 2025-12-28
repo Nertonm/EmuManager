@@ -14,7 +14,12 @@ from emumanager.workers.dolphin import (
     worker_dolphin_recompress_single,
     worker_dolphin_verify,
 )
-from emumanager.workers.n3ds import worker_n3ds_organize, worker_n3ds_verify
+from emumanager.workers.n3ds import (
+    worker_n3ds_compress,
+    worker_n3ds_decompress,
+    worker_n3ds_organize,
+    worker_n3ds_verify,
+)
 from emumanager.workers.ps2 import (
     worker_ps2_convert,
     worker_ps2_organize,
@@ -66,6 +71,8 @@ __all__ = [
     "worker_psp_compress",
     "worker_n3ds_verify",
     "worker_n3ds_organize",
+    "worker_n3ds_compress",
+    "worker_n3ds_decompress",
     "worker_dolphin_convert",
     "worker_dolphin_verify",
     "worker_dolphin_organize",

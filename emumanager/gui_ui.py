@@ -307,6 +307,7 @@ class Ui_MainWindow:
         self._setup_ps3_tab(qt)
         self._setup_psp_tab(qt)
         self._setup_dolphin_tab(qt)
+        self._setup_n3ds_tab(qt)
         self._setup_general_tab(qt)
 
     def _setup_switch_tab(self, qt):
@@ -604,6 +605,34 @@ class Ui_MainWindow:
         dolphin_layout.addWidget(grp_dolphin)
         dolphin_layout.addStretch()
         self.tools_tabs.addTab(self.tab_dolphin, "GameCube / Wii")
+
+    def _setup_n3ds_tab(self, qt):
+        self.tab_n3ds = qt.QWidget()
+        n3ds_layout = qt.QVBoxLayout(self.tab_n3ds)
+        grp_n3ds = qt.QGroupBox("Nintendo 3DS Actions")
+        grp_n3ds_layout = qt.QVBoxLayout()
+
+        self.btn_n3ds_organize = qt.QPushButton("Organize Library")
+        self.btn_n3ds_organize.setToolTip("Organizes 3DS ROMs based on metadata")
+
+        self.btn_n3ds_verify = qt.QPushButton("Verify Library")
+        self.btn_n3ds_verify.setToolTip("Verifies 3DS ROMs integrity")
+
+        self.btn_n3ds_compress = qt.QPushButton("Compress to 7z")
+        self.btn_n3ds_compress.setToolTip("Compress .3ds/.cia to .7z")
+
+        self.btn_n3ds_decompress = qt.QPushButton("Decompress from 7z")
+        self.btn_n3ds_decompress.setToolTip("Decompress .7z to original format")
+
+        grp_n3ds_layout.addWidget(self.btn_n3ds_organize)
+        grp_n3ds_layout.addWidget(self.btn_n3ds_verify)
+        grp_n3ds_layout.addWidget(self.btn_n3ds_compress)
+        grp_n3ds_layout.addWidget(self.btn_n3ds_decompress)
+
+        grp_n3ds.setLayout(grp_n3ds_layout)
+        n3ds_layout.addWidget(grp_n3ds)
+        n3ds_layout.addStretch()
+        self.tools_tabs.addTab(self.tab_n3ds, "Nintendo 3DS")
 
     def _setup_general_tab(self, qt):
         self.tab_general = qt.QWidget()

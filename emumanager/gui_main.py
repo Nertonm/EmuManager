@@ -30,6 +30,8 @@ from .gui_workers import (
     worker_health_check,
     worker_n3ds_organize,
     worker_n3ds_verify,
+    worker_n3ds_compress,
+    worker_n3ds_decompress,
     worker_organize,
     worker_ps2_convert,
     worker_ps2_organize,
@@ -235,6 +237,12 @@ class MainWindowBase:
         self.ui.btn_dolphin_organize.clicked.connect(self.on_dolphin_organize)
         self.ui.btn_dolphin_convert.clicked.connect(self.on_dolphin_convert)
         self.ui.btn_dolphin_verify.clicked.connect(self.on_dolphin_verify)
+
+        # Tools Tab - 3DS
+        self.ui.btn_n3ds_organize.clicked.connect(self.on_n3ds_organize)
+        self.ui.btn_n3ds_verify.clicked.connect(self.on_n3ds_verify)
+        self.ui.btn_n3ds_compress.clicked.connect(self.on_n3ds_compress)
+        self.ui.btn_n3ds_decompress.clicked.connect(self.on_n3ds_decompress)
 
         # Tools Tab - General
         self.ui.btn_clean_junk.clicked.connect(self.on_clean_junk)
@@ -1520,10 +1528,9 @@ class MainWindowBase:
                 def _work():
                     return worker_dolphin_convert(
                         filepath.parent,
-                        self._env,
                         args,
                         self.log_msg,
-                        lambda: [filepath],
+                        lambda _: [filepath],
                     )
             else:
                 # Default (Switch) Compression
@@ -1583,7 +1590,7 @@ class MainWindowBase:
                 # Dolphin Recompression
                 def _work():
                     return worker_dolphin_recompress_single(
-                        filepath, self._env, args, self.log_msg
+                        filepath, args, self.log_msg
                     )
             else:
                 # Default (Switch) Recompression
@@ -1643,7 +1650,7 @@ class MainWindowBase:
                 # Dolphin Decompression
                 def _work():
                     return worker_dolphin_decompress_single(
-                        filepath, self._env, args, self.log_msg
+                        filepath, args, self.log_msg
                     )
             else:
                 # Default (Switch) Decompression
@@ -2667,3 +2674,41 @@ class MainWindowBase:
 
         except Exception as e:
             self.log_msg(f"Error verifying file: {e}")
+
+    def on_n3ds_compress(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+
+        args = self._get_common_args()
+
+        def _work():
+            return worker_n3ds_compress(
+                self._last_base, args, self.log_msg, self._get_list_files_fn()
+            )
+
+        def _done(res):
+            self.log_msg(str(res))
+            self._set_ui_enabled(True)
+
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
+    def on_n3ds_decompress(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+
+        args = self._get_common_args()
+
+        def _work():
+            return worker_n3ds_decompress(
+                self._last_base, args, self.log_msg, self._get_list_files_fn()
+            )
+
+        def _done(res):
+            self.log_msg(str(res))
+            self._set_ui_enabled(True)
+
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)

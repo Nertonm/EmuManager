@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from emumanager.converters.n3ds_converter import compress_to_7z, decompress_7z
 from emumanager.n3ds import database as n3ds_db
 from emumanager.n3ds import metadata as n3ds_meta
 from emumanager.workers.common import (
@@ -224,3 +225,140 @@ def worker_n3ds_organize(
         progress_cb(1.0, "3DS Organization complete")
 
     return f"Organization complete. Renamed: {renamed}, Skipped: {skipped}"
+
+
+def worker_n3ds_compress(
+    base_path: Path,
+    args: Any,
+    log_cb: Callable[[str], None],
+    list_files_fn: Callable[[Path], list[Path]],
+) -> str:
+    """Worker function for 3DS compression (to 7z)."""
+    logger = GuiLogger(log_cb)
+
+    target_dir = find_target_dir(base_path, N3DS_SUBDIRS)
+    if not target_dir:
+        return MSG_N3DS_DIR_NOT_FOUND
+
+    logger.info(f"Compressing 3DS content in {target_dir}...")
+
+    compressed = 0
+    failed = 0
+    skipped = 0
+
+    files = list_files_fn(target_dir)
+    total = len(files)
+    progress_cb = getattr(args, "progress_callback", None)
+    cancel_event = getattr(args, "cancel_event", None)
+    dry_run = getattr(args, "dry_run", False)
+
+    for i, f in enumerate(files):
+        if cancel_event and cancel_event.is_set():
+            logger.warning(MSG_CANCELLED)
+            break
+
+        # Calculate progress range for this file
+        start_prog = i / total
+        file_weight = 1.0 / total
+
+        file_prog_cb = create_file_progress_cb(
+            progress_cb, start_prog, file_weight, f.name
+        )
+
+        if progress_cb:
+            progress_cb(start_prog, f"Compressing {f.name}...")
+        
+        print(f"DEBUG: Processing {f.name}, suffix={f.suffix}")
+
+        if f.suffix.lower() in (".3ds", ".cia", ".3dz", ".cci"):
+            dest = f.with_suffix(f.suffix + ".7z")
+            if dest.exists():
+                logger.info(f"Skipping {f.name}, already compressed.")
+                skipped += 1
+                continue
+
+            logger.info(f"Compressing {f.name} -> {dest.name}")
+            success = compress_to_7z(
+                f, dest, dry_run=dry_run, progress_cb=file_prog_cb
+            )
+            if success:
+                compressed += 1
+                if not dry_run:
+                    try:
+                        f.unlink()  # Remove original
+                    except Exception as e:
+                        logger.warning(f"Failed to remove original {f.name}: {e}")
+            else:
+                failed += 1
+                logger.error(f"Failed to compress {f.name}")
+
+    if progress_cb:
+        progress_cb(1.0, "3DS Compression complete")
+
+    return f"Compression complete. Compressed: {compressed}, Failed: {failed}, Skipped: {skipped}"
+
+
+def worker_n3ds_decompress(
+    base_path: Path,
+    args: Any,
+    log_cb: Callable[[str], None],
+    list_files_fn: Callable[[Path], list[Path]],
+) -> str:
+    """Worker function for 3DS decompression (from 7z)."""
+    logger = GuiLogger(log_cb)
+
+    target_dir = find_target_dir(base_path, N3DS_SUBDIRS)
+    if not target_dir:
+        return MSG_N3DS_DIR_NOT_FOUND
+
+    logger.info(f"Decompressing 3DS content in {target_dir}...")
+
+    decompressed = 0
+    failed = 0
+    skipped = 0
+
+    files = list_files_fn(target_dir)
+    total = len(files)
+    progress_cb = getattr(args, "progress_callback", None)
+    cancel_event = getattr(args, "cancel_event", None)
+    dry_run = getattr(args, "dry_run", False)
+
+    for i, f in enumerate(files):
+        if cancel_event and cancel_event.is_set():
+            logger.warning(MSG_CANCELLED)
+            break
+
+        # Calculate progress range for this file
+        start_prog = i / total
+        file_weight = 1.0 / total
+
+        file_prog_cb = create_file_progress_cb(
+            progress_cb, start_prog, file_weight, f.name
+        )
+
+        if progress_cb:
+            progress_cb(start_prog, f"Decompressing {f.name}...")
+
+        if f.suffix.lower() == ".7z":
+            # Check if it contains 3DS files?
+            # For now, assume yes if in 3DS folder.
+
+            logger.info(f"Decompressing {f.name}")
+            success = decompress_7z(
+                f, target_dir, dry_run=dry_run, progress_cb=file_prog_cb
+            )
+            if success:
+                decompressed += 1
+                if not dry_run:
+                    try:
+                        f.unlink()  # Remove archive
+                    except Exception as e:
+                        logger.warning(f"Failed to remove archive {f.name}: {e}")
+            else:
+                failed += 1
+                logger.error(f"Failed to decompress {f.name}")
+
+    if progress_cb:
+        progress_cb(1.0, "3DS Decompression complete")
+
+    return f"Decompression complete. Decompressed: {decompressed}, Failed: {failed}"

@@ -428,7 +428,7 @@ def worker_dolphin_organize(
 
 
 def worker_dolphin_decompress_single(
-    filepath: Path, env: dict, args: Any, log_cb: Callable[[str], None]
+    filepath: Path, args: Any, log_cb: Callable[[str], None]
 ) -> Optional[Path]:
     """Worker function for decompressing a single GameCube/Wii file (RVZ -> ISO)."""
     logger = GuiLogger(log_cb)
@@ -460,7 +460,7 @@ def worker_dolphin_decompress_single(
 
 
 def worker_dolphin_recompress_single(
-    filepath: Path, env: dict, args: Any, log_cb: Callable[[str], None]
+    filepath: Path, args: Any, log_cb: Callable[[str], None]
 ) -> Optional[Path]:
     """Worker function for recompressing a single GameCube/Wii file (RVZ -> RVZ)."""
     logger = GuiLogger(log_cb)
