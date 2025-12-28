@@ -253,14 +253,14 @@ def configure_environment(args: Any, logger: Any, find_tool: callable) -> dict:
     else:
         logger.error("❌ ERRO CRÍTICO: Ferramentas de leitura não encontradas!")
         logger.error("Por favor, instale 'nstool' ou coloque o executável nesta pasta.")
-        sys.exit(1)
+        raise RuntimeError("Ferramentas de leitura não encontradas (nstool/hactool)")
 
     if (
         getattr(args, "compress", False) or getattr(args, "decompress", False)
     ) and not tool_nsz:
         logger.error("❌ ERRO: Ferramenta de compressão 'nsz' não encontrada!")
         logger.error("Instale com: pip install nsz")
-        sys.exit(1)
+        raise RuntimeError("Ferramenta de compressão 'nsz' não encontrada")
 
     return {
         "ROMS_DIR": roms_dir,
@@ -345,7 +345,7 @@ def process_one_file(fpath: Path, ctx: dict):
             return None, "error"
 
         clean_name = sanitize_name(meta.get("name") or fpath.name)
-        region = determine_region(meta.get("id"))
+        region = determine_region(fpath.name, meta.get("langs"))
 
         fpath2 = handle_compression(fpath)
 

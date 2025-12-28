@@ -11,6 +11,8 @@ import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
+from emumanager.logging_cfg import get_logger
+import logging
 
 from .gui_ui import Ui_MainWindow
 from .gui_workers import (
@@ -40,6 +42,7 @@ from .gui_workers import (
     worker_switch_compress,
     worker_switch_decompress,
 )
+from emumanager.workers.distributor import worker_distribute_root
 
 # Constants
 MSG_NO_ROM = "No ROM selected"
@@ -132,16 +135,21 @@ class MainWindowBase:
             # Define a QObject to hold the signal
             class LogSignaler(self._qtcore.QObject):
                 # Try both PyQt6 and PySide6 signal names
-                log_signal = (
-                    self._qtcore.pyqtSignal(str)
-                    if hasattr(self._qtcore, "pyqtSignal")
-                    else self._qtcore.Signal(str)
-                )
+                if hasattr(self._qtcore, "pyqtSignal"):
+                    log_signal = self._qtcore.pyqtSignal(str)
+                    progress_signal = self._qtcore.pyqtSignal(float, str)
+                else:
+                    log_signal = self._qtcore.Signal(str)
+                    progress_signal = self._qtcore.Signal(float, str)
 
             self._signaler = LogSignaler()
             self._signaler.log_signal.connect(self._log_msg_slot)
+            self._signaler.progress_signal.connect(self._progress_slot)
         else:
             self._signaler = None
+        
+        # Initialize logger
+        self.logger = get_logger("gui")
 
         # Connect Signals
         self._connect_signals()
@@ -161,6 +169,16 @@ class MainWindowBase:
             pass
 
     def _connect_signals(self):
+        # Dashboard Tab
+        if hasattr(self.ui, "btn_quick_organize"):
+            self.ui.btn_quick_organize.clicked.connect(self.on_organize_all)
+        if hasattr(self.ui, "btn_quick_verify"):
+            self.ui.btn_quick_verify.clicked.connect(self.on_verify_all)
+        if hasattr(self.ui, "btn_quick_clean"):
+            self.ui.btn_quick_clean.clicked.connect(self.on_clean_junk)
+        if hasattr(self.ui, "btn_quick_update"):
+            self.ui.btn_quick_update.clicked.connect(self.on_list)
+
         # Library Tab
         self.ui.btn_open_lib.clicked.connect(self.on_open_library)
         self.ui.btn_init.clicked.connect(self.on_init)
@@ -245,6 +263,10 @@ class MainWindowBase:
         self.window.show()
 
     def _log_msg_slot(self, text: str):
+        # Log to terminal/file via logger
+        if hasattr(self, "logger"):
+            self.logger.info(text)
+
         # Prefix with timestamp for better traceability
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         line = f"[{now}] {text}"
@@ -252,6 +274,28 @@ class MainWindowBase:
         # Show brief status in the status bar
         try:
             self.status.showMessage(text, 5000)
+        except Exception:
+            pass
+
+    def _progress_slot(self, percent: float, message: str):
+        try:
+            # clamp percent
+            p = 0.0 if percent is None else float(percent)
+            if p < 0.0:
+                p = 0.0
+            if p > 1.0:
+                p = 1.0
+
+            # Update progress bar
+            try:
+                if not self.ui.progress_bar.isVisible():
+                    self.ui.progress_bar.setVisible(True)
+                self.ui.progress_bar.setValue(int(p * 100))
+            except Exception:
+                pass
+
+            if message:
+                self.status.showMessage(message)
         except Exception:
             pass
 
@@ -716,8 +760,10 @@ class MainWindowBase:
             if done_cb:
                 try:
                     done_cb(result)
-                except Exception:
-                    self.log_msg("Background callback error")
+                except Exception as e:
+                    self.log_msg(f"Background callback error: {e}")
+                    if hasattr(self, "logger"):
+                        self.logger.exception("Background callback error")
 
         timer.timeout.connect(_check)
         timer.start()
@@ -775,6 +821,11 @@ class MainWindowBase:
             last = self._settings.value("last_base")
             if last:
                 self._last_base = Path(str(last))
+                try:
+                    self.ui.lbl_library.setText(str(self._last_base))
+                    self.ui.lbl_library.setStyleSheet("font-weight: bold; color: #3daee9;")
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -1051,28 +1102,10 @@ class MainWindowBase:
         Updates the status bar and appends a short log message. Safe to be set
         as `args.progress_callback` in `switch_organizer`.
         """
-        try:
-            # clamp percent
-            p = 0.0 if percent is None else float(percent)
-            if p < 0.0:
-                p = 0.0
-            if p > 1.0:
-                p = 1.0
-
-            # Update progress bar
-            try:
-                if not self.ui.progress_bar.isVisible():
-                    self.ui.progress_bar.setVisible(True)
-                self.ui.progress_bar.setValue(int(p * 100))
-            except Exception:
-                pass
-
-            if message:
-                self.status.showMessage(message)
-                # Also log to the main log window if it's significant?
-                # For now, just status bar to avoid spam.
-        except Exception:
-            pass
+        if self._signaler:
+            self._signaler.progress_signal.emit(percent, message)
+        else:
+            self._progress_slot(percent, message)
 
     # The following methods interact with manager; keep them small and testable
     def on_init(self):
@@ -1122,6 +1155,33 @@ class MainWindowBase:
         systems = self._manager.cmd_list_systems(base)
         self._refresh_system_list_ui(systems)
         self._log_systems(systems)
+        self._update_dashboard_stats(systems)
+
+    def _update_dashboard_stats(self, systems=None):
+        try:
+            if systems is None:
+                if self._last_base:
+                    systems = self._manager.cmd_list_systems(self._last_base)
+                else:
+                    systems = []
+
+            if hasattr(self.ui, "lbl_systems_count"):
+                self.ui.lbl_systems_count.setText(f"Systems Configured: {len(systems)}")
+            
+            # Calculate total files (approximate)
+            total_files = 0
+            for sys_name in systems:
+                try:
+                    p = self._last_base / "roms" / sys_name
+                    # Count files recursively
+                    total_files += sum(1 for _ in p.rglob("*") if _.is_file())
+                except Exception:
+                    pass
+            
+            if hasattr(self.ui, "lbl_total_roms"):
+                self.ui.lbl_total_roms.setText(f"Total Files: {total_files}")
+        except Exception:
+            pass
 
     def _refresh_system_list_ui(self, systems):
         try:
@@ -2021,6 +2081,10 @@ class MainWindowBase:
             self._last_base = base
             self.ui.lbl_library.setText(str(base))
             self.ui.lbl_library.setStyleSheet("font-weight: bold; color: #3daee9;")
+            
+            # Update logger to write to the new library's log folder
+            self._update_logger(base)
+            
             self.log_msg(f"Library opened: {base}")
 
             # Auto-refresh list if possible
@@ -2333,3 +2397,106 @@ class MainWindowBase:
                 files.append(full_path)
 
         return files
+
+    def on_organize_all(self):
+        """Organize all supported systems sequentially."""
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+        
+        self._ensure_env(self._last_base)
+        args = self._get_common_args()
+        args.organize = True
+
+        self.log_msg("Starting batch organization...")
+
+        def _work():
+            results = []
+            
+            # 1. Distribute root files
+            # If _last_base is the 'roms' folder, we scan it directly.
+            # If _last_base is the project root, we might need to append 'roms'.
+            # Based on user log, _last_base seems to be the roms folder.
+            # But let's be safe: check if 'roms' subdir exists.
+            
+            target_root = self._last_base
+            if (self._last_base / "roms").exists():
+                 target_root = self._last_base / "roms"
+            
+            self.log_msg(f"Distributing files in {target_root}...")
+            dist_stats = worker_distribute_root(
+                target_root,
+                self.log_msg,
+                progress_cb=getattr(self, "progress_hook", None),
+                cancel_event=self._cancel_event
+            )
+            results.append(f"Distribution: {dist_stats}")
+            
+            # 2. Run Switch Organizer
+            # We want to organize the 'switch' folder inside target_root
+            switch_dir = target_root / "switch"
+            if switch_dir.exists():
+                self.log_msg(f"Organizing Switch folder: {switch_dir}...")
+                
+                # Create a copy of env with updated ROMS_DIR
+                switch_env = self._env.copy()
+                switch_env["ROMS_DIR"] = switch_dir
+                switch_env["CSV_FILE"] = switch_dir / "biblioteca_switch.csv"
+                switch_env["DUPE_DIR"] = switch_dir / "_DUPLICATES"
+                
+                switch_res = worker_organize(
+                    switch_dir,
+                    switch_env,
+                    args,
+                    self.log_msg,
+                    self._list_files_flat,
+                    progress_cb=getattr(self, "progress_hook", None),
+                )
+                results.append(f"Switch: {switch_res}")
+            else:
+                results.append("Switch: Skipped (folder not found)")
+
+            return "\n".join(results)
+
+        def _done(res):
+            if isinstance(res, Exception):
+                self.log_msg(f"Batch Organization error: {res}")
+            else:
+                self.log_msg(str(res))
+            self._set_ui_enabled(True)
+            self._update_dashboard_stats()
+
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
+    def on_verify_all(self):
+        """Verify all supported systems sequentially."""
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+        self.log_msg("Starting batch verification (Not implemented yet for all systems)")
+        # Placeholder
+        self.on_health_check()
+
+    def _update_logger(self, base_path: Path):
+        """Update logger to write to a file in the new base directory."""
+        if not hasattr(self, "logger"):
+            return
+
+        # Remove existing file handlers
+        handlers_to_remove = [h for h in self.logger.handlers if isinstance(h, logging.FileHandler)]
+        for h in handlers_to_remove:
+            self.logger.removeHandler(h)
+
+        # Add new file handler
+        try:
+            logs_dir = base_path / "logs"
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            log_file = logs_dir / "session.log"
+            
+            fh = logging.FileHandler(str(log_file), encoding="utf-8")
+            fh.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+            self.logger.addHandler(fh)
+            self.logger.info(f"Logging to file: {log_file}")
+        except Exception as e:
+            self.logger.error(f"Failed to setup log file: {e}")

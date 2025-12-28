@@ -135,7 +135,7 @@ def guess_system_for_file(path: Path) -> Optional[str]:
 
 
 def cmd_init(base_dir: Path, dry_run: bool) -> int:
-    logger = get_logger("manager")
+    logger = get_logger("manager", base_dir=base_dir)
     logger.info("Calling init on %s (dry=%s)", base_dir, dry_run)
     args: List[str] = [str(base_dir)]
     if dry_run:
@@ -144,7 +144,7 @@ def cmd_init(base_dir: Path, dry_run: bool) -> int:
 
 
 def cmd_list_systems(base_dir: Path):
-    logger = get_logger("manager")
+    logger = get_logger("manager", base_dir=base_dir)
     roms = base_dir / "roms"
     if not roms.exists():
         logger.debug("No roms directory at %s", roms)
@@ -161,7 +161,7 @@ def cmd_add_rom(
     move: bool = False,
     dry_run: bool = False,
 ) -> Path:
-    logger = get_logger("manager")
+    logger = get_logger("manager", base_dir=base_dir)
     if not src.exists():
         logger.error("Source not found: %s", src)
         raise FileNotFoundError(src)

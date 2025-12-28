@@ -80,7 +80,9 @@ O módulo `emumanager` também pode ser usado via terminal para automação e sc
     - **PS2**: `maxcso` e `chdman` (parte do MAME).
     - **Antivírus**: `clamscan` (ClamAV).
 
-### Configuração Rápida
+### Configuração Rápida (Automática)
+
+O projeto inclui um script de bootstrap que instala dependências do sistema (**Debian/Ubuntu** e **Arch Linux**), compila ferramentas necessárias (como `hactool`) e configura o ambiente Python.
 
 1. **Clone o repositório:**
    ```bash
@@ -88,13 +90,33 @@ O módulo `emumanager` também pode ser usado via terminal para automação e sc
    cd EmuManager
    ```
 
-2. **Crie um ambiente virtual e instale as dependências:**
+2. **Execute o script de instalação:**
+   ```bash
+   chmod +x scripts/bootstrap.sh
+   ./scripts/bootstrap.sh
+   ```
+   *O script solicitará senha `sudo` para instalar pacotes do sistema e copiar binários para `/usr/local/bin`.*
+
+3. **Ative o ambiente e execute:**
+   ```bash
+   source .venv/bin/activate
+   python -m emumanager.gui
+   ```
+
+### Configuração Manual
+
+Caso prefira configurar manualmente ou use outro sistema operacional:
+
+1. **Crie um ambiente virtual e instale as dependências:**
    ```bash
    python3 -m venv .venv
    source .venv/bin/activate  # Linux/Mac
-   # .venv\Scriptsctivate   # Windows
+   # .venv\Scripts\activate   # Windows
    pip install -r requirements.txt
+   pip install nsz>=4.0.0
    ```
+
+2. **Instale as ferramentas externas** (veja Pré-requisitos acima) e garanta que estejam no PATH.
 
 3. **Execute a Interface Gráfica:**
    ```bash
@@ -155,6 +177,16 @@ Para rodar o teste de fumaça da GUI (requer ambiente gráfico ou Xvfb):
 ```bash
 python -m pytest tests/test_gui_smoke.py
 ```
+
+### Cenário de Teste (Mock)
+
+Para criar uma biblioteca de testes com arquivos fictícios (mock) para validar a interface e a organização:
+
+```bash
+./scripts/create_mock_roms.py mock_library
+```
+
+Isso criará uma pasta `mock_library` com a estrutura completa e arquivos de 1KB simulando ROMs de Switch, PS2, GameCube, etc. Você pode abrir essa pasta na GUI para testar as funcionalidades sem precisar de jogos reais.
 
 Consulte `CONTRIBUTING.md` para mais detalhes sobre como contribuir.
 

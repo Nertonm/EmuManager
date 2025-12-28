@@ -7,7 +7,12 @@ from typing import Any, Callable, Optional
 
 from emumanager.common.execution import run_cmd
 from emumanager.switch import compression, meta_extractor, metadata
-from emumanager.switch.cli import safe_move, scan_for_virus, verify_integrity
+from emumanager.switch.cli import (
+    get_metadata,
+    safe_move,
+    scan_for_virus,
+    verify_integrity,
+)
 from emumanager.switch.main_helpers import process_files, run_health_check
 from emumanager.workers.common import MSG_CANCELLED, GuiLogger
 
@@ -25,9 +30,13 @@ def worker_organize(
     """Worker function for organizing Switch ROMs."""
     logger = GuiLogger(log_cb)
 
-    files = list_files_fn(base_path)
+    all_files = list_files_fn(base_path)
+    # Filter for Switch extensions only to avoid processing other systems' files
+    switch_exts = {".nsp", ".nsz", ".xci", ".xcz"}
+    files = [f for f in all_files if f.suffix.lower() in switch_exts]
+
     if not files:
-        return "No files found to organize."
+        return "No Switch files found to organize."
 
     # Context construction
     ctx = {}
@@ -39,12 +48,14 @@ def worker_organize(
     ctx["cancel_event"] = getattr(args, "cancel_event", None)
 
     # Functions
-    ctx["get_metadata"] = lambda f: meta_extractor.get_metadata(
+    ctx["get_metadata"] = lambda f: get_metadata(
         f,
         tool_metadata=env.get("TOOL_METADATA"),
         is_nstool=env.get("IS_NSTOOL"),
         keys_path=env.get("KEYS_PATH"),
-        logger=logger,
+        roms_dir=env.get("ROMS_DIR"),
+        cmd_timeout=getattr(args, "cmd_timeout", None),
+        tool_nsz=env.get("TOOL_NSZ"),
     )
     ctx["sanitize_name"] = metadata.sanitize_name
     ctx["determine_region"] = metadata.determine_region

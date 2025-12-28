@@ -1,0 +1,22 @@
+GUIA DE BIOS E FIRMWARES
+==============================================================================
+Esta pasta é o coração da emulação. Sem estes arquivos, sistemas modernos falham.
+
+[ ARQUIVOS CRÍTICOS ]
+------------------------------------------------------------------------------
+Nintendo Switch:
+  Copie para: /bios/switch/
+  Arquivos:   prod.keys, title.keys e firmware (pasta)
+
+Sony PlayStation:
+  PS1: /bios/ps1/scph1001.bin (e scph5501.bin, scph7001.bin)
+  PS2: /bios/ps2/scph10000.bin (ou similar) + rom1.bin
+  PS3: /bios/ps3/PS3UPDAT.PUP (Firmware oficial para instalação no RPCS3)
+
+Sega:
+  Dreamcast: /bios/dc/dc_boot.bin e dc_flash.bin
+  Saturn:    /bios/saturn/sega_101.bin (Jap) e mpr-17933.bin (USA)
+
+Arcade:
+  Neo-Geo:   /bios/neogeo/neogeo.zip (Mantenha zipado!)
+==============================================================================

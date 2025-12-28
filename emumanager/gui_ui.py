@@ -39,6 +39,12 @@ class Ui_MainWindow:
         self.tabs = qt.QTabWidget(self.centralwidget)
         self.tabs.setObjectName("tabs")
 
+        # --- Tab 0: Dashboard ---
+        self.tab_dashboard = qt.QWidget()
+        self.tab_dashboard.setObjectName("tab_dashboard")
+        self.setupDashboardTab(qt, self.tab_dashboard)
+        self.tabs.addTab(self.tab_dashboard, "Dashboard")
+
         # --- Tab 1: Library ---
         self.tab_library = qt.QWidget()
         self.tab_library.setObjectName("tab_library")
@@ -132,6 +138,68 @@ class Ui_MainWindow:
                     return None
         except Exception:
             return None
+
+    def setupDashboardTab(self, qt, parent):
+        layout = qt.QVBoxLayout(parent)
+
+        # Welcome / Status Section
+        self.grp_status = qt.QGroupBox("Collection Status")
+        status_layout = qt.QGridLayout()
+
+        self.lbl_total_roms = qt.QLabel("Total Files: 0")
+        self.lbl_total_roms.setStyleSheet("font-size: 14px; font-weight: bold;")
+        self.lbl_systems_count = qt.QLabel("Systems Configured: 0")
+        self.lbl_systems_count.setStyleSheet("font-size: 14px;")
+
+        status_layout.addWidget(self.lbl_total_roms, 0, 0)
+        status_layout.addWidget(self.lbl_systems_count, 0, 1)
+
+        self.grp_status.setLayout(status_layout)
+        layout.addWidget(self.grp_status)
+
+        # Quick Actions Section
+        self.grp_quick = qt.QGroupBox("Quick Actions")
+        quick_layout = qt.QGridLayout()
+
+        self.btn_quick_organize = qt.QPushButton("Organize All Systems")
+        self.btn_quick_organize.setToolTip("Run organization for all detected systems")
+        self.btn_quick_organize.setMinimumHeight(40)
+
+        self.btn_quick_verify = qt.QPushButton("Verify All Systems")
+        self.btn_quick_verify.setToolTip("Run verification for all detected systems")
+        self.btn_quick_verify.setMinimumHeight(40)
+
+        self.btn_quick_clean = qt.QPushButton("Clean Junk Files")
+        self.btn_quick_clean.setToolTip("Remove .txt, .url, .nfo and empty folders")
+        self.btn_quick_clean.setMinimumHeight(40)
+
+        self.btn_quick_update = qt.QPushButton("Update Library Stats")
+        self.btn_quick_update.setToolTip("Rescan library to update statistics")
+        self.btn_quick_update.setMinimumHeight(40)
+
+        # Icons
+        ic = self._get_icon(qt, "SP_FileDialogListView")
+        if ic:
+            self.btn_quick_organize.setIcon(ic)
+        ic = self._get_icon(qt, "SP_DialogApplyButton")
+        if ic:
+            self.btn_quick_verify.setIcon(ic)
+        ic = self._get_icon(qt, "SP_TrashIcon")
+        if ic:
+            self.btn_quick_clean.setIcon(ic)
+        ic = self._get_icon(qt, "SP_BrowserReload")
+        if ic:
+            self.btn_quick_update.setIcon(ic)
+
+        quick_layout.addWidget(self.btn_quick_organize, 0, 0)
+        quick_layout.addWidget(self.btn_quick_verify, 0, 1)
+        quick_layout.addWidget(self.btn_quick_clean, 1, 0)
+        quick_layout.addWidget(self.btn_quick_update, 1, 1)
+
+        self.grp_quick.setLayout(quick_layout)
+        layout.addWidget(self.grp_quick)
+
+        layout.addStretch()
 
     def setupLibraryTab(self, qt, parent):
         layout = qt.QVBoxLayout(parent)
