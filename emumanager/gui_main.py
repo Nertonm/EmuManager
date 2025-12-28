@@ -12,7 +12,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
 from emumanager.logging_cfg import get_logger
-import logging
 
 from .gui_ui import Ui_MainWindow
 from .gui_workers import (
@@ -153,7 +152,7 @@ class MainWindowBase:
             self._signaler.progress_signal.connect(self._progress_slot)
         else:
             self._signaler = None
-        
+
         # Initialize logger
         self.logger = get_logger("gui")
 
@@ -595,7 +594,7 @@ class MainWindowBase:
             def _show_menu(pos):
                 try:
                     menu = qt.QMenu(self.ui.rom_list)
-                    
+
                     # Actions requested: Delete, Compress, Verify, Decompress
                     a_del = menu.addAction("Delete")
                     menu.addSeparator()
@@ -607,12 +606,12 @@ class MainWindowBase:
                     menu.addSeparator()
                     a_open = menu.addAction("Open Folder")
                     a_copy = menu.addAction("Copy Path")
-                    
+
                     # Use exec_ if available (PyQt5/PySide2), else exec (PyQt6/PySide6)
                     exec_func = menu.exec if hasattr(menu, "exec") else menu.exec_
-                    
+
                     act = exec_func(self.ui.rom_list.mapToGlobal(pos))
-                    
+
                     if act == a_del:
                         self.on_delete_selected()
                     elif act == a_comp:
@@ -642,7 +641,7 @@ class MainWindowBase:
         try:
             if not hasattr(self.ui, "table_results"):
                 return
-            
+
             Qt = core.Qt
             policy = (
                 Qt.ContextMenuPolicy.CustomContextMenu
@@ -855,7 +854,9 @@ class MainWindowBase:
                 self._last_base = Path(str(last))
                 try:
                     self.ui.lbl_library.setText(str(self._last_base))
-                    self.ui.lbl_library.setStyleSheet("font-weight: bold; color: #3daee9;")
+                    self.ui.lbl_library.setStyleSheet(
+                        "font-weight: bold; color: #3daee9;"
+                    )
                 except Exception:
                     pass
         except Exception:
@@ -1199,7 +1200,7 @@ class MainWindowBase:
 
             if hasattr(self.ui, "lbl_systems_count"):
                 self.ui.lbl_systems_count.setText(f"Systems Configured: {len(systems)}")
-            
+
             # Calculate total files (approximate)
             total_files = 0
             roms_root = self._manager.get_roms_dir(self._last_base)
@@ -1210,7 +1211,7 @@ class MainWindowBase:
                     total_files += sum(1 for _ in p.rglob("*") if _.is_file())
                 except Exception:
                     pass
-            
+
             if hasattr(self.ui, "lbl_total_roms"):
                 self.ui.lbl_total_roms.setText(f"Total Files: {total_files}")
         except Exception:
@@ -1299,12 +1300,12 @@ class MainWindowBase:
         qt = self._qtwidgets
         guessed = self._manager.guess_system_for_file(src)
         systems = self._manager.cmd_list_systems(base)
-        
+
         # If no systems found (empty library), populate with known systems
         if not systems:
             from emumanager.config import EXT_TO_SYSTEM
             systems = sorted(list(set(EXT_TO_SYSTEM.values())))
-            
+
         items = sorted(systems)
         idx = 0
         if guessed:
@@ -1435,9 +1436,9 @@ class MainWindowBase:
             # Use manager's logic to find roms dir
             roms_root = self._manager.get_roms_dir(self._last_base)
             roms_dir = roms_root / system
-            
+
             self.log_msg(f"Listing ROMs for {system} in {roms_dir}")
-            
+
             files = []
             if roms_dir.exists():
                 # Always list recursively for the UI so users can see organized games
@@ -1497,10 +1498,13 @@ class MainWindowBase:
             system = sys_item.text()
             roms_root = self._manager.get_roms_dir(self._last_base)
             filepath = roms_root / system / rom_name
-            
+
             # Debug logging for path resolution
-            self.log_msg(f"Action: Compress | Base: {self._last_base} | Root: {roms_root} | File: {filepath}")
-            
+            self.log_msg(
+                f"Action: Compress | Base: {self._last_base} | "
+                f"Root: {roms_root} | File: {filepath}"
+            )
+
             if not filepath.exists():
                 self.log_msg(f"File not found: {filepath}")
                 return
@@ -1513,14 +1517,19 @@ class MainWindowBase:
             if system.lower() in ("gamecube", "wii"):
                 # Dolphin Compression
                 def _work():
-                    return worker_dolphin_compress_single(filepath, self._env, args, self.log_msg)
+                    return worker_dolphin_compress_single(
+                        filepath, self._env, args, self.log_msg
+                    )
             else:
                 # Default (Switch) Compression
                 if not self._env.get("TOOL_NSZ"):
                     self.log_msg(MSG_NSZ_MISSING)
                     return
+
                 def _work():
-                    return worker_compress_single(filepath, self._env, args, self.log_msg)
+                    return worker_compress_single(
+                        filepath, self._env, args, self.log_msg
+                    )
 
             def _done(res):
                 if isinstance(res, Exception):
@@ -1553,9 +1562,9 @@ class MainWindowBase:
             system = sys_item.text()
             roms_root = self._manager.get_roms_dir(self._last_base)
             filepath = roms_root / system / rom_name
-            
+
             self.log_msg(f"Action: Recompress | File: {filepath}")
-            
+
             if not filepath.exists():
                 self.log_msg(f"File not found: {filepath}")
                 return
@@ -1568,14 +1577,23 @@ class MainWindowBase:
             if system.lower() in ("gamecube", "wii"):
                 # Dolphin Recompression
                 def _work():
-                    return worker_dolphin_recompress_single(filepath, self._env, args, self.log_msg)
+                    return worker_dolphin_recompress_single(
+                        filepath, self._env, args, self.log_msg
+                    )
             else:
                 # Default (Switch) Recompression
                 if not self._env.get("TOOL_NSZ"):
                     self.log_msg(MSG_NSZ_MISSING)
                     return
+
                 def _work():
-                    return worker_recompress_single(filepath, self._env, args, self.log_msg)
+                    return worker_recompress_single(
+                        filepath, self._env, args, self.log_msg
+                    )
+                def _work():
+                    return worker_recompress_single(
+                        filepath, self._env, args, self.log_msg
+                    )
 
             def _done(res):
                 if isinstance(res, Exception):
@@ -1608,9 +1626,9 @@ class MainWindowBase:
             system = sys_item.text()
             roms_root = self._manager.get_roms_dir(self._last_base)
             filepath = roms_root / system / rom_name
-            
+
             self.log_msg(f"Action: Decompress | File: {filepath}")
-            
+
             if not filepath.exists():
                 self.log_msg(f"File not found: {filepath}")
                 return
@@ -1623,14 +1641,19 @@ class MainWindowBase:
             if system.lower() in ("gamecube", "wii"):
                 # Dolphin Decompression
                 def _work():
-                    return worker_dolphin_decompress_single(filepath, self._env, args, self.log_msg)
+                    return worker_dolphin_decompress_single(
+                        filepath, self._env, args, self.log_msg
+                    )
             else:
                 # Default (Switch) Decompression
                 if not self._env.get("TOOL_NSZ"):
                     self.log_msg(MSG_NSZ_MISSING)
                     return
+
                 def _work():
-                    return worker_decompress_single(filepath, self._env, args, self.log_msg)
+                    return worker_decompress_single(
+                        filepath, self._env, args, self.log_msg
+                    )
 
             def _done(res):
                 if isinstance(res, Exception):
@@ -2496,11 +2519,11 @@ class MainWindowBase:
             # If _last_base is the project root, we might need to append 'roms'.
             # Based on user log, _last_base seems to be the roms folder.
             # But let's be safe: check if 'roms' subdir exists.
-            
+
             target_root = self._last_base
             if (self._last_base / "roms").exists():
-                 target_root = self._last_base / "roms"
-            
+                target_root = self._last_base / "roms"
+
             self.log_msg(f"Distributing files in {target_root}...")
             dist_stats = worker_distribute_root(
                 target_root,
@@ -2552,7 +2575,9 @@ class MainWindowBase:
         if not self._last_base:
             self.log_msg(MSG_SELECT_BASE)
             return
-        self.log_msg("Starting batch verification (Not implemented yet for all systems)")
+        self.log_msg(
+            "Starting batch verification (Not implemented yet for all systems)"
+        )
         # Placeholder
         self.on_health_check()
 
@@ -2564,20 +2589,20 @@ class MainWindowBase:
             if not sel_items:
                 self.log_msg(MSG_NO_ROM)
                 return
-            
+
             sys_item = self.sys_list.currentItem() if self.sys_list else None
             if not sys_item:
                 self.log_msg(MSG_NO_SYSTEM)
                 return
             system = sys_item.text()
             roms_root = self._manager.get_roms_dir(self._last_base)
-            
+
             files_to_delete = []
             for item in sel_items:
                 filepath = roms_root / system / item.text()
                 if filepath.exists():
                     files_to_delete.append(filepath)
-            
+
             if not files_to_delete:
                 return
 
@@ -2593,7 +2618,7 @@ class MainWindowBase:
                     self.log_msg(f"Deleted: {fp.name}")
                 except Exception as e:
                     self.log_msg(f"Failed to delete {fp.name}: {e}")
-            
+
             if count > 0:
                 self._populate_roms(system)
                 self._update_dashboard_stats()

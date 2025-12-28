@@ -471,14 +471,17 @@ def worker_dolphin_recompress_single(
         return None
 
     # Create a temp file for the output
-    # We use the same directory to ensure atomic move if possible, or at least same filesystem
-    with tempfile.NamedTemporaryFile(dir=filepath.parent, suffix=".rvz", delete=False) as tmp:
+    # We use the same directory to ensure atomic move if possible,
+    # or at least same filesystem
+    with tempfile.NamedTemporaryFile(
+        dir=filepath.parent, suffix=".rvz", delete=False
+    ) as tmp:
         temp_output = Path(tmp.name)
 
     try:
         # Use user-specified level if available, else default to 19 for recompress
         level = getattr(args, "level", 19)
-        
+
         logger.info(f"Recompressing {filepath.name} with zstd level {level}...")
         success = converter.convert_to_rvz(
             filepath,
@@ -538,7 +541,7 @@ def worker_dolphin_compress_single(
 
     # Use user-specified level if available, else default to 5
     level = getattr(args, "level", 5)
-    
+
     # Default compression settings
     success = converter.convert_to_rvz(
         filepath,
@@ -546,7 +549,7 @@ def worker_dolphin_compress_single(
         compression="zstd",
         level=level
     )
-    
+
     if success:
         if getattr(args, "rm_originals", False):
             try:

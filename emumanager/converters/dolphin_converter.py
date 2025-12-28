@@ -28,14 +28,16 @@ class DolphinConverter:
         flatpak_path = shutil.which("flatpak")
         if not flatpak_path:
             return
-        
+
         flatpak = Path(flatpak_path)
-        
+
         # Check if org.DolphinEmu.dolphin-emu is installed
         try:
-            # We use run_cmd to check, but we need to be careful about imports if run_cmd is not available
-            # It is imported at top level.
-            res = run_cmd([str(flatpak), "info", "org.DolphinEmu.dolphin-emu"], timeout=5)
+            # We use run_cmd to check, but we need to be careful about imports
+            # if run_cmd is not available. It is imported at top level.
+            res = run_cmd(
+                [str(flatpak), "info", "org.DolphinEmu.dolphin-emu"], timeout=5
+            )
             if res.returncode == 0:
                 self.use_flatpak = True
                 self.dolphin_tool = flatpak
