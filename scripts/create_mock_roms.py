@@ -1,4 +1,4 @@
-./scripts/create_mock_roms.py mock_library#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Script to generate a mock ROM collection for development and testing.
 Usage: python3 scripts/create_mock_roms.py [target_dir]

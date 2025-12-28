@@ -6,6 +6,7 @@ from typing import Any, Callable, Optional
 from emumanager.manager import guess_system_for_file
 from emumanager.workers.common import GuiLogger
 
+
 def worker_distribute_root(
     base_path: Path,
     log_cb: Callable[[str], None],
@@ -25,14 +26,14 @@ def worker_distribute_root(
     except Exception as e:
         logger.error(f"Failed to list files in {base_path}: {e}")
         return {"moved": 0, "skipped": 0, "errors": 1}
-    
+
     if not root_files:
         logger.info("No files found in root folder to distribute.")
         return {"moved": 0, "skipped": 0, "errors": 0}
 
     stats = {"moved": 0, "skipped": 0, "errors": 0}
     total = len(root_files)
-    
+
     for i, file_path in enumerate(root_files):
         if cancel_event and cancel_event.is_set():
             logger.warning("Distribution cancelled.")
@@ -43,7 +44,12 @@ def worker_distribute_root(
 
         try:
             # Skip hidden files or system files
-            if file_path.name.startswith(".") or file_path.name in ["_INSTALL_LOG.txt", "ps2_db.csv", "keys.txt", "prod.keys"]:
+            if file_path.name.startswith(".") or file_path.name in [
+                "_INSTALL_LOG.txt",
+                "ps2_db.csv",
+                "keys.txt",
+                "prod.keys",
+            ]:
                 stats["skipped"] += 1
                 continue
 
@@ -52,18 +58,22 @@ def worker_distribute_root(
                 target_dir = base_path / system
                 target_dir.mkdir(parents=True, exist_ok=True)
                 target_path = target_dir / file_path.name
-                
+
                 if target_path.exists():
-                    logger.warning(f"File already exists in target: {target_path}. Skipping.")
+                    logger.warning(
+                        f"File already exists in target: {target_path}. Skipping."
+                    )
                     stats["skipped"] += 1
                 else:
                     logger.info(f"Moving {file_path.name} -> {system}/")
                     file_path.rename(target_path)
                     stats["moved"] += 1
             else:
-                logger.warning(f"Could not determine system for: {file_path.name}")
+                logger.warning(
+                    f"Could not determine system for: {file_path.name}"
+                )
                 stats["skipped"] += 1
-                
+
         except Exception as e:
             logger.error(f"Error moving {file_path.name}: {e}")
             stats["errors"] += 1

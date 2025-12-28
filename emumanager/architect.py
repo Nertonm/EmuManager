@@ -103,6 +103,7 @@ def get_roms_dir(base_dir: Path) -> Path:
     # Otherwise, append 'roms'
     return base_dir / "roms"
 
+
 def setup_retro(
     base_dir: Path,
     sys: str,
@@ -245,7 +246,10 @@ Arcade:
         "nes",
         "Nintendo (NES)",
         ".nes, .zip",
-        "https://emulation.gametechwiki.com/index.php/Nintendo_Entertainment_System_emulators",
+        (
+            "https://emulation.gametechwiki.com/index.php/"
+            "Nintendo_Entertainment_System_emulators"
+        ),
         "Não",
         logger,
     )

@@ -15,7 +15,8 @@ from typing import Optional, Any, List
 import tempfile
 import signal
 
-# Keep original reference so test monkeypatches (which replace subprocess.run) can be detected
+# Keep original reference so test monkeypatches (which replace subprocess.run)
+# can be detected
 ORIGINAL_SUBPROCESS_RUN = subprocess.run
 
 # ======================================================================
@@ -27,6 +28,7 @@ ORIGINAL_SUBPROCESS_RUN = subprocess.run
 # ==============================================================================
 
 TOOL_NSZ = None
+
 
 class Col:
     RESET = "\033[0m"
@@ -60,7 +62,8 @@ def show_manual():
     print(f"  1. {Col.GREEN}Organizar Tudo (Recomendado):{Col.RESET}")
     print("     python3 script.py --organize --clean-junk")
     print(
-        f"     {Col.GREY}* Cria pastas, renomeia corretamente e remove lixo.{Col.RESET}\n"
+        f"     {Col.GREY}* Cria pastas, renomeia corretamente e remove lixo.{Col.RESET}"
+        "\n"
     )
 
     print(f"  2. {Col.GREEN}Economizar Espaço (Compressão):{Col.RESET}")
@@ -73,17 +76,21 @@ def show_manual():
 
     print(f"  4. {Col.GREEN}Modo Simulação (Teste):{Col.RESET}")
     print("     python3 script.py --organize --dry-run")
-    print(f"     {Col.GREY}* Mostra o que seria feito sem alterar nada.{Col.RESET}\n")
+    print(
+        f"     {Col.GREY}* Mostra o que seria feito sem alterar nada.{Col.RESET}\n"
+    )
 
     print(f"{Col.YELLOW}ARGUMENTOS DISPONÍVEIS:{Col.RESET}")
     print("  --dir [PASTA]    : Define a pasta dos jogos (Padrão: atual).")
     print("  --keys [ARQUIVO] : Caminho do prod.keys.")
     print(
-        "  --no-verify      : Pula a verificação de integridade (Mais rápido, menos seguro)."
+        "  --no-verify      : Pula a verificação de integridade "
+        "(Mais rápido, menos seguro)."
     )
     print("  --level [1-22]   : Nível de compressão NSZ (Padrão: 1).")
     print(
-        f"\n{Col.CYAN}Para ver a lista técnica completa, use: python3 script.py --help{Col.RESET}"
+        f"\n{Col.CYAN}Para ver a lista técnica completa, use: "
+        f"python3 script.py --help{Col.RESET}"
     )
     sys.exit(0)
 
@@ -141,13 +148,19 @@ parser.add_argument(
 parser.add_argument(
     "--rm-originals",
     action="store_true",
-    help="Ao comprimir, remove os arquivos originais somente se a compressão for bem-sucedida",
+    help=(
+        "Ao comprimir, remove os arquivos originais somente se a compressão "
+        "for bem-sucedida"
+    ),
 )
 
 parser.add_argument(
     "--recompress",
     action="store_true",
-    help="Recomprime arquivos já em .nsz/.xcz para o nível especificado (substitui o arquivo comprimido se bem-sucedido)",
+    help=(
+        "Recomprime arquivos já em .nsz/.xcz para o nível especificado "
+        "(substitui o arquivo comprimido se bem-sucedido)"
+    ),
 )
 parser.add_argument(
     "--level",
@@ -162,15 +175,18 @@ parser.add_argument(
     default=None,
     help=(
         "Perfil de compressão predefinido: 'fast' (prioriza velocidade), "
-        "'balanced' (bom equilíbrio tempo/espaço), 'best' (máxima compressão, mais lento). "
-        "Se definido, sobrescreve --level."
+        "'balanced' (bom equilíbrio tempo/espaço), 'best' (máxima compressão, "
+        "mais lento). Se definido, sobrescreve --level."
     ),
 )
 parser.add_argument(
     "--dup-check",
     choices=["fast", "strict"],
     default="fast",
-    help="Modo de verificação de duplicatas: 'fast' usa size+mtime, 'strict' usa SHA256 (padrão: fast)",
+    help=(
+        "Modo de verificação de duplicatas: 'fast' usa size+mtime, "
+        "'strict' usa SHA256 (padrão: fast)"
+    ),
 )
 parser.add_argument(
     "--verbose", action="store_true", help="Ativa logging verboso (DEBUG)"
@@ -197,7 +213,10 @@ parser.add_argument(
 parser.add_argument(
     "--keep-on-failure",
     action="store_true",
-    help="Preserva arquivos gerados quando ocorrer falha (move para quarentena ou deixa no lugar)",
+    help=(
+        "Preserva arquivos gerados quando ocorrer falha (move para quarentena "
+        "ou deixa no lugar)"
+    ),
 )
 
 parser.add_argument(
@@ -210,12 +229,18 @@ parser.add_argument(
 parser.add_argument(
     "--health-check",
     action="store_true",
-    help="Verifica integridade dos arquivos e escaneia por vírus (usa clamscan/clamdscan se disponíveis)",
+    help=(
+        "Verifica integridade dos arquivos e escaneia por vírus "
+        "(usa clamscan/clamdscan se disponíveis)"
+    ),
 )
 parser.add_argument(
     "--quarantine",
     action="store_true",
-    help="(usado com --health-check) move arquivos infectados/corrompidos para _QUARANTINE",
+    help=(
+        "(usado com --health-check) move arquivos infectados/corrompidos "
+        "para _QUARANTINE"
+    ),
 )
 parser.add_argument(
     "--quarantine-dir",
@@ -619,7 +644,8 @@ def get_base_id(title_id):
 def sanitize_name(name):
     # Remove common release/group tags inside brackets
     name = re.sub(
-        r"[\[\(][^\]\)]*(?:nsw2u|switch-xci|cr-|venom|hbg|bigblue)[^\]\)]*[\]\)]",
+        r"[\[\(][^\]\)]*(?:nsw2u|switch-xci|cr-|venom|hbg|bigblue)"
+        r"[^\]\)]*[\]\)]",
         "",
         name,
         flags=re.IGNORECASE,
@@ -695,9 +721,9 @@ def get_metadata(filepath):
             if ver:
                 info["ver"] = ver.group(1).strip()
             # prefer parse from tool output, fallback to filename heuristics
-            langs_raw = parse_languages(res.stdout) or detect_languages_from_filename(
-                filepath.name
-            )
+            langs_raw = parse_languages(
+                res.stdout
+            ) or detect_languages_from_filename(filepath.name)
             # normalize: store without surrounding brackets (easier downstream)
             if langs_raw and langs_raw.startswith("[") and langs_raw.endswith("]"):
                 langs_raw = langs_raw[1:-1]
@@ -862,7 +888,9 @@ def _try_decompression_metadata(filepath, base_dir):
     return None
 
 
-def verify_integrity(filepath, deep: bool = False, return_output: bool = False):
+def verify_integrity(
+    filepath, deep: bool = False, return_output: bool = False
+):
     # compressed formats we treat similarly
     is_nsz = filepath.suffix.lower() in {".nsz", ".xcz"}
     try:
@@ -1267,7 +1295,8 @@ def _handle_new_compression(filepath):
                             safe_unlink(filepath, logger)
                         except Exception:
                             logger.exception(
-                                "Falha ao remover arquivo original depois de comprimir: %s",
+                                "Falha ao remover arquivo original depois de "
+                                "comprimir: %s",
                                 filepath,
                             )
                     else:
@@ -1477,7 +1506,8 @@ def main():
     files = [
         f
         for f in ROMS_DIR.rglob("*")
-        if f.suffix.lower() in {".xci", ".nsp", ".nsz", ".xcz"} and f.is_file()
+        if f.suffix.lower() in {".xci", ".nsp", ".nsz", ".xcz"}
+        and f.is_file()
     ]
     if not files:
         logger.info(
@@ -1554,7 +1584,9 @@ def main():
                     ]
                 )
                 writer.writerows(catalog)
-            print(f"📊 Catálogo salvo em: {Col.YELLOW}{CSV_FILE.name}{Col.RESET}")
+            print(
+                f"📊 Catálogo salvo em: {Col.YELLOW}{CSV_FILE.name}{Col.RESET}"
+            )
         except Exception as e:
             logger.exception(f"Erro ao salvar CSV: {e}")
 

@@ -7,7 +7,6 @@ from emumanager.common.sfo import SfoParser
 SERIAL_RE = re.compile(r"([A-Z]{4})[_-]?(\d{5})")
 
 
-
 def _parse_sfo_file(sfo_path: Path) -> dict:
     meta = {}
     try:

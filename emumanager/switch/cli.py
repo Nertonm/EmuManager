@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 # ruff: noqa
-import os
 import re
 import shutil
 import signal
 import subprocess
 import sys
 import tempfile
-import time
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional
 
 from emumanager.switch import metadata
 from emumanager.common.execution import (
@@ -19,7 +17,6 @@ from emumanager.common.execution import (
 )
 import argparse
 import csv
-import hashlib
 import logging
 from logging.handlers import RotatingFileHandler
 from emumanager.switch import meta_extractor, meta_parser
@@ -58,7 +55,8 @@ def show_manual():
     print(f"  1. {Col.GREEN}Organizar Tudo (Recomendado):{Col.RESET}")
     print("     python3 script.py --organize --clean-junk")
     print(
-        f"     {Col.GREY}* Cria pastas, renomeia corretamente e remove lixo.{Col.RESET}\n"
+        f"     {Col.GREY}* Cria pastas, renomeia corretamente e remove lixo.{Col.RESET}"
+        "\n"
     )
 
     print(f"  2. {Col.GREEN}Economizar Espaço (Compressão):{Col.RESET}")
@@ -71,17 +69,21 @@ def show_manual():
 
     print(f"  4. {Col.GREEN}Modo Simulação (Teste):{Col.RESET}")
     print("     python3 script.py --organize --dry-run")
-    print(f"     {Col.GREY}* Mostra o que seria feito sem alterar nada.{Col.RESET}\n")
+    print(
+        f"     {Col.GREY}* Mostra o que seria feito sem alterar nada.{Col.RESET}\n"
+    )
 
     print(f"{Col.YELLOW}ARGUMENTOS DISPONÍVEIS:{Col.RESET}")
     print("  --dir [PASTA]    : Define a pasta dos jogos (Padrão: atual).")
     print("  --keys [ARQUIVO] : Caminho do prod.keys.")
     print(
-        "  --no-verify      : Pula a verificação de integridade (Mais rápido, menos seguro)."
+        "  --no-verify      : Pula a verificação de integridade "
+        "(Mais rápido, menos seguro)."
     )
     print("  --level [1-22]   : Nível de compressão NSZ (Padrão: 1).")
     print(
-        f"\n{Col.CYAN}Para ver a lista técnica completa, use: python3 script.py --help{Col.RESET}"
+        f"\n{Col.CYAN}Para ver a lista técnica completa, use: "
+        f"python3 script.py --help{Col.RESET}"
     )
     sys.exit(0)
 
@@ -139,13 +141,19 @@ parser.add_argument(
 parser.add_argument(
     "--rm-originals",
     action="store_true",
-    help="Ao comprimir, remove os arquivos originais somente se a compressão for bem-sucedida",
+    help=(
+        "Ao comprimir, remove os arquivos originais somente se a compressão "
+        "for bem-sucedida"
+    ),
 )
 
 parser.add_argument(
     "--recompress",
     action="store_true",
-    help="Recomprime arquivos já em .nsz/.xcz para o nível especificado (substitui o arquivo comprimido se bem-sucedido)",
+    help=(
+        "Recomprime arquivos já em .nsz/.xcz para o nível especificado "
+        "(substitui o arquivo comprimido se bem-sucedido)"
+    ),
 )
 parser.add_argument(
     "--level",
@@ -160,15 +168,18 @@ parser.add_argument(
     default=None,
     help=(
         "Perfil de compressão predefinido: 'fast' (prioriza velocidade), "
-        "'balanced' (bom equilíbrio tempo/espaço), 'best' (máxima compressão, mais lento). "
-        "Se definido, sobrescreve --level."
+        "'balanced' (bom equilíbrio tempo/espaço), 'best' (máxima compressão, "
+        "mais lento). Se definido, sobrescreve --level."
     ),
 )
 parser.add_argument(
     "--dup-check",
     choices=["fast", "strict"],
     default="fast",
-    help="Modo de verificação de duplicatas: 'fast' usa size+mtime, 'strict' usa SHA256 (padrão: fast)",
+    help=(
+        "Modo de verificação de duplicatas: 'fast' usa size+mtime, "
+        "'strict' usa SHA256 (padrão: fast)"
+    ),
 )
 parser.add_argument(
     "--verbose", action="store_true", help="Ativa logging verboso (DEBUG)"
@@ -195,7 +206,10 @@ parser.add_argument(
 parser.add_argument(
     "--keep-on-failure",
     action="store_true",
-    help="Preserva arquivos gerados quando ocorrer falha (move para quarentena ou deixa no lugar)",
+    help=(
+        "Preserva arquivos gerados quando ocorrer falha (move para quarentena "
+        "ou deixa no lugar)"
+    ),
 )
 
 parser.add_argument(
@@ -208,23 +222,35 @@ parser.add_argument(
 parser.add_argument(
     "--health-check",
     action="store_true",
-    help="Verifica integridade dos arquivos e escaneia por vírus (usa clamscan/clamdscan se disponíveis)",
+    help=(
+        "Verifica integridade dos arquivos e escaneia por vírus "
+        "(usa clamscan/clamdscan se disponíveis)"
+    ),
 )
 parser.add_argument(
     "--quarantine",
     action="store_true",
-    help="(usado com --health-check) move arquivos infectados/corrompidos para _QUARANTINE",
+    help=(
+        "(usado com --health-check) move arquivos infectados/corrompidos "
+        "para _QUARANTINE"
+    ),
 )
 parser.add_argument(
     "--quarantine-dir",
     type=str,
     default=None,
-    help="Diretório onde mover arquivos em quarentena (default: _QUARANTINE dentro de --dir)",
+    help=(
+        "Diretório onde mover arquivos em quarentena "
+        "(default: _QUARANTINE dentro de --dir)"
+    ),
 )
 parser.add_argument(
     "--deep-verify",
     action="store_true",
-    help="Executa verificação mais profunda quando possível (usa hactool/nsz juntos)",
+    help=(
+        "Executa verificação mais profunda quando possível "
+        "(usa hactool/nsz juntos)"
+    ),
 )
 parser.add_argument(
     "--report-csv",
@@ -408,7 +434,10 @@ def verify_integrity(
                 cmd.insert(1, "-k")
                 cmd.insert(2, str(keys_path))
             logbase_m = (
-                Path(roms_dir) / "logs" / "nsz" / (filepath.stem + ".verify_meta")
+                Path(roms_dir)
+                / "logs"
+                / "nsz"
+                / (filepath.stem + ".verify_meta")
             )
             res_meta = run_cmd(cmd, filebase=logbase_m, timeout=cmd_timeout)
             ok_meta = verify_metadata_tool(
@@ -479,7 +508,8 @@ def scan_for_virus(filepath, *, tool_clamscan, tool_clamdscan, roms_dir, cmd_tim
     """Run a local antivirus scan using clamscan or clamdscan if available.
 
     Returns a tuple (infected: Optional[bool], output: str).
-    infected: True => infected, False => clean, None => scanner not available or error.
+    infected: True => infected, False => clean, None => scanner not available
+    or error.
     """
     tool = None
     if tool_clamscan:
@@ -551,7 +581,9 @@ def detect_nsz_level(filepath, *, tool_nsz, roms_dir, cmd_timeout) -> Optional[i
             re.IGNORECASE,
         )
         if not m:
-            m = re.search(r"compression level\s*[:=\-]?\s*(\d+)", out, re.IGNORECASE)
+            m = re.search(
+                r"compression level\s*[:=\-]?\s*(\d+)", out, re.IGNORECASE
+            )
         if not m:
             m = re.search(r"level\s*[:=\-]?\s*(\d+)", out, re.IGNORECASE)
         if m:
@@ -820,7 +852,8 @@ def _handle_new_compression(
                         try:
                             filepath.unlink()
                             logger.info(
-                                "Original removido após compressão bem-sucedida: %s",
+                                "Original removido após compressão bem-sucedida: "
+                                "%s",
                                 filepath.name,
                             )
                             logger.debug(
@@ -1052,34 +1085,42 @@ def main(argv: Optional[List[str]] = None):
         tool_hactool=TOOL_HACTOOL,
         **k,
     )
-    scan_for_virus_fn = lambda f: scan_for_virus(
-        f,
-        tool_clamscan=TOOL_CLAMSCAN,
-        tool_clamdscan=TOOL_CLAMDSCAN,
-        roms_dir=ROMS_DIR,
-        cmd_timeout=getattr(args, "cmd_timeout", None),
-    )
-    safe_move_fn = lambda s, d: safe_move(s, d, args=args, logger=logger)
-    get_metadata_fn = lambda f: get_metadata(
-        f,
-        tool_metadata=TOOL_METADATA,
-        is_nstool=IS_NSTOOL,
-        keys_path=KEYS_PATH,
+
+    def scan_for_virus_fn(f):
+        return scan_for_virus(
+            f,
+            tool_clamscan=TOOL_CLAMSCAN,
+            tool_clamdscan=TOOL_CLAMDSCAN,
+            roms_dir=ROMS_DIR,
+            cmd_timeout=getattr(args, "cmd_timeout", None),
+        )
+
+    def safe_move_fn(s, d):
+        return safe_move(s, d, args=args, logger=logger)
+
+    def get_metadata_fn(f):
+        return get_metadata(
+            f,
+            tool_metadata=TOOL_METADATA,
+            is_nstool=IS_NSTOOL,
+            keys_path=KEYS_PATH,
         roms_dir=ROMS_DIR,
         tool_nsz=TOOL_NSZ,
         cmd_timeout=getattr(args, "cmd_timeout", None),
     )
-    handle_compression_fn = lambda f: handle_compression(
-        f,
-        args=args,
-        tool_nsz=TOOL_NSZ,
-        roms_dir=ROMS_DIR,
-        tool_metadata=TOOL_METADATA,
-        is_nstool=IS_NSTOOL,
-        keys_path=KEYS_PATH,
-        cmd_timeout=getattr(args, "cmd_timeout", None),
-        tool_hactool=TOOL_HACTOOL,
-    )
+
+    def handle_compression_fn(f):
+        return handle_compression(
+            f,
+            args=args,
+            tool_nsz=TOOL_NSZ,
+            roms_dir=ROMS_DIR,
+            tool_metadata=TOOL_METADATA,
+            is_nstool=IS_NSTOOL,
+            keys_path=KEYS_PATH,
+            cmd_timeout=getattr(args, "cmd_timeout", None),
+            tool_hactool=TOOL_HACTOOL,
+        )
 
     # If health-check mode requested, run quick integrity + virus scan pass and exit.
     if args.health_check:
@@ -1150,7 +1191,9 @@ def main(argv: Optional[List[str]] = None):
                     ]
                 )
                 writer.writerows(catalog)
-            print(f"📊 Catálogo salvo em: {Col.YELLOW}{CSV_FILE.name}{Col.RESET}")
+            print(
+                f"📊 Catálogo salvo em: {Col.YELLOW}{CSV_FILE.name}{Col.RESET}"
+            )
         except Exception as e:
             logger.exception(f"Erro ao salvar CSV: {e}")
 

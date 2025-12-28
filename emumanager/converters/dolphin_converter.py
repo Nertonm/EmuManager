@@ -19,12 +19,13 @@ class DolphinConverter:
         if not self.dolphin_tool:
             # Try finding 'dolphin-emu-tool'
             self.dolphin_tool = find_tool("dolphin-emu-tool")
-        
+
         if not self.dolphin_tool:
             self._check_flatpak()
 
     def _check_flatpak(self):
-        # Use shutil.which directly to avoid resolving symlinks (important for distrobox shims)
+        # Use shutil.which directly to avoid resolving symlinks
+        # (important for distrobox shims)
         flatpak_path = shutil.which("flatpak")
         if not flatpak_path:
             return

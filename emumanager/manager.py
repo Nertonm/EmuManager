@@ -194,7 +194,8 @@ def get_roms_dir(base_dir: Path) -> Path:
     Handles cases where base_dir is the project root OR the roms folder itself.
     """
     # 1. If base_dir looks like the roms folder itself, prefer it.
-    # This prevents issues if a 'roms' folder accidentally exists inside the roms folder.
+    # This prevents issues if a 'roms' folder accidentally exists inside
+    # the roms folder.
     if base_dir.name == "roms":
         return base_dir
 

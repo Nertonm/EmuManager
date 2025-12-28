@@ -44,7 +44,7 @@ class TestMainWindowLogic:
     def test_progress_hook_updates_ui(self, window):
         # Force direct UI update path (no signal)
         window._signaler = None
-        
+
         # Test 50% progress
         window.progress_hook(0.5, "Halfway there")
 

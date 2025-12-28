@@ -13,7 +13,6 @@ from emumanager.workers.dolphin import (
     worker_dolphin_verify,
     worker_dolphin_decompress_single,
     worker_dolphin_recompress_single,
-    worker_dolphin_compress_single,
 )
 from emumanager.workers.n3ds import worker_n3ds_organize, worker_n3ds_verify
 from emumanager.workers.ps2 import (

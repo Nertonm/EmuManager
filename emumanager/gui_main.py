@@ -21,7 +21,6 @@ from .gui_workers import (
     worker_dolphin_convert,
     worker_dolphin_decompress_single,
     worker_dolphin_recompress_single,
-    worker_dolphin_compress_single,
     worker_dolphin_organize,
     worker_dolphin_verify,
     worker_hash_verify,
@@ -1442,7 +1441,8 @@ class MainWindowBase:
             files = []
             if roms_dir.exists():
                 # Always list recursively for the UI so users can see organized games
-                # regardless of the "Recursive" checkbox state (which controls processing).
+                # regardless of the "Recursive" checkbox state
+                # (which controls processing).
                 full_files = self._list_files_recursive(roms_dir)
                 files = [p.relative_to(roms_dir) for p in full_files]
                 # Store for filtering
@@ -1517,8 +1517,12 @@ class MainWindowBase:
             if system.lower() in ("gamecube", "wii"):
                 # Dolphin Compression
                 def _work():
-                    return worker_dolphin_compress_single(
-                        filepath, self._env, args, self.log_msg
+                    return worker_dolphin_convert(
+                        filepath.parent,
+                        self._env,
+                        args,
+                        self.log_msg,
+                        lambda: [filepath],
                     )
             else:
                 # Default (Switch) Compression
@@ -1586,10 +1590,6 @@ class MainWindowBase:
                     self.log_msg(MSG_NSZ_MISSING)
                     return
 
-                def _work():
-                    return worker_recompress_single(
-                        filepath, self._env, args, self.log_msg
-                    )
                 def _work():
                     return worker_recompress_single(
                         filepath, self._env, args, self.log_msg
@@ -2182,10 +2182,10 @@ class MainWindowBase:
             self._last_base = base
             self.ui.lbl_library.setText(str(base))
             self.ui.lbl_library.setStyleSheet("font-weight: bold; color: #3daee9;")
-            
+
             # Update logger to write to the new library's log folder
             self._update_logger(base)
-            
+
             self.log_msg(f"Library opened: {base}")
 
             # Auto-refresh list if possible
@@ -2504,7 +2504,7 @@ class MainWindowBase:
         if not self._last_base:
             self.log_msg(MSG_SELECT_BASE)
             return
-        
+
         self._ensure_env(self._last_base)
         args = self._get_common_args()
         args.organize = True
@@ -2513,7 +2513,7 @@ class MainWindowBase:
 
         def _work():
             results = []
-            
+
             # 1. Distribute root files
             # If _last_base is the 'roms' folder, we scan it directly.
             # If _last_base is the project root, we might need to append 'roms'.
@@ -2532,19 +2532,19 @@ class MainWindowBase:
                 cancel_event=self._cancel_event
             )
             results.append(f"Distribution: {dist_stats}")
-            
+
             # 2. Run Switch Organizer
             # We want to organize the 'switch' folder inside target_root
             switch_dir = target_root / "switch"
             if switch_dir.exists():
                 self.log_msg(f"Organizing Switch folder: {switch_dir}...")
-                
+
                 # Create a copy of env with updated ROMS_DIR
                 switch_env = self._env.copy()
                 switch_env["ROMS_DIR"] = switch_dir
                 switch_env["CSV_FILE"] = switch_dir / "biblioteca_switch.csv"
                 switch_env["DUPE_DIR"] = switch_dir / "_DUPLICATES"
-                
+
                 switch_res = worker_organize(
                     switch_dir,
                     switch_env,
@@ -2642,7 +2642,7 @@ class MainWindowBase:
             system = sys_item.text()
             roms_root = self._manager.get_roms_dir(self._last_base)
             filepath = roms_root / system / rom_name
-            
+
             if not filepath.exists():
                 self.log_msg(f"File not found: {filepath}")
                 return

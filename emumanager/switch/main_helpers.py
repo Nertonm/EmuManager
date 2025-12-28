@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import csv
-import sys
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -306,7 +305,7 @@ def get_dest_folder(roms_dir: Path, region: str, type_str: str = "Base") -> Path
     else:
         # Fallback
         folder_name = "Base Games (XCI-NSP)"
-        
+
     return roms_dir / folder_name
 
 
@@ -367,7 +366,7 @@ def process_one_file(fpath: Path, ctx: dict):
             fpath2.suffix,
             region if standardize else None,
         )
-        
+
         # Pass type to get_dest_folder
         dest_folder = get_dest_folder(roms_dir, region, meta.get("type", "Base"))
         target_path = dest_folder / new_fname

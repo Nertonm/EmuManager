@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 from typing import Any, Callable, Optional
 
 from emumanager.common.execution import run_cmd
-from emumanager.switch import compression, meta_extractor, metadata
+from emumanager.switch import compression, metadata
 from emumanager.switch.cli import (
     get_metadata,
     safe_move,
