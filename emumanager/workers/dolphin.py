@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
-from typing import Any, Callable, Optional
 import shutil
 import tempfile
+from pathlib import Path
+from typing import Any, Callable, Optional
 
 from emumanager.converters.dolphin_converter import DolphinConverter
 from emumanager.gamecube import database as gc_db

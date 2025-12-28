@@ -48,8 +48,8 @@ coverage.xml
 *.swp
 *~
 verification_results.csv
-.python-version
-*.code-workspace
+_INSTALL_LOG.txt
+mock_library/
 
 # User content
 roms/

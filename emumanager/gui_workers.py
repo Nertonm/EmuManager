@@ -9,10 +9,10 @@ from emumanager.workers.common import (
 from emumanager.workers.dolphin import (
     DOLPHIN_CONVERTIBLE_EXTENSIONS,
     worker_dolphin_convert,
-    worker_dolphin_organize,
-    worker_dolphin_verify,
     worker_dolphin_decompress_single,
+    worker_dolphin_organize,
     worker_dolphin_recompress_single,
+    worker_dolphin_verify,
 )
 from emumanager.workers.n3ds import worker_n3ds_organize, worker_n3ds_verify
 from emumanager.workers.ps2 import (

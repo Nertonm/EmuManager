@@ -11,7 +11,10 @@ import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
+
 from emumanager.logging_cfg import get_logger
+from emumanager.verification.hasher import calculate_hashes
+from emumanager.workers.distributor import worker_distribute_root
 
 from .gui_ui import Ui_MainWindow
 from .gui_workers import (
@@ -20,8 +23,8 @@ from .gui_workers import (
     worker_decompress_single,
     worker_dolphin_convert,
     worker_dolphin_decompress_single,
-    worker_dolphin_recompress_single,
     worker_dolphin_organize,
+    worker_dolphin_recompress_single,
     worker_dolphin_verify,
     worker_hash_verify,
     worker_health_check,
@@ -43,8 +46,6 @@ from .gui_workers import (
     worker_switch_compress,
     worker_switch_decompress,
 )
-from emumanager.workers.distributor import worker_distribute_root
-from emumanager.verification.hasher import calculate_hashes
 
 # Constants
 MSG_NO_ROM = "No ROM selected"
