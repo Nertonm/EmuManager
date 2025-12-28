@@ -149,7 +149,7 @@ def cmd_list_systems(base_dir: Path):
     if not roms.exists():
         logger.debug("No roms directory at %s", roms)
         return []
-    systems = sorted([p.name for p in roms.iterdir() if p.is_dir()])
+    systems = sorted([p.name for p in roms.iterdir() if p.is_dir() and not p.name.startswith(".")])
     logger.debug("Found systems: %s", systems)
     return systems
 

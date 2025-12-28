@@ -156,3 +156,45 @@ def _verify_single_file(
         return res
 
     return res
+
+
+def worker_identify_single_file(
+    file_path: Path,
+    dat_path: Path,
+    log_cb: Callable[[str], None],
+    progress_cb: Optional[Callable[[float], None]] = None,
+) -> str:
+    """Identify a single file against a DAT database."""
+    logger = GuiLogger(log_cb)
+
+    if not dat_path.exists():
+        return "Error: DAT file not found."
+
+    logger.info(f"Parsing DAT file: {dat_path}...")
+    try:
+        db = dat_parser.parse_dat_file(dat_path)
+    except Exception as e:
+        return f"Error parsing DAT: {e}"
+
+    logger.info(f"Calculating hashes for {file_path.name}...")
+    hashes = hasher.calculate_hashes(
+        file_path, algorithms=("crc32", "md5", "sha1"), progress_cb=progress_cb
+    )
+
+    crc = hashes.get("crc32")
+    md5 = hashes.get("md5")
+    sha1 = hashes.get("sha1")
+
+    logger.info(f"Hashes: CRC={crc}, MD5={md5}, SHA1={sha1}")
+
+    match = db.lookup(crc=crc, md5=md5, sha1=sha1)
+
+    if match:
+        return (
+            f"MATCH FOUND!\n"
+            f"Game: {match.game_name}\n"
+            f"ROM:  {match.rom_name}\n"
+            f"Size: {match.size} bytes"
+        )
+    else:
+        return "No match found in database."

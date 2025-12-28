@@ -9,6 +9,22 @@ ORGANIZE_LABEL = "Organize (Rename)"
 class Ui_MainWindow:
     def setupUi(self, MainWindow, qtwidgets: Any):
         qt = qtwidgets
+
+        # Resolve Qt namespace for enums
+        self._Qt_enum = None
+        self._QSize = None
+        try:
+            from PyQt6.QtCore import Qt as _Qt, QSize as _QSize
+            self._Qt_enum = _Qt
+            self._QSize = _QSize
+        except ImportError:
+            try:
+                from PySide6.QtCore import Qt as _Qt, QSize as _QSize
+                self._Qt_enum = _Qt
+                self._QSize = _QSize
+            except ImportError:
+                pass
+
         MainWindow.setObjectName("MainWindow")
         MainWindow.resize(900, 700)
 
@@ -68,6 +84,12 @@ class Ui_MainWindow:
         self.tab_settings.setObjectName("tab_settings")
         self.setup_settings_tab(qt, self.tab_settings)
         self.tabs.addTab(self.tab_settings, "Settings")
+
+        # --- Tab 5: Gallery ---
+        self.tab_gallery = qt.QWidget()
+        self.tab_gallery.setObjectName("tab_gallery")
+        self.setupGalleryTab(qt, self.tab_gallery)
+        self.tabs.addTab(self.tab_gallery, "Gallery")
 
         self.verticalLayout.addWidget(self.tabs)
 
@@ -254,6 +276,33 @@ class Ui_MainWindow:
             self.rom_list.setSelectionMode(qt.QAbstractItemView.ExtendedSelection)
         self.splitter.addWidget(self.sys_list)
         self.splitter.addWidget(self.rom_list)
+
+        # Cover Image
+        self.cover_label = qt.QLabel("No Cover")
+        if self._Qt_enum:
+            try:
+                self.cover_label.setAlignment(self._Qt_enum.AlignmentFlag.AlignCenter)
+            except AttributeError:
+                self.cover_label.setAlignment(self._Qt_enum.AlignCenter)
+        self.cover_label.setMinimumWidth(200)
+        self.cover_label.setStyleSheet("background-color: #222; color: #888; border: 1px solid #444;")
+        self.cover_label.setScaledContents(True)
+        
+        # Ensure label expands/shrinks to fill space
+        try:
+            self.cover_label.setSizePolicy(
+                qt.QSizePolicy.Policy.Ignored, qt.QSizePolicy.Policy.Ignored
+            )
+        except AttributeError:
+            self.cover_label.setSizePolicy(
+                qt.QSizePolicy.Ignored, qt.QSizePolicy.Ignored
+            )
+            
+        self.splitter.addWidget(self.cover_label)
+
+        # Set initial splitter sizes (approximate ratio)
+        self.splitter.setSizes([200, 500, 300])
+
         layout.addWidget(self.splitter)
 
         # Switch Actions Group
@@ -308,7 +357,113 @@ class Ui_MainWindow:
         self._setup_psp_tab(qt)
         self._setup_dolphin_tab(qt)
         self._setup_n3ds_tab(qt)
+        self._setup_sega_tab(qt)
+        self._setup_microsoft_tab(qt)
+        self._setup_nintendo_legacy_tab(qt)
         self._setup_general_tab(qt)
+
+    def _setup_sega_tab(self, qt):
+        self.tab_sega = qt.QWidget()
+        layout = qt.QVBoxLayout(self.tab_sega)
+        grp = qt.QGroupBox("Sega Systems (Dreamcast, Saturn, MegaDrive, etc)")
+        grp_layout = qt.QVBoxLayout()
+        
+        self.btn_sega_convert = qt.QPushButton("Convert CD-based to CHD")
+        self.btn_sega_convert.setToolTip("Converts GDI/CUE/ISO to CHD (Dreamcast, Saturn, SegaCD)")
+        
+        self.btn_sega_verify = qt.QPushButton(IDENTIFY_VERIFY_LABEL)
+        self.btn_sega_verify.setToolTip("Verify Sega games using DAT files")
+        
+        self.btn_sega_organize = qt.QPushButton(ORGANIZE_LABEL)
+        self.btn_sega_organize.setToolTip("Rename Sega games based on DAT/Metadata")
+
+        try:
+            style = qt.QApplication.style()
+            # Use safe enum access or fallback
+            try:
+                self.btn_sega_convert.setIcon(style.standardIcon(qt.QStyle.StandardPixmap.SP_DriveCDIcon))
+                self.btn_sega_verify.setIcon(style.standardIcon(qt.QStyle.StandardPixmap.SP_DialogApplyButton))
+                self.btn_sega_organize.setIcon(style.standardIcon(qt.QStyle.StandardPixmap.SP_FileDialogListView))
+            except AttributeError:
+                self.btn_sega_convert.setIcon(style.standardIcon(qt.QStyle.SP_DriveCDIcon))
+                self.btn_sega_verify.setIcon(style.standardIcon(qt.QStyle.SP_DialogApplyButton))
+                self.btn_sega_organize.setIcon(style.standardIcon(qt.QStyle.SP_FileDialogListView))
+        except Exception:
+            pass
+
+        grp_layout.addWidget(self.btn_sega_convert)
+        grp_layout.addWidget(self.btn_sega_verify)
+        grp_layout.addWidget(self.btn_sega_organize)
+        grp.setLayout(grp_layout)
+        layout.addWidget(grp)
+        layout.addStretch()
+        self.tools_tabs.addTab(self.tab_sega, "Sega")
+
+    def _setup_microsoft_tab(self, qt):
+        self.tab_microsoft = qt.QWidget()
+        layout = qt.QVBoxLayout(self.tab_microsoft)
+        grp = qt.QGroupBox("Microsoft Systems (Xbox, Xbox 360)")
+        grp_layout = qt.QVBoxLayout()
+        
+        self.btn_ms_verify = qt.QPushButton(IDENTIFY_VERIFY_LABEL)
+        self.btn_ms_verify.setToolTip("Verify Xbox games using DAT files")
+        
+        self.btn_ms_organize = qt.QPushButton(ORGANIZE_LABEL)
+        self.btn_ms_organize.setToolTip("Rename Xbox games based on DAT/Metadata")
+
+        try:
+            style = qt.QApplication.style()
+            try:
+                self.btn_ms_verify.setIcon(style.standardIcon(qt.QStyle.StandardPixmap.SP_DialogApplyButton))
+                self.btn_ms_organize.setIcon(style.standardIcon(qt.QStyle.StandardPixmap.SP_FileDialogListView))
+            except AttributeError:
+                self.btn_ms_verify.setIcon(style.standardIcon(qt.QStyle.SP_DialogApplyButton))
+                self.btn_ms_organize.setIcon(style.standardIcon(qt.QStyle.SP_FileDialogListView))
+        except Exception:
+            pass
+
+        grp_layout.addWidget(self.btn_ms_verify)
+        grp_layout.addWidget(self.btn_ms_organize)
+        grp.setLayout(grp_layout)
+        layout.addWidget(grp)
+        layout.addStretch()
+        self.tools_tabs.addTab(self.tab_microsoft, "Microsoft")
+
+    def _setup_nintendo_legacy_tab(self, qt):
+        self.tab_nintendo_legacy = qt.QWidget()
+        layout = qt.QVBoxLayout(self.tab_nintendo_legacy)
+        grp = qt.QGroupBox("Nintendo Legacy (NES, SNES, N64, GBA, NDS)")
+        grp_layout = qt.QVBoxLayout()
+        
+        self.btn_nint_compress = qt.QPushButton("Compress to 7z/Zip")
+        self.btn_nint_compress.setToolTip("Compress ROMs to save space")
+        
+        self.btn_nint_verify = qt.QPushButton(IDENTIFY_VERIFY_LABEL)
+        self.btn_nint_verify.setToolTip("Verify games using DAT files")
+        
+        self.btn_nint_organize = qt.QPushButton(ORGANIZE_LABEL)
+        self.btn_nint_organize.setToolTip("Rename games based on DAT/Metadata")
+
+        try:
+            style = qt.QApplication.style()
+            try:
+                self.btn_nint_compress.setIcon(style.standardIcon(qt.QStyle.StandardPixmap.SP_ArrowDown))
+                self.btn_nint_verify.setIcon(style.standardIcon(qt.QStyle.StandardPixmap.SP_DialogApplyButton))
+                self.btn_nint_organize.setIcon(style.standardIcon(qt.QStyle.StandardPixmap.SP_FileDialogListView))
+            except AttributeError:
+                self.btn_nint_compress.setIcon(style.standardIcon(qt.QStyle.SP_ArrowDown))
+                self.btn_nint_verify.setIcon(style.standardIcon(qt.QStyle.SP_DialogApplyButton))
+                self.btn_nint_organize.setIcon(style.standardIcon(qt.QStyle.SP_FileDialogListView))
+        except Exception:
+            pass
+
+        grp_layout.addWidget(self.btn_nint_compress)
+        grp_layout.addWidget(self.btn_nint_verify)
+        grp_layout.addWidget(self.btn_nint_organize)
+        grp.setLayout(grp_layout)
+        layout.addWidget(grp)
+        layout.addStretch()
+        self.tools_tabs.addTab(self.tab_nintendo_legacy, "Nintendo (Legacy)")
 
     def _setup_switch_tab(self, qt):
         self.tab_switch = qt.QWidget()
@@ -1014,3 +1169,49 @@ class Ui_MainWindow:
                 qt.QApplication.setPalette(palette)
             except Exception:
                 pass
+
+    def setupGalleryTab(self, qt, parent):
+        layout = qt.QVBoxLayout(parent)
+        
+        # System Selector
+        top_layout = qt.QHBoxLayout()
+        top_layout.addWidget(qt.QLabel("System:"))
+        self.combo_gallery_system = qt.QComboBox()
+        self.combo_gallery_system.setMinimumWidth(200)
+        top_layout.addWidget(self.combo_gallery_system)
+        
+        self.btn_gallery_refresh = qt.QPushButton("Refresh Gallery")
+        ic = self._get_icon(qt, "SP_BrowserReload")
+        if ic:
+            self.btn_gallery_refresh.setIcon(ic)
+        top_layout.addWidget(self.btn_gallery_refresh)
+        
+        top_layout.addStretch()
+        layout.addLayout(top_layout)
+
+        # Grid View
+        self.list_gallery = qt.QListWidget()
+        
+        # Handle Enums for ViewMode
+        try:
+            self.list_gallery.setViewMode(qt.QListWidget.ViewMode.IconMode)
+        except AttributeError:
+            self.list_gallery.setViewMode(qt.QListWidget.IconMode)
+            
+        # Handle Enums for ResizeMode
+        try:
+            self.list_gallery.setResizeMode(qt.QListWidget.ResizeMode.Adjust)
+        except AttributeError:
+            self.list_gallery.setResizeMode(qt.QListWidget.Adjust)
+            
+        # Handle Enums for Movement
+        try:
+            self.list_gallery.setMovement(qt.QListWidget.Movement.Static)
+        except AttributeError:
+            self.list_gallery.setMovement(qt.QListWidget.Static)
+
+        if self._QSize:
+            self.list_gallery.setIconSize(self._QSize(140, 200))
+        self.list_gallery.setSpacing(15)
+        
+        layout.addWidget(self.list_gallery)

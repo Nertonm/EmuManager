@@ -9,14 +9,17 @@ from __future__ import annotations
 
 import threading
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 from emumanager.logging_cfg import get_logger
 from emumanager.verification.hasher import calculate_hashes
 from emumanager.workers.distributor import worker_distribute_root
+from .architect import get_roms_dir
 
 from .gui_ui import Ui_MainWindow
+from .gui_covers import CoverDownloader
 from .gui_workers import (
     worker_clean_junk,
     worker_compress_single,
@@ -27,6 +30,7 @@ from .gui_workers import (
     worker_dolphin_recompress_single,
     worker_dolphin_verify,
     worker_hash_verify,
+    worker_identify_single_file,
     worker_health_check,
     worker_n3ds_organize,
     worker_n3ds_verify,
@@ -124,6 +128,7 @@ class MainWindowBase:
         self.status = self.ui.statusbar
         self.rom_list = self.ui.rom_list
         self.sys_list = self.ui.sys_list
+        self.cover_label = self.ui.cover_label
 
         # Alias settings widgets
         self.chk_dry_run = self.ui.chk_dry_run
@@ -168,6 +173,14 @@ class MainWindowBase:
             self._settings = self._qtcore.QSettings("EmuManager", "Manager")
             self._load_settings()
 
+        # Resolve Qt namespace for enums
+        self._Qt_enum = None
+        if self._qtcore:
+            try:
+                self._Qt_enum = self._qtcore.Qt
+            except AttributeError:
+                pass
+
         # Enhance UI: toolbar and context menus
         try:
             self._setup_toolbar()
@@ -188,12 +201,51 @@ class MainWindowBase:
         if hasattr(self.ui, "btn_quick_update"):
             self.ui.btn_quick_update.clicked.connect(self.on_list)
 
+        # Gallery Tab
+        if hasattr(self.ui, "combo_gallery_system"):
+            self.ui.combo_gallery_system.currentIndexChanged.connect(self._on_gallery_system_changed)
+        if hasattr(self.ui, "btn_gallery_refresh"):
+            self.ui.btn_gallery_refresh.clicked.connect(self._populate_gallery)
+        if hasattr(self.ui, "list_gallery"):
+            # Enable context menu
+            policy = None
+            # Try Qt6 Enum
+            try:
+                if self._Qt_enum and hasattr(self._Qt_enum, "ContextMenuPolicy"):
+                    policy = self._Qt_enum.ContextMenuPolicy.CustomContextMenu
+            except AttributeError:
+                pass
+            
+            # Try Qt5/Legacy Enum
+            if policy is None:
+                try:
+                    if self._Qt_enum and hasattr(self._Qt_enum, "CustomContextMenu"):
+                        policy = self._Qt_enum.CustomContextMenu
+                except AttributeError:
+                    pass
+
+            # Try via qtcore directly
+            if policy is None and self._qtcore:
+                try:
+                    policy = self._qtcore.Qt.ContextMenuPolicy.CustomContextMenu
+                except AttributeError:
+                    try:
+                        policy = self._qtcore.Qt.CustomContextMenu
+                    except AttributeError:
+                        pass
+            
+            if policy is not None:
+                self.ui.list_gallery.setContextMenuPolicy(policy)
+                self.ui.list_gallery.customContextMenuRequested.connect(self._on_gallery_context_menu)
+
         # Library Tab
         self.ui.btn_open_lib.clicked.connect(self.on_open_library)
         self.ui.btn_init.clicked.connect(self.on_init)
         self.ui.btn_list.clicked.connect(self.on_list)
         self.ui.btn_add.clicked.connect(self.on_add)
         self.ui.btn_clear.clicked.connect(self.on_clear_log)
+        # Connect selection change for covers
+        self.ui.rom_list.currentItemChanged.connect(self._on_rom_selection_changed)
         # Filter box
         if hasattr(self.ui, "edit_filter"):
             self.ui.edit_filter.textChanged.connect(self._on_filter_text)
@@ -246,6 +298,28 @@ class MainWindowBase:
         self.ui.btn_n3ds_compress.clicked.connect(self.on_n3ds_compress)
         self.ui.btn_n3ds_decompress.clicked.connect(self.on_n3ds_decompress)
         self.ui.btn_n3ds_convert_cia.clicked.connect(self.on_n3ds_convert_cia)
+
+        # Tools Tab - Sega
+        if hasattr(self.ui, "btn_sega_convert"):
+            self.ui.btn_sega_convert.clicked.connect(self.on_sega_convert)
+        if hasattr(self.ui, "btn_sega_verify"):
+            self.ui.btn_sega_verify.clicked.connect(self.on_generic_verify_click)
+        if hasattr(self.ui, "btn_sega_organize"):
+            self.ui.btn_sega_organize.clicked.connect(self.on_generic_organize_click)
+
+        # Tools Tab - Microsoft
+        if hasattr(self.ui, "btn_ms_verify"):
+            self.ui.btn_ms_verify.clicked.connect(self.on_generic_verify_click)
+        if hasattr(self.ui, "btn_ms_organize"):
+            self.ui.btn_ms_organize.clicked.connect(self.on_generic_organize_click)
+
+        # Tools Tab - Nintendo Legacy
+        if hasattr(self.ui, "btn_nint_compress"):
+            self.ui.btn_nint_compress.clicked.connect(self.on_nint_compress)
+        if hasattr(self.ui, "btn_nint_verify"):
+            self.ui.btn_nint_verify.clicked.connect(self.on_generic_verify_click)
+        if hasattr(self.ui, "btn_nint_organize"):
+            self.ui.btn_nint_organize.clicked.connect(self.on_generic_organize_click)
 
         # Tools Tab - General
         self.ui.btn_clean_junk.clicked.connect(self.on_clean_junk)
@@ -614,6 +688,7 @@ class MainWindowBase:
                     a_decomp = menu.addAction("Decompress")
                     menu.addSeparator()
                     a_verify = menu.addAction("Verify (Calc Hash)")
+                    a_identify = menu.addAction("Identify with DAT...")
                     menu.addSeparator()
                     a_open = menu.addAction("Open Folder")
                     a_copy = menu.addAction("Copy Path")
@@ -633,6 +708,8 @@ class MainWindowBase:
                         self.on_decompress_selected()
                     elif act == a_verify:
                         self.on_verify_selected()
+                    elif act == a_identify:
+                        self.on_identify_selected()
                     elif act == a_open:
                         self._open_selected_rom_folder()
                     elif act == a_copy:
@@ -1235,6 +1312,13 @@ class MainWindowBase:
                 for s in systems:
                     self.sys_list.addItem(s)
                 self._auto_select_last_system()
+            
+            # Update Gallery Combo
+            if hasattr(self.ui, "combo_gallery_system"):
+                self.ui.combo_gallery_system.clear()
+                self.ui.combo_gallery_system.addItems(systems)
+        except Exception:
+            pass
         except Exception:
             pass
 
@@ -2199,6 +2283,8 @@ class MainWindowBase:
 
             self.log_msg(f"Library opened: {base}")
 
+           
+
             # Auto-refresh list if possible
             try:
                 self.on_list()
@@ -2753,3 +2839,324 @@ class MainWindowBase:
 
         self._set_ui_enabled(False)
         self._run_in_background(_work, _done)
+
+    def _on_rom_selection_changed(self, current, previous):
+        if not current:
+            self.cover_label.clear()
+            self.cover_label.setText("No ROM selected")
+            return
+
+        # Get system
+        if not self.sys_list.currentItem():
+            return
+        system = self.sys_list.currentItem().text()
+
+        # Get file path
+        if not self._last_base:
+            return
+            
+        base_roms_dir = get_roms_dir(Path(self._last_base))
+        system_dir = base_roms_dir / system
+        
+        rom_rel_path = current.text()
+        full_path = system_dir / rom_rel_path
+        
+        # Start cover download/extraction
+        # Use a cache dir for covers
+        cache_dir = Path(self._last_base) / ".covers"
+        cache_dir.mkdir(exist_ok=True)
+        
+        self.log_msg(f"Fetching cover for {rom_rel_path} (System: {system})...")
+        
+        # Guess region from filename
+        region = None
+        if "(USA)" in rom_rel_path or "(US)" in rom_rel_path:
+            region = "US"
+        elif "(Europe)" in rom_rel_path or "(EU)" in rom_rel_path:
+            region = "EN"
+        elif "(Japan)" in rom_rel_path or "(JP)" in rom_rel_path:
+            region = "JA"
+            
+        downloader = CoverDownloader(system, None, region, str(cache_dir), str(full_path))
+        
+        # Force QueuedConnection to ensure UI updates happen in the main thread
+        conn_type = self._Qt_enum.ConnectionType.QueuedConnection if self._Qt_enum and hasattr(self._Qt_enum, "ConnectionType") else self._qtcore.Qt.QueuedConnection
+        
+        downloader.signals.finished.connect(self._update_cover_image, conn_type)
+        downloader.signals.log.connect(self.log_msg, conn_type)
+        
+        # Run in thread pool
+        if self._qtcore:
+            self._qtcore.QThreadPool.globalInstance().start(downloader)
+
+    def _update_cover_image(self, image_path):
+        import threading
+        self.log_msg(f"Update cover called in thread: {threading.current_thread().name}")
+        
+        if not image_path or not Path(image_path).exists():
+            self.cover_label.setText("No Cover Found")
+            return
+            
+        # Check file size
+        try:
+            size = Path(image_path).stat().st_size
+            if size == 0:
+                self.log_msg(f"Error: Image file is empty: {image_path}")
+                self.cover_label.setText("Empty Image")
+                return
+        except Exception:
+            pass
+
+        self.log_msg(f"Displaying cover: {image_path}")
+        pixmap = self._qtgui.QPixmap(image_path)
+        
+        if not pixmap.isNull():
+            self.log_msg(f"Loaded pixmap: {pixmap.width()}x{pixmap.height()}")
+            self.cover_label.setPixmap(pixmap)
+            self.cover_label.setVisible(True)
+        else:
+            self.log_msg(f"Failed to load pixmap from {image_path}")
+            self.cover_label.setText("Invalid Image")
+
+    def on_identify_selected(self):
+        """Identify the selected ROM using a DAT file."""
+        if not self.rom_list:
+            return
+        
+        sel = self.rom_list.currentItem()
+        if not sel:
+            self.log_msg(MSG_NO_ROM)
+            return
+
+        # Get file path
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+            
+        system = self.sys_list.currentItem().text() if self.sys_list.currentItem() else ""
+        if not system:
+            self.log_msg(MSG_NO_SYSTEM)
+            return
+
+        base_roms_dir = get_roms_dir(Path(self._last_base))
+        rom_rel_path = sel.text()
+        full_path = base_roms_dir / system / rom_rel_path
+        
+        if not full_path.exists():
+            self.log_msg(f"File not found: {full_path}")
+            return
+
+        # Ask user for DAT file
+        dat_path, _ = self._qtwidgets.QFileDialog.getOpenFileName(
+            self.window, "Select DAT File", str(self._last_base), "DAT Files (*.dat *.xml)"
+        )
+        
+        if not dat_path:
+            return
+            
+        self.log_msg(f"Identifying {full_path.name} using {Path(dat_path).name}...")
+        
+        def _work():
+            return worker_identify_single_file(
+                full_path, Path(dat_path), self.log_msg, self._progress_slot
+            )
+            
+        def _done(res):
+            self.log_msg(str(res))
+            self._qtwidgets.QMessageBox.information(self.window, "Identification Result", str(res))
+            
+        self._run_in_background(_work, _done)
+
+    def _on_gallery_system_changed(self, index):
+        self._populate_gallery()
+
+    def _populate_gallery(self):
+        if not self._last_base:
+            return
+            
+        system = self.ui.combo_gallery_system.currentText()
+        if not system:
+            return
+            
+        self.ui.list_gallery.clear()
+        self.log_msg(f"Populating gallery for {system}...")
+        
+        roms_dir = get_roms_dir(Path(self._last_base)) / system
+        if not roms_dir.exists():
+            return
+            
+        files = self._list_files_recursive(roms_dir)
+        
+        # Cache dir root
+        cache_dir_root = Path(self._last_base) / ".covers"
+        cache_dir_root.mkdir(exist_ok=True)
+        
+        # Default icon
+        default_icon = self.ui._get_icon(self._qtwidgets, "SP_FileIcon")
+        
+        # Connection type for thread safety
+        conn_type = self._Qt_enum.ConnectionType.QueuedConnection if self._Qt_enum and hasattr(self._Qt_enum, "ConnectionType") else self._qtcore.Qt.QueuedConnection
+
+        for f in files:
+            try:
+                name = f.name
+                item = self._qtwidgets.QListWidgetItem(name)
+                item.setToolTip(str(f))
+                
+                if default_icon:
+                    item.setIcon(default_icon)
+                
+                self.ui.list_gallery.addItem(item)
+                
+                # Trigger background check/download
+                # Guess region
+                region = None
+                name = f.name
+                if "(USA)" in name or "(US)" in name:
+                    region = "US"
+                elif "(Europe)" in name or "(EU)" in name:
+                    region = "EN"
+                elif "(Japan)" in name or "(JP)" in name:
+                    region = "JA"
+                
+                downloader = CoverDownloader(system, None, region, str(cache_dir_root), str(f))
+                
+                # Use partial to pass the item
+                downloader.signals.finished.connect(partial(self._update_gallery_icon, item), conn_type)
+                
+                self._qtcore.QThreadPool.globalInstance().start(downloader)
+                
+            except Exception as e:
+                self.log_msg(f"Error adding gallery item {f}: {e}")
+                continue
+        
+        self.log_msg(f"Gallery population started for {len(files)} items.")
+
+    def _update_gallery_icon(self, item, image_path):
+        if not image_path or not Path(image_path).exists():
+            return
+            
+        try:
+            # Check if item is still valid (might have been cleared)
+            if item.listWidget() is None:
+                return
+
+            icon = self._qtgui.QIcon(image_path)
+            item.setIcon(icon)
+        except Exception:
+            pass
+
+    def _on_gallery_context_menu(self, position):
+        item = self.ui.list_gallery.itemAt(position)
+        if not item:
+            return
+
+        menu = self._qtwidgets.QMenu()
+        
+        # Actions
+        action_open = menu.addAction("Open File Location")
+        action_verify = menu.addAction("Verify (Hash)")
+        action_identify = menu.addAction("Identify with DAT...")
+        menu.addSeparator()
+        action_refresh_cover = menu.addAction("Redownload Cover")
+        
+        action = menu.exec(self.ui.list_gallery.mapToGlobal(position))
+        
+        if not action:
+            return
+            
+        file_path = Path(item.toolTip())
+        
+        if action == action_open:
+            self._open_file_location(file_path)
+        elif action == action_verify:
+            self._verify_single_file(file_path)
+        elif action == action_identify:
+            self._identify_single_file_dialog(file_path)
+        elif action == action_refresh_cover:
+            self._refresh_gallery_cover(item, file_path)
+
+    def _verify_single_file(self, file_path):
+        self.log_msg(f"Verifying {file_path.name}...")
+        def _work():
+            return calculate_hashes(file_path)
+        
+        def _done(res):
+            if res:
+                msg = f"File: {file_path.name}\n\nCRC32: {res.crc32}\nMD5: {res.md5}\nSHA1: {res.sha1}"
+                self._qtwidgets.QMessageBox.information(self.window, "Verification Result", msg)
+                self.log_msg(f"Verified {file_path.name}: CRC32={res.crc32}")
+            else:
+                self._qtwidgets.QMessageBox.warning(self.window, "Error", "Failed to calculate hashes.")
+        
+        self._run_in_background(_work, _done)
+
+    def _identify_single_file_dialog(self, file_path):
+        dat_path, _ = self._qtwidgets.QFileDialog.getOpenFileName(
+            self.window, "Select DAT File", "", "DAT Files (*.dat *.xml)"
+        )
+        if not dat_path:
+            return
+            
+        self.log_msg(f"Identifying {file_path.name} using {Path(dat_path).name}...")
+        
+        def _work():
+            return worker_identify_single_file(
+                file_path, Path(dat_path), self.log_msg, self._progress_slot
+            )
+            
+        def _done(res):
+            self.log_msg(str(res))
+            self._qtwidgets.QMessageBox.information(self.window, "Identification Result", str(res))
+            
+        self._run_in_background(_work, _done)
+
+    def _refresh_gallery_cover(self, item, file_path):
+        system = self.ui.combo_gallery_system.currentText()
+        cache_dir_root = Path(self._last_base) / ".covers"
+        
+        self.log_msg(f"Refreshing cover for {file_path.name}...")
+        
+        region = None
+        name = file_path.name
+        if "(USA)" in name or "(US)" in name:
+            region = "US"
+        elif "(Europe)" in name or "(EU)" in name:
+            region = "EN"
+        elif "(Japan)" in name or "(JP)" in name:
+            region = "JA"
+            
+        downloader = CoverDownloader(system, None, region, str(cache_dir_root), str(file_path))
+        
+        conn_type = self._Qt_enum.ConnectionType.QueuedConnection if self._Qt_enum and hasattr(self._Qt_enum, "ConnectionType") else self._qtcore.Qt.QueuedConnection
+        downloader.signals.finished.connect(partial(self._update_gallery_icon, item), conn_type)
+        self._qtcore.QThreadPool.globalInstance().start(downloader)
+    
+    def on_generic_verify_click(self):
+        """Redirects to the Verification tab."""
+        self.ui.tabs.setCurrentWidget(self.ui.tab_verification)
+        self.log_msg("Please select a DAT file to verify your games.")
+        self.ui.btn_select_dat.setFocus()
+        
+    def on_generic_organize_click(self):
+        self._qtwidgets.QMessageBox.information(
+            self.window, 
+            "Feature Not Available", 
+            "Automatic organization for this system is not yet implemented.\n"
+            "Please use the 'Organize (Rename)' button in the Dashboard for generic renaming."
+        )
+
+    def on_sega_convert(self):
+        self._qtwidgets.QMessageBox.information(
+            self.window,
+            "Sega Conversion",
+            "CHD conversion for Sega systems (Dreamcast/Saturn) uses the same 'chdman' tool as PS1.\n"
+            "This feature will be fully enabled in the next update."
+        )
+
+    def on_nint_compress(self):
+        self._qtwidgets.QMessageBox.information(
+            self.window,
+            "Compression",
+            "Generic 7z/Zip compression for legacy systems is coming soon."
+        )
