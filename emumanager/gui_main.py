@@ -32,6 +32,8 @@ from .gui_workers import (
     worker_n3ds_verify,
     worker_n3ds_compress,
     worker_n3ds_decompress,
+    worker_n3ds_convert_cia,
+    worker_n3ds_decrypt,
     worker_organize,
     worker_ps2_convert,
     worker_ps2_organize,
@@ -243,6 +245,7 @@ class MainWindowBase:
         self.ui.btn_n3ds_verify.clicked.connect(self.on_n3ds_verify)
         self.ui.btn_n3ds_compress.clicked.connect(self.on_n3ds_compress)
         self.ui.btn_n3ds_decompress.clicked.connect(self.on_n3ds_decompress)
+        self.ui.btn_n3ds_convert_cia.clicked.connect(self.on_n3ds_convert_cia)
 
         # Tools Tab - General
         self.ui.btn_clean_junk.clicked.connect(self.on_clean_junk)
@@ -2703,6 +2706,44 @@ class MainWindowBase:
 
         def _work():
             return worker_n3ds_decompress(
+                self._last_base, args, self.log_msg, self._get_list_files_fn()
+            )
+
+        def _done(res):
+            self.log_msg(str(res))
+            self._set_ui_enabled(True)
+
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
+    def on_n3ds_convert_cia(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+
+        args = self._get_common_args()
+
+        def _work():
+            return worker_n3ds_convert_cia(
+                self._last_base, args, self.log_msg, self._get_list_files_fn()
+            )
+
+        def _done(res):
+            self.log_msg(str(res))
+            self._set_ui_enabled(True)
+
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
+    def on_n3ds_decrypt(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+
+        args = self._get_common_args()
+
+        def _work():
+            return worker_n3ds_decrypt(
                 self._last_base, args, self.log_msg, self._get_list_files_fn()
             )
 

@@ -4,7 +4,12 @@ import re
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from emumanager.converters.n3ds_converter import compress_to_7z, decompress_7z
+from emumanager.converters.n3ds_converter import (
+    compress_to_7z,
+    convert_to_cia,
+    decompress_7z,
+    decrypt_3ds,
+)
 from emumanager.n3ds import database as n3ds_db
 from emumanager.n3ds import metadata as n3ds_meta
 from emumanager.workers.common import (
@@ -362,3 +367,145 @@ def worker_n3ds_decompress(
         progress_cb(1.0, "3DS Decompression complete")
 
     return f"Decompression complete. Decompressed: {decompressed}, Failed: {failed}"
+
+
+def worker_n3ds_convert_cia(
+    base_path: Path,
+    args: Any,
+    log_cb: Callable[[str], None],
+    list_files_fn: Callable[[Path], list[Path]],
+) -> str:
+    """Worker function for 3DS -> CIA conversion."""
+    logger = GuiLogger(log_cb)
+
+    target_dir = find_target_dir(base_path, N3DS_SUBDIRS)
+    if not target_dir:
+        return MSG_N3DS_DIR_NOT_FOUND
+
+    logger.info(f"Converting 3DS to CIA in {target_dir}...")
+
+    converted = 0
+    failed = 0
+    skipped = 0
+
+    files = list_files_fn(target_dir)
+    total = len(files)
+    progress_cb = getattr(args, "progress_callback", None)
+    cancel_event = getattr(args, "cancel_event", None)
+    dry_run = getattr(args, "dry_run", False)
+
+    for i, f in enumerate(files):
+        if cancel_event and cancel_event.is_set():
+            logger.warning(MSG_CANCELLED)
+            break
+
+        # Calculate progress range for this file
+        start_prog = i / total
+        file_weight = 1.0 / total
+
+        file_prog_cb = create_file_progress_cb(
+            progress_cb, start_prog, file_weight, f.name
+        )
+
+        if progress_cb:
+            progress_cb(start_prog, f"Converting {f.name}...")
+
+        if f.suffix.lower() == ".3ds":
+            dest = f.with_suffix(".cia")
+            if dest.exists():
+                logger.info(f"Skipping {f.name}, CIA already exists.")
+                skipped += 1
+                continue
+
+            logger.info(f"Converting {f.name} -> {dest.name}")
+            try:
+                success = convert_to_cia(
+                    f, dest, dry_run=dry_run, progress_cb=file_prog_cb
+                )
+                if success:
+                    converted += 1
+                else:
+                    failed += 1
+                    logger.error(f"Failed to convert {f.name}")
+            except FileNotFoundError as e:
+                logger.error(str(e))
+                return f"Conversion failed: {e}"
+            except Exception as e:
+                failed += 1
+                logger.error(f"Exception converting {f.name}: {e}")
+
+    if progress_cb:
+        progress_cb(1.0, "3DS -> CIA Conversion complete")
+
+    return f"Conversion complete. Converted: {converted}, Failed: {failed}, Skipped: {skipped}"
+
+
+def worker_n3ds_decrypt(
+    base_path: Path,
+    args: Any,
+    log_cb: Callable[[str], None],
+    list_files_fn: Callable[[Path], list[Path]],
+) -> str:
+    """Worker function for 3DS decryption."""
+    logger = GuiLogger(log_cb)
+
+    target_dir = find_target_dir(base_path, N3DS_SUBDIRS)
+    if not target_dir:
+        return MSG_N3DS_DIR_NOT_FOUND
+
+    logger.info(f"Decrypting 3DS content in {target_dir}...")
+
+    decrypted = 0
+    failed = 0
+    skipped = 0
+
+    files = list_files_fn(target_dir)
+    total = len(files)
+    progress_cb = getattr(args, "progress_callback", None)
+    cancel_event = getattr(args, "cancel_event", None)
+    dry_run = getattr(args, "dry_run", False)
+
+    for i, f in enumerate(files):
+        if cancel_event and cancel_event.is_set():
+            logger.warning(MSG_CANCELLED)
+            break
+
+        # Calculate progress range for this file
+        start_prog = i / total
+        file_weight = 1.0 / total
+
+        file_prog_cb = create_file_progress_cb(
+            progress_cb, start_prog, file_weight, f.name
+        )
+
+        if progress_cb:
+            progress_cb(start_prog, f"Decrypting {f.name}...")
+
+        if f.suffix.lower() == ".3ds":
+            dest = f.with_name(f.stem + "_decrypted.3ds")
+            if dest.exists():
+                logger.info(f"Skipping {f.name}, decrypted file already exists.")
+                skipped += 1
+                continue
+
+            logger.info(f"Decrypting {f.name} -> {dest.name}")
+            try:
+                success = decrypt_3ds(
+                    f, dest, dry_run=dry_run, progress_cb=file_prog_cb
+                )
+                if success:
+                    decrypted += 1
+                else:
+                    failed += 1
+                    logger.error(f"Failed to decrypt {f.name} (Tool not implemented/found)")
+            except FileNotFoundError as e:
+                logger.error(str(e))
+                return f"Decryption failed: {e}"
+            except Exception as e:
+                failed += 1
+                logger.error(f"Exception decrypting {f.name}: {e}")
+
+    if progress_cb:
+        progress_cb(1.0, "3DS Decryption complete")
+
+    return f"Decryption complete. Decrypted: {decrypted}, Failed: {failed}, Skipped: {skipped}"

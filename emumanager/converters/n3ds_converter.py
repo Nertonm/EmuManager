@@ -65,3 +65,55 @@ def decompress_7z(
         return True
     except Exception:
         return False
+
+
+def decrypt_3ds(
+    source: Path,
+    dest: Path,
+    dry_run: bool = False,
+    progress_cb: Optional[Callable[[float, str], None]] = None,
+) -> bool:
+    """
+    Decrypt 3DS file using ctrtool (if available).
+    Note: This is a placeholder for actual decryption logic which is complex.
+    It currently checks for 'ctrtool' availability.
+    """
+    ctrtool = find_tool("ctrtool")
+    if not ctrtool:
+        raise FileNotFoundError("ctrtool not found")
+
+    # TODO: Implement actual decryption command.
+    # This usually involves extracting NCCH partitions and rebuilding,
+    # or using a specific flag if supported.
+    # For now, we'll just log that we found the tool.
+
+    if dry_run:
+        return True
+
+    return False
+
+
+def convert_to_cia(
+    source: Path,
+    dest: Path,
+    dry_run: bool = False,
+    progress_cb: Optional[Callable[[float, str], None]] = None,
+) -> bool:
+    """
+    Convert 3DS to CIA using 3dsconv (if available) or makerom/ctrtool.
+    """
+    # Priority 1: 3dsconv (Python script often in path)
+    conv_tool = find_tool("3dsconv")
+    if conv_tool:
+        cmd = [str(conv_tool), "--output", str(dest), "--overwrite", str(source)]
+        if dry_run:
+            return True
+        try:
+            run_cmd(cmd, check=True)
+            return dest.exists()
+        except Exception:
+            return False
+
+    # Priority 2: makerom (complex usage, requires extraction first)
+    # For this iteration, we will require 3dsconv for CIA conversion.
+    raise FileNotFoundError("3dsconv tool not found")

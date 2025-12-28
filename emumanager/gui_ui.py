@@ -624,10 +624,18 @@ class Ui_MainWindow:
         self.btn_n3ds_decompress = qt.QPushButton("Decompress from 7z")
         self.btn_n3ds_decompress.setToolTip("Decompress .7z to original format")
 
+        self.btn_n3ds_convert_cia = qt.QPushButton("Convert 3DS to CIA")
+        self.btn_n3ds_convert_cia.setToolTip("Convert .3ds files to .cia using 3dsconv")
+
+        self.btn_n3ds_decrypt = qt.QPushButton("Decrypt 3DS")
+        self.btn_n3ds_decrypt.setToolTip("Decrypt .3ds files (requires ctrtool)")
+
         grp_n3ds_layout.addWidget(self.btn_n3ds_organize)
         grp_n3ds_layout.addWidget(self.btn_n3ds_verify)
         grp_n3ds_layout.addWidget(self.btn_n3ds_compress)
         grp_n3ds_layout.addWidget(self.btn_n3ds_decompress)
+        grp_n3ds_layout.addWidget(self.btn_n3ds_convert_cia)
+        grp_n3ds_layout.addWidget(self.btn_n3ds_decrypt)
 
         grp_n3ds.setLayout(grp_n3ds_layout)
         n3ds_layout.addWidget(grp_n3ds)
