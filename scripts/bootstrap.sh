@@ -77,12 +77,33 @@ install_arch_deps() {
     fi
 }
 
+install_fedora_deps() {
+    MISSING_PACKAGES=""
+    if ! command_exists clamscan; then MISSING_PACKAGES="$MISSING_PACKAGES clamav"; fi
+    if ! command_exists dolphin-tool; then MISSING_PACKAGES="$MISSING_PACKAGES dolphin-emu"; fi
+    if ! command_exists chdman; then MISSING_PACKAGES="$MISSING_PACKAGES mame-tools"; fi
+    if ! command_exists maxcso; then MISSING_PACKAGES="$MISSING_PACKAGES maxcso"; fi
+    if ! command_exists git; then MISSING_PACKAGES="$MISSING_PACKAGES git"; fi
+    if ! command_exists make; then MISSING_PACKAGES="$MISSING_PACKAGES make automake gcc gcc-c++"; fi
+
+    if [ ! -z "$MISSING_PACKAGES" ]; then
+        echo -e "Installing missing packages: ${RED}$MISSING_PACKAGES${NC}"
+        echo "Sudo access required for installation."
+        sudo dnf install -y $MISSING_PACKAGES
+    else
+        echo -e "${GREEN}All system packages installed.${NC}"
+    fi
+}
+
 case "$DISTRO" in
     ubuntu|debian|pop|mint|kali)
         install_debian_deps
         ;;
     arch|manjaro|endeavouros)
         install_arch_deps
+        ;;
+    fedora|rhel|centos)
+        install_fedora_deps
         ;;
     *)
         echo -e "${RED}Unsupported or unknown distribution: $DISTRO${NC}"
@@ -143,6 +164,13 @@ fi
 # Install nsz explicitly as it might not be in requirements.txt
 echo "Installing nsz..."
 pip install nsz
+
+# Final check for dolphin-tool
+if ! command_exists dolphin-tool && ! command_exists dolphin-emu-tool; then
+    echo -e "\n${RED}WARNING: dolphin-tool not found!${NC}"
+    echo "GameCube/Wii compression/decompression will not work."
+    echo "Please ensure 'dolphin-emu' is installed and 'dolphin-tool' is in your PATH."
+fi
 
 echo -e "\n${GREEN}=== Bootstrap Complete! ===${NC}"
 echo "To start the manager, run:"

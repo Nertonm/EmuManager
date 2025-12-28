@@ -20,6 +20,9 @@ from .gui_workers import (
     worker_compress_single,
     worker_decompress_single,
     worker_dolphin_convert,
+    worker_dolphin_decompress_single,
+    worker_dolphin_recompress_single,
+    worker_dolphin_compress_single,
     worker_dolphin_organize,
     worker_dolphin_verify,
     worker_hash_verify,
@@ -43,6 +46,7 @@ from .gui_workers import (
     worker_switch_decompress,
 )
 from emumanager.workers.distributor import worker_distribute_root
+from emumanager.verification.hasher import calculate_hashes
 
 # Constants
 MSG_NO_ROM = "No ROM selected"
@@ -115,6 +119,8 @@ class MainWindowBase:
         # Alias common widgets for convenience and compatibility
         self.log = self.ui.log
         self.status = self.ui.statusbar
+        self.rom_list = self.ui.rom_list
+        self.sys_list = self.ui.sys_list
 
         # Alias settings widgets
         self.chk_dry_run = self.ui.chk_dry_run
@@ -575,54 +581,80 @@ class MainWindowBase:
     def _setup_rom_context_menu(self):
         """Add a context menu to the ROM list for quick actions."""
         qt = self._qtwidgets
+        core = self._qtcore
         try:
+            # Use QtCore.Qt for constants
+            Qt = core.Qt
             policy = (
-                qt.Qt.ContextMenuPolicy.CustomContextMenu
-                if hasattr(qt.Qt, "ContextMenuPolicy")
-                else qt.Qt.CustomContextMenu
+                Qt.ContextMenuPolicy.CustomContextMenu
+                if hasattr(Qt, "ContextMenuPolicy")
+                else Qt.CustomContextMenu
             )
             self.ui.rom_list.setContextMenuPolicy(policy)
 
             def _show_menu(pos):
-                menu = qt.QMenu(self.ui.rom_list)
-                a1 = menu.addAction("Compress")
-                a2 = menu.addAction("Recompress")
-                a3 = menu.addAction("Decompress")
-                menu.addSeparator()
-                a4 = menu.addAction("Open Folder")
-                a5 = menu.addAction("Copy Path")
-                act = menu.exec(self.ui.rom_list.mapToGlobal(pos))
-                if act == a1:
-                    self.on_compress_selected()
-                elif act == a2:
-                    self.on_recompress_selected()
-                elif act == a3:
-                    self.on_decompress_selected()
-                elif act == a4:
-                    self._open_selected_rom_folder()
-                elif act == a5:
-                    self._copy_selected_rom_path()
+                try:
+                    menu = qt.QMenu(self.ui.rom_list)
+                    
+                    # Actions requested: Delete, Compress, Verify, Decompress
+                    a_del = menu.addAction("Delete")
+                    menu.addSeparator()
+                    a_comp = menu.addAction("Compress")
+                    a_recomp = menu.addAction("Recompress")
+                    a_decomp = menu.addAction("Decompress")
+                    menu.addSeparator()
+                    a_verify = menu.addAction("Verify (Calc Hash)")
+                    menu.addSeparator()
+                    a_open = menu.addAction("Open Folder")
+                    a_copy = menu.addAction("Copy Path")
+                    
+                    # Use exec_ if available (PyQt5/PySide2), else exec (PyQt6/PySide6)
+                    exec_func = menu.exec if hasattr(menu, "exec") else menu.exec_
+                    
+                    act = exec_func(self.ui.rom_list.mapToGlobal(pos))
+                    
+                    if act == a_del:
+                        self.on_delete_selected()
+                    elif act == a_comp:
+                        self.on_compress_selected()
+                    elif act == a_recomp:
+                        self.on_recompress_selected()
+                    elif act == a_decomp:
+                        self.on_decompress_selected()
+                    elif act == a_verify:
+                        self.on_verify_selected()
+                    elif act == a_open:
+                        self._open_selected_rom_folder()
+                    elif act == a_copy:
+                        self._copy_selected_rom_path()
+                except Exception as e:
+                    self.log_msg(f"Error showing context menu: {e}")
 
             self.ui.rom_list.customContextMenuRequested.connect(_show_menu)
-        except Exception:
-            pass
+            self.log_msg("Context menu setup complete")
+        except Exception as e:
+            self.log_msg(f"Failed to setup context menu: {e}")
 
     def _setup_verification_context_menu(self):
         """Context menu for verification results to copy hashes or open location."""
         qt = self._qtwidgets
+        core = self._qtcore
         try:
             if not hasattr(self.ui, "table_results"):
                 return
+            
+            Qt = core.Qt
             policy = (
-                qt.Qt.ContextMenuPolicy.CustomContextMenu
-                if hasattr(qt.Qt, "ContextMenuPolicy")
-                else qt.Qt.CustomContextMenu
+                Qt.ContextMenuPolicy.CustomContextMenu
+                if hasattr(Qt, "ContextMenuPolicy")
+                else Qt.CustomContextMenu
             )
             self.ui.table_results.setContextMenuPolicy(policy)
 
             def _show_menu(pos):
                 menu, actions = self._build_verification_menu(qt)
-                act = menu.exec(self.ui.table_results.mapToGlobal(pos))
+                exec_func = menu.exec if hasattr(menu, "exec") else menu.exec_
+                act = exec_func(self.ui.table_results.mapToGlobal(pos))
                 row = self.ui.table_results.currentRow()
                 results = getattr(self, "_last_verify_results", [])
                 if 0 <= row < len(results):
@@ -1170,9 +1202,10 @@ class MainWindowBase:
             
             # Calculate total files (approximate)
             total_files = 0
+            roms_root = self._manager.get_roms_dir(self._last_base)
             for sys_name in systems:
                 try:
-                    p = self._last_base / "roms" / sys_name
+                    p = roms_root / sys_name
                     # Count files recursively
                     total_files += sum(1 for _ in p.rglob("*") if _.is_file())
                 except Exception:
@@ -1243,6 +1276,10 @@ class MainWindowBase:
             else:
                 try:
                     self.log_msg(f"Added ROM -> {result}")
+                    # Refresh list to show new file
+                    self.on_list()
+                    # Update dashboard stats
+                    self._update_dashboard_stats()
                 except Exception:
                     pass
             self._set_ui_enabled(True)
@@ -1252,19 +1289,22 @@ class MainWindowBase:
 
     def _select_file_dialog(self, title: str) -> Optional[Path]:
         qt = self._qtwidgets
-        dlg = qt.QFileDialog(self.window, title)
-        try:
-            dlg.setFileMode(qt.QFileDialog.FileMode.ExistingFile)
-        except AttributeError:
-            dlg.setFileMode(qt.QFileDialog.ExistingFile)
-        if dlg.exec():
-            return Path(dlg.selectedFiles()[0])
+        # Use static method for better compatibility
+        fname, _ = qt.QFileDialog.getOpenFileName(self.window, title)
+        if fname:
+            return Path(fname)
         return None
 
     def _select_system_dialog(self, src: Path, base: Path) -> Optional[str]:
         qt = self._qtwidgets
         guessed = self._manager.guess_system_for_file(src)
         systems = self._manager.cmd_list_systems(base)
+        
+        # If no systems found (empty library), populate with known systems
+        if not systems:
+            from emumanager.config import EXT_TO_SYSTEM
+            systems = sorted(list(set(EXT_TO_SYSTEM.values())))
+            
         items = sorted(systems)
         idx = 0
         if guessed:
@@ -1392,15 +1432,23 @@ class MainWindowBase:
         if not self._last_base:
             return
         try:
-            roms_dir = Path(self._last_base) / "roms" / system
+            # Use manager's logic to find roms dir
+            roms_root = self._manager.get_roms_dir(self._last_base)
+            roms_dir = roms_root / system
+            
+            self.log_msg(f"Listing ROMs for {system} in {roms_dir}")
+            
             files = []
             if roms_dir.exists():
-                # Recursively find files to support subfolders (A-M, N-Z, etc)
-                list_fn = self._get_list_files_fn()
-                full_files = list_fn(roms_dir)
+                # Always list recursively for the UI so users can see organized games
+                # regardless of the "Recursive" checkbox state (which controls processing).
+                full_files = self._list_files_recursive(roms_dir)
                 files = [p.relative_to(roms_dir) for p in full_files]
                 # Store for filtering
                 self._current_roms = [str(p) for p in files]
+                self.log_msg(f"Found {len(files)} files.")
+            else:
+                self.log_msg(f"Directory not found: {roms_dir}")
 
             if self.rom_list is not None:
                 self.rom_list.clear()
@@ -1408,6 +1456,8 @@ class MainWindowBase:
                     self.rom_list.addItem(str(f))
         except Exception as e:
             self.log_msg(f"Error listing ROMs: {e}")
+            if hasattr(self, "logger"):
+                self.logger.exception("Error listing ROMs")
 
     def _on_filter_text(self, text: str):
         try:
@@ -1445,24 +1495,32 @@ class MainWindowBase:
                 self.log_msg(MSG_NO_SYSTEM)
                 return
             system = sys_item.text()
-            filepath = Path(self._last_base) / "roms" / system / rom_name
+            roms_root = self._manager.get_roms_dir(self._last_base)
+            filepath = roms_root / system / rom_name
+            
+            # Debug logging for path resolution
+            self.log_msg(f"Action: Compress | Base: {self._last_base} | Root: {roms_root} | File: {filepath}")
+            
             if not filepath.exists():
                 self.log_msg(f"File not found: {filepath}")
                 return
 
             # Ensure environment is ready
             self._ensure_env(self._last_base)
-            if not self._env.get("TOOL_NSZ"):
-                self.log_msg(MSG_NSZ_MISSING)
-                return
-
             args = self._get_common_args()
-            # Single file compression usually doesn't remove original unless specified,
-            # but let's respect the checkbox if it's checked.
-            # The GUI checkbox chk_rm_originals is used in _get_common_args.
 
-            def _work():
-                return worker_compress_single(filepath, self._env, args, self.log_msg)
+            # Dispatch based on system
+            if system.lower() in ("gamecube", "wii"):
+                # Dolphin Compression
+                def _work():
+                    return worker_dolphin_compress_single(filepath, self._env, args, self.log_msg)
+            else:
+                # Default (Switch) Compression
+                if not self._env.get("TOOL_NSZ"):
+                    self.log_msg(MSG_NSZ_MISSING)
+                    return
+                def _work():
+                    return worker_compress_single(filepath, self._env, args, self.log_msg)
 
             def _done(res):
                 if isinstance(res, Exception):
@@ -1493,21 +1551,31 @@ class MainWindowBase:
                 self.log_msg(MSG_NO_SYSTEM)
                 return
             system = sys_item.text()
-            filepath = Path(self._last_base) / "roms" / system / rom_name
+            roms_root = self._manager.get_roms_dir(self._last_base)
+            filepath = roms_root / system / rom_name
+            
+            self.log_msg(f"Action: Recompress | File: {filepath}")
+            
             if not filepath.exists():
                 self.log_msg(f"File not found: {filepath}")
                 return
 
             # Ensure environment is ready
             self._ensure_env(self._last_base)
-            if not self._env.get("TOOL_NSZ"):
-                self.log_msg(MSG_NSZ_MISSING)
-                return
-
             args = self._get_common_args()
 
-            def _work():
-                return worker_recompress_single(filepath, self._env, args, self.log_msg)
+            # Dispatch based on system
+            if system.lower() in ("gamecube", "wii"):
+                # Dolphin Recompression
+                def _work():
+                    return worker_dolphin_recompress_single(filepath, self._env, args, self.log_msg)
+            else:
+                # Default (Switch) Recompression
+                if not self._env.get("TOOL_NSZ"):
+                    self.log_msg(MSG_NSZ_MISSING)
+                    return
+                def _work():
+                    return worker_recompress_single(filepath, self._env, args, self.log_msg)
 
             def _done(res):
                 if isinstance(res, Exception):
@@ -1538,21 +1606,31 @@ class MainWindowBase:
                 self.log_msg(MSG_NO_SYSTEM)
                 return
             system = sys_item.text()
-            filepath = Path(self._last_base) / "roms" / system / rom_name
+            roms_root = self._manager.get_roms_dir(self._last_base)
+            filepath = roms_root / system / rom_name
+            
+            self.log_msg(f"Action: Decompress | File: {filepath}")
+            
             if not filepath.exists():
                 self.log_msg(f"File not found: {filepath}")
                 return
 
             # Ensure environment is ready
             self._ensure_env(self._last_base)
-            if not self._env.get("TOOL_NSZ"):
-                self.log_msg(MSG_NSZ_MISSING)
-                return
-
             args = self._get_common_args()
 
-            def _work():
-                return worker_decompress_single(filepath, self._env, args, self.log_msg)
+            # Dispatch based on system
+            if system.lower() in ("gamecube", "wii"):
+                # Dolphin Decompression
+                def _work():
+                    return worker_dolphin_decompress_single(filepath, self._env, args, self.log_msg)
+            else:
+                # Default (Switch) Decompression
+                if not self._env.get("TOOL_NSZ"):
+                    self.log_msg(MSG_NSZ_MISSING)
+                    return
+                def _work():
+                    return worker_decompress_single(filepath, self._env, args, self.log_msg)
 
             def _done(res):
                 if isinstance(res, Exception):
@@ -2478,25 +2556,88 @@ class MainWindowBase:
         # Placeholder
         self.on_health_check()
 
-    def _update_logger(self, base_path: Path):
-        """Update logger to write to a file in the new base directory."""
-        if not hasattr(self, "logger"):
+    def on_delete_selected(self):
+        if not self.rom_list:
             return
-
-        # Remove existing file handlers
-        handlers_to_remove = [h for h in self.logger.handlers if isinstance(h, logging.FileHandler)]
-        for h in handlers_to_remove:
-            self.logger.removeHandler(h)
-
-        # Add new file handler
         try:
-            logs_dir = base_path / "logs"
-            logs_dir.mkdir(parents=True, exist_ok=True)
-            log_file = logs_dir / "session.log"
+            sel_items = self.rom_list.selectedItems()
+            if not sel_items:
+                self.log_msg(MSG_NO_ROM)
+                return
             
-            fh = logging.FileHandler(str(log_file), encoding="utf-8")
-            fh.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
-            self.logger.addHandler(fh)
-            self.logger.info(f"Logging to file: {log_file}")
+            sys_item = self.sys_list.currentItem() if self.sys_list else None
+            if not sys_item:
+                self.log_msg(MSG_NO_SYSTEM)
+                return
+            system = sys_item.text()
+            roms_root = self._manager.get_roms_dir(self._last_base)
+            
+            files_to_delete = []
+            for item in sel_items:
+                filepath = roms_root / system / item.text()
+                if filepath.exists():
+                    files_to_delete.append(filepath)
+            
+            if not files_to_delete:
+                return
+
+            msg = f"Are you sure you want to delete {len(files_to_delete)} files?"
+            if not self._ask_yes_no("Confirm Delete", msg):
+                return
+
+            count = 0
+            for fp in files_to_delete:
+                try:
+                    fp.unlink()
+                    count += 1
+                    self.log_msg(f"Deleted: {fp.name}")
+                except Exception as e:
+                    self.log_msg(f"Failed to delete {fp.name}: {e}")
+            
+            if count > 0:
+                self._populate_roms(system)
+                self._update_dashboard_stats()
+
         except Exception as e:
-            self.logger.error(f"Failed to setup log file: {e}")
+            self.log_msg(f"Error deleting files: {e}")
+
+    def on_verify_selected(self):
+        if not self.rom_list:
+            return
+        try:
+            sel = self.rom_list.currentItem()
+            if sel is None:
+                self.log_msg(MSG_NO_ROM)
+                return
+            rom_name = sel.text()
+            sys_item = self.sys_list.currentItem() if self.sys_list else None
+            if not sys_item:
+                self.log_msg(MSG_NO_SYSTEM)
+                return
+            system = sys_item.text()
+            roms_root = self._manager.get_roms_dir(self._last_base)
+            filepath = roms_root / system / rom_name
+            
+            if not filepath.exists():
+                self.log_msg(f"File not found: {filepath}")
+                return
+
+            self.log_msg(f"Calculating hashes for {rom_name}...")
+
+            def _work():
+                return calculate_hashes(filepath)
+
+            def _done(res):
+                if not res:
+                    self.log_msg(f"Failed to calculate hashes for {rom_name}")
+                else:
+                    self.log_msg(f"Hashes for {rom_name}:")
+                    for algo, val in res.items():
+                        self.log_msg(f"  {algo.upper()}: {val}")
+                self._set_ui_enabled(True)
+
+            self._set_ui_enabled(False)
+            self._run_in_background(_work, _done)
+
+        except Exception as e:
+            self.log_msg(f"Error verifying file: {e}")

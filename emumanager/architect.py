@@ -95,6 +95,14 @@ Wiki / Setup Guide: {wiki_url}
     (path / "_INFO_TECNICA.txt").write_text(content, encoding="utf-8")
 
 
+def get_roms_dir(base_dir: Path) -> Path:
+    """Resolve the roms directory given a base path."""
+    # If base_dir is already the 'roms' folder, use it directly
+    if base_dir.name == "roms":
+        return base_dir
+    # Otherwise, append 'roms'
+    return base_dir / "roms"
+
 def setup_retro(
     base_dir: Path,
     sys: str,
@@ -104,7 +112,7 @@ def setup_retro(
     bios_status: str,
     logger: logging.Logger,
 ):
-    path = base_dir / "roms" / sys
+    path = get_roms_dir(base_dir) / sys
     folders = [
         "# Favoritos",
         "# Traduzidos PT-BR",
@@ -135,7 +143,7 @@ def setup_moderno(
     folders: Iterable[str],
     logger: logging.Logger,
 ):
-    path = base_dir / "roms" / sys
+    path = get_roms_dir(base_dir) / sys
     for sub in folders:
         (path / sub).mkdir(parents=True, exist_ok=True)
         # Create favorites where it makes sense
@@ -154,7 +162,7 @@ def setup_arcade(
     bios_status: str,
     logger: logging.Logger,
 ):
-    path = base_dir / "roms" / sys
+    path = get_roms_dir(base_dir) / sys
     path.mkdir(parents=True, exist_ok=True)
     notas = (
         "ATENÇÃO:\n"

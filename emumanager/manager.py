@@ -145,7 +145,7 @@ def cmd_init(base_dir: Path, dry_run: bool) -> int:
 
 def cmd_list_systems(base_dir: Path):
     logger = get_logger("manager", base_dir=base_dir)
-    roms = base_dir / "roms"
+    roms = get_roms_dir(base_dir)
     if not roms.exists():
         logger.debug("No roms directory at %s", roms)
         return []
@@ -171,7 +171,8 @@ def cmd_add_rom(
         logger.error("Unable to guess system for file: %s", src)
         raise ValueError("Unable to guess system for file; please pass --system")
 
-    dest_dir = base_dir / "roms" / target_sys
+    roms_dir = get_roms_dir(base_dir)
+    dest_dir = roms_dir / target_sys
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     dest = dest_dir / src.name
@@ -185,6 +186,24 @@ def cmd_add_rom(
         shutil.copy2(str(src), str(dest))
 
     return dest
+
+
+def get_roms_dir(base_dir: Path) -> Path:
+    """Resolve the roms directory given a base path.
+
+    Handles cases where base_dir is the project root OR the roms folder itself.
+    """
+    # 1. If base_dir looks like the roms folder itself, prefer it.
+    # This prevents issues if a 'roms' folder accidentally exists inside the roms folder.
+    if base_dir.name == "roms":
+        return base_dir
+
+    # 2. If base_dir/roms exists, use it.
+    if (base_dir / "roms").is_dir():
+        return base_dir / "roms"
+
+    # 3. Fallback: assume standard structure (base/roms)
+    return base_dir / "roms"
 
 
 def parse_args(argv: List[str] | None = None) -> argparse.Namespace:

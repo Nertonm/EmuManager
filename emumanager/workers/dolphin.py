@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from typing import Any, Callable, Optional
+import shutil
+import tempfile
 
 from emumanager.converters.dolphin_converter import DolphinConverter
 from emumanager.gamecube import database as gc_db
@@ -62,7 +64,7 @@ def worker_dolphin_convert(
     if not targets:
         return MSG_NO_GC_WII
 
-    converter = DolphinConverter()
+    converter = DolphinConverter(logger=logger)
     if not converter.check_tool():
         return "Error: 'dolphin-tool' not found. Please install Dolphin Emulator."
 
@@ -209,7 +211,7 @@ def worker_dolphin_verify(
     if not targets:
         return MSG_NO_GC_WII
 
-    converter = DolphinConverter()
+    converter = DolphinConverter(logger=logger)
     if not converter.check_tool():
         return "Error: 'dolphin-tool' not found. Please install Dolphin Emulator."
 
@@ -423,3 +425,134 @@ def worker_dolphin_organize(
         f"Organization complete. Renamed: {renamed}, "
         f"Skipped: {skipped}, Errors: {errors}"
     )
+
+
+def worker_dolphin_decompress_single(
+    filepath: Path, env: dict, args: Any, log_cb: Callable[[str], None]
+) -> Optional[Path]:
+    """Worker function for decompressing a single GameCube/Wii file (RVZ -> ISO)."""
+    logger = GuiLogger(log_cb)
+
+    converter = DolphinConverter(logger=logger)
+    if not converter.check_tool():
+        logger.error("Error: 'dolphin-tool' not found.")
+        return None
+
+    if filepath.suffix.lower() == ".iso":
+        logger.info(f"{filepath.name} is already an ISO.")
+        return filepath
+
+    iso_file = filepath.with_suffix(".iso")
+    if iso_file.exists():
+        logger.info(f"Target ISO {iso_file.name} already exists.")
+        return iso_file
+
+    success = converter.convert_to_iso(filepath, iso_file)
+    if success:
+        if getattr(args, "rm_originals", False):
+            try:
+                filepath.unlink()
+                logger.info(f"Removed original: {filepath.name}")
+            except Exception as e:
+                logger.error(f"Failed to remove original {filepath.name}: {e}")
+        return iso_file
+    return None
+
+
+def worker_dolphin_recompress_single(
+    filepath: Path, env: dict, args: Any, log_cb: Callable[[str], None]
+) -> Optional[Path]:
+    """Worker function for recompressing a single GameCube/Wii file (RVZ -> RVZ)."""
+    logger = GuiLogger(log_cb)
+
+    converter = DolphinConverter(logger=logger)
+    if not converter.check_tool():
+        logger.error("Error: 'dolphin-tool' not found.")
+        return None
+
+    # Create a temp file for the output
+    # We use the same directory to ensure atomic move if possible, or at least same filesystem
+    with tempfile.NamedTemporaryFile(dir=filepath.parent, suffix=".rvz", delete=False) as tmp:
+        temp_output = Path(tmp.name)
+
+    try:
+        # Use user-specified level if available, else default to 19 for recompress
+        level = getattr(args, "level", 19)
+        
+        logger.info(f"Recompressing {filepath.name} with zstd level {level}...")
+        success = converter.convert_to_rvz(
+            filepath,
+            temp_output,
+            compression="zstd",
+            level=level
+        )
+
+        if success:
+            logger.info("Verifying recompressed file...")
+            if converter.verify_rvz(temp_output):
+                logger.info(f"Recompression successful. Replacing {filepath.name}")
+
+                # Backup original? Maybe not for "Recompress" action unless requested.
+                # For now, just replace.
+                shutil.move(str(temp_output), str(filepath))
+                return filepath
+            else:
+                logger.error("Verification of recompressed file failed.")
+                temp_output.unlink()
+                return None
+        else:
+            logger.error("Recompression failed.")
+            if temp_output.exists():
+                temp_output.unlink()
+            return None
+
+    except Exception as e:
+        logger.error(f"Error during recompression: {e}")
+        if temp_output.exists():
+            try:
+                temp_output.unlink()
+            except Exception:
+                pass
+        return None
+
+
+def worker_dolphin_compress_single(
+    filepath: Path, env: dict, args: Any, log_cb: Callable[[str], None]
+) -> Optional[Path]:
+    """Worker function for compressing a single GameCube/Wii file (ISO -> RVZ)."""
+    logger = GuiLogger(log_cb)
+
+    converter = DolphinConverter(logger=logger)
+    if not converter.check_tool():
+        logger.error("Error: 'dolphin-tool' not found.")
+        return None
+
+    if filepath.suffix.lower() == ".rvz":
+        logger.info(f"{filepath.name} is already an RVZ.")
+        return filepath
+
+    rvz_file = filepath.with_suffix(".rvz")
+    if rvz_file.exists():
+        logger.info(f"Target RVZ {rvz_file.name} already exists.")
+        return rvz_file
+
+    # Use user-specified level if available, else default to 5
+    level = getattr(args, "level", 5)
+    
+    # Default compression settings
+    success = converter.convert_to_rvz(
+        filepath,
+        rvz_file,
+        compression="zstd",
+        level=level
+    )
+    
+    if success:
+        if getattr(args, "rm_originals", False):
+            try:
+                filepath.unlink()
+                logger.info(f"Removed original: {filepath.name}")
+            except Exception as e:
+                logger.error(f"Failed to remove original {filepath.name}: {e}")
+        return rvz_file
+    return None

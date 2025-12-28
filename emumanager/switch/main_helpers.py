@@ -293,11 +293,20 @@ def build_new_filename(
     return name + suffix
 
 
-def get_dest_folder(roms_dir: Path, region: str) -> Path:
-    # Current behavior: simple region-based folder name with truncation
-    folder_name = f"{region}"
-    if len(folder_name) > 200:
-        folder_name = folder_name[:200].rstrip()
+def get_dest_folder(roms_dir: Path, region: str, type_str: str = "Base") -> Path:
+    """Determine destination folder based on content type."""
+    # Map type to folder name
+    # Base -> Base Games (XCI-NSP)
+    # UPD/DLC -> Updates & DLC (NSP-NSZ)
+    
+    if type_str == "Base":
+        folder_name = "Base Games (XCI-NSP)"
+    elif type_str in ("UPD", "DLC"):
+        folder_name = "Updates & DLC (NSP-NSZ)"
+    else:
+        # Fallback
+        folder_name = "Base Games (XCI-NSP)"
+        
     return roms_dir / folder_name
 
 
@@ -358,7 +367,9 @@ def process_one_file(fpath: Path, ctx: dict):
             fpath2.suffix,
             region if standardize else None,
         )
-        dest_folder = get_dest_folder(roms_dir, region)
+        
+        # Pass type to get_dest_folder
+        dest_folder = get_dest_folder(roms_dir, region, meta.get("type", "Base"))
         target_path = dest_folder / new_fname
 
         if fpath2 != target_path:
