@@ -1,6 +1,5 @@
-import shutil
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -64,7 +63,9 @@ def test_decrypt_3ds_no_tool(mock_find_tool):
 
 
 def test_convert_to_cia_success(mock_find_tool, mock_run_tool_with_progress):
-    mock_find_tool.side_effect = lambda x: Path(f"/usr/bin/{x}") if x == "3dsconv" else None
+    mock_find_tool.side_effect = (
+        lambda x: Path(f"/usr/bin/{x}") if x == "3dsconv" else None
+    )
     mock_run_tool_with_progress.return_value = True
 
     with patch("pathlib.Path.exists", return_value=True):

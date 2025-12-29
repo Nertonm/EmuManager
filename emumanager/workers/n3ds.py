@@ -272,7 +272,7 @@ def worker_n3ds_compress(
 
         if progress_cb:
             progress_cb(start_prog, f"Compressing {f.name}...")
-        
+
         print(f"DEBUG: Processing {f.name}, suffix={f.suffix}")
 
         if f.suffix.lower() in (".3ds", ".cia", ".3dz", ".cci"):
@@ -283,9 +283,7 @@ def worker_n3ds_compress(
                 continue
 
             logger.info(f"Compressing {f.name} -> {dest.name}")
-            success = compress_to_7z(
-                f, dest, dry_run=dry_run, progress_cb=file_prog_cb
-            )
+            success = compress_to_7z(f, dest, dry_run=dry_run, progress_cb=file_prog_cb)
             if success:
                 compressed += 1
                 if not dry_run:
@@ -300,7 +298,10 @@ def worker_n3ds_compress(
     if progress_cb:
         progress_cb(1.0, "3DS Compression complete")
 
-    return f"Compression complete. Compressed: {compressed}, Failed: {failed}, Skipped: {skipped}"
+    return (
+        f"Compression complete. Compressed: {compressed}, "
+        f"Failed: {failed}, Skipped: {skipped}"
+    )
 
 
 def worker_n3ds_decompress(
@@ -320,7 +321,7 @@ def worker_n3ds_decompress(
 
     decompressed = 0
     failed = 0
-    skipped = 0
+    skipped = 0  # noqa: F841
 
     files = list_files_fn(target_dir)
     total = len(files)
@@ -437,7 +438,10 @@ def worker_n3ds_convert_cia(
     if progress_cb:
         progress_cb(1.0, "3DS -> CIA Conversion complete")
 
-    return f"Conversion complete. Converted: {converted}, Failed: {failed}, Skipped: {skipped}"
+    return (
+        f"Conversion complete. Converted: {converted}, "
+        f"Failed: {failed}, Skipped: {skipped}"
+    )
 
 
 def worker_n3ds_decrypt(
@@ -497,7 +501,9 @@ def worker_n3ds_decrypt(
                     decrypted += 1
                 else:
                     failed += 1
-                    logger.error(f"Failed to decrypt {f.name} (Tool not implemented/found)")
+                    logger.error(
+                        f"Failed to decrypt {f.name} (Tool not implemented/found)"
+                    )
             except FileNotFoundError as e:
                 logger.error(str(e))
                 return f"Decryption failed: {e}"
@@ -508,7 +514,10 @@ def worker_n3ds_decrypt(
     if progress_cb:
         progress_cb(1.0, "3DS Decryption complete")
 
-    return f"Decryption complete. Decrypted: {decrypted}, Failed: {failed}, Skipped: {skipped}"
+    return (
+        f"Decryption complete. Decrypted: {decrypted}, "
+        f"Failed: {failed}, Skipped: {skipped}"
+    )
 
 
 def worker_n3ds_compress_single(
@@ -516,7 +525,7 @@ def worker_n3ds_compress_single(
 ) -> Optional[Path]:
     """Worker function for compressing a single 3DS file."""
     logger = GuiLogger(log_cb)
-    
+
     if filepath.suffix.lower() not in (".3ds", ".cia", ".3dz", ".cci"):
         logger.warning(f"Skipping {filepath.name}: Not a valid 3DS file.")
         return None
@@ -545,18 +554,18 @@ def worker_n3ds_decompress_single(
 ) -> Optional[Path]:
     """Worker function for decompressing a single 3DS file."""
     logger = GuiLogger(log_cb)
-    
+
     if filepath.suffix.lower() != ".7z":
         logger.warning(f"Skipping {filepath.name}: Not a 7z file.")
         return None
 
-    # We don't know the inner filename easily without listing, 
+    # We don't know the inner filename easily without listing,
     # but decompress_7z handles extraction to the same dir.
     logger.info(f"Decompressing {filepath.name}...")
-    
+
     # decompress_7z returns list of extracted files or None
     extracted = decompress_7z(filepath, filepath.parent)
-    
+
     if extracted:
         logger.info(f"Decompressed {len(extracted)} files.")
         if getattr(args, "rm_originals", False):

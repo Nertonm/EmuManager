@@ -111,7 +111,7 @@ def _process_ps2_file(
     # Check Cache for hashes
     cached_md5 = None
     cached_sha1 = None
-    
+
     try:
         entry = lib_db.get_entry(str(f.resolve()))
         if entry:
@@ -150,7 +150,7 @@ def _process_ps2_file(
             sha256=None,
             status=status,
             match_name=title,
-            dat_name=serial # Storing serial in dat_name for now
+            dat_name=serial,  # Storing serial in dat_name for now
         )
         lib_db.update_entry(new_entry)
     except OSError:

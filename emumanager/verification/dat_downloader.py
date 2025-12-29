@@ -6,7 +6,9 @@ from typing import List, Optional, Callable
 
 logger = logging.getLogger(__name__)
 
-GITHUB_API_BASE = "https://api.github.com/repos/libretro/libretro-database/contents/metadat"
+GITHUB_API_BASE = (
+    "https://api.github.com/repos/libretro/libretro-database/contents/metadat"
+)
 RAW_BASE = "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat"
 
 SOURCES = {
@@ -35,16 +37,16 @@ class DatDownloader:
 
         folder = SOURCES[source]
         url = f"{GITHUB_API_BASE}/{folder}"
-        
+
         try:
             logger.info(f"Fetching file list from {url}...")
             resp = self.session.get(url, timeout=10)
             resp.raise_for_status()
-            
+
             data = resp.json()
             files = [
-                item["name"] 
-                for item in data 
+                item["name"]
+                for item in data
                 if item["type"] == "file" and item["name"].endswith(".dat")
             ]
             return sorted(files)
@@ -69,7 +71,7 @@ class DatDownloader:
             logger.debug(f"Downloading {filename} from {url}...")
             resp = self.session.get(url, timeout=30)
             resp.raise_for_status()
-            
+
             dest_file.write_bytes(resp.content)
             logger.debug(f"Saved to {dest_file}")
             return dest_file
@@ -78,38 +80,39 @@ class DatDownloader:
             return None
 
     def download_all(
-        self, 
-        source: str, 
-        max_workers: int = 5, 
-        progress_callback: Optional[Callable[[str, int, int], None]] = None
+        self,
+        source: str,
+        max_workers: int = 5,
+        progress_callback: Optional[Callable[[str, int, int], None]] = None,
     ) -> int:
         """
         Download all available DATs for a source in parallel.
-        
+
         Args:
             source: 'no-intro' or 'redump'
             max_workers: Number of parallel downloads
             progress_callback: Function(filename, current, total) called on completion
-            
+
         Returns:
             Number of successfully downloaded files
         """
         files = self.list_available_dats(source)
         if not files:
             return 0
-            
+
         total = len(files)
         completed = 0
         success_count = 0
-        
-        logger.info(f"Starting download of {total} DATs for {source} with {max_workers} workers")
-        
+
+        logger.info(
+            f"Starting download of {total} DATs for {source} with {max_workers} workers"
+        )
+
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_file = {
-                executor.submit(self.download_dat, source, f): f 
-                for f in files
+                executor.submit(self.download_dat, source, f): f for f in files
             }
-            
+
             for future in as_completed(future_to_file):
                 filename = future_to_file[future]
                 completed += 1
@@ -119,8 +122,8 @@ class DatDownloader:
                         success_count += 1
                 except Exception as exc:
                     logger.error(f"{filename} generated an exception: {exc}")
-                
+
                 if progress_callback:
                     progress_callback(filename, completed, total)
-                    
+
         return success_count

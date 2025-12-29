@@ -150,7 +150,9 @@ def cmd_list_systems(base_dir: Path):
     if not roms.exists():
         logger.debug("No roms directory at %s", roms)
         return []
-    systems = sorted([p.name for p in roms.iterdir() if p.is_dir() and not p.name.startswith(".")])
+    systems = sorted(
+        [p.name for p in roms.iterdir() if p.is_dir() and not p.name.startswith(".")]
+    )
     logger.debug("Found systems: %s", systems)
     return systems
 
@@ -273,7 +275,9 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
 
     sp = sub.add_parser("update-dats", help="Download/Update DAT files")
     sp.add_argument("base_dir", nargs="?", default=BASE_DEFAULT)
-    sp.add_argument("--source", choices=["no-intro", "redump"], help="Limit to specific source")
+    sp.add_argument(
+        "--source", choices=["no-intro", "redump"], help="Limit to specific source"
+    )
 
     return p.parse_args(argv)
 

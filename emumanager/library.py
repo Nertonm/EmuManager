@@ -1,8 +1,8 @@
 import sqlite3
-import os
 from pathlib import Path
 from typing import Optional, List
 from dataclasses import dataclass
+
 
 @dataclass
 class LibraryEntry:
@@ -17,6 +17,7 @@ class LibraryEntry:
     status: str
     match_name: Optional[str]
     dat_name: Optional[str]
+
 
 class LibraryDB:
     def __init__(self, db_path: Path = Path("library.db")):
@@ -52,22 +53,33 @@ class LibraryDB:
 
     def update_entry(self, entry: LibraryEntry):
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT OR REPLACE INTO library 
                 (path, system, size, mtime, crc32, md5, sha1, sha256, status, match_name, dat_name)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                entry.path, entry.system, entry.size, entry.mtime,
-                entry.crc32, entry.md5, entry.sha1, entry.sha256,
-                entry.status, entry.match_name, entry.dat_name
-            ))
+            """,
+                (
+                    entry.path,
+                    entry.system,
+                    entry.size,
+                    entry.mtime,
+                    entry.crc32,
+                    entry.md5,
+                    entry.sha1,
+                    entry.sha256,
+                    entry.status,
+                    entry.match_name,
+                    entry.dat_name,
+                ),
+            )
             conn.commit()
-            
+
     def remove_entry(self, path: str):
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("DELETE FROM library WHERE path = ?", (path,))
             conn.commit()
-            
+
     def get_all_entries(self) -> List[LibraryEntry]:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute("SELECT * FROM library")

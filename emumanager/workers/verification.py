@@ -25,7 +25,7 @@ def worker_hash_verify(
     report = VerifyReport(text="")
 
     dat_path = getattr(args, "dat_path", None)
-    
+
     # Auto-discovery logic if no specific DAT is provided
     if not dat_path:
         dats_roots = getattr(args, "dats_roots", [])
@@ -33,25 +33,29 @@ def worker_hash_verify(
         single_root = getattr(args, "dats_root", None)
         if single_root:
             dats_roots.append(single_root)
-            
+
         # Try to infer system from base_path name (e.g. "snes", "ps2")
         system_name = base_path.name
-        
+
         if dats_roots and system_name:
             logger.info(f"Attempting to find DAT for system: {system_name}")
-            
+
             # Search in all roots
             for root in dats_roots:
-                if not root.exists(): continue
-                
+                if not root.exists():
+                    continue
+
                 found = find_dat_for_system(Path(root), system_name)
                 if found:
                     dat_path = found
                     logger.info(f"Auto-selected DAT: {found.name} (in {root})")
                     break
-            
+
             if not dat_path:
-                logger.warning(f"No matching DAT found for system '{system_name}' in {len(dats_roots)} locations")
+                logger.warning(
+                    f"No matching DAT found for system '{system_name}' "
+                    f"in {len(dats_roots)} locations"
+                )
 
     if not dat_path or not Path(dat_path).exists():
         report.text = "Error: No valid DAT file selected or found."
@@ -77,13 +81,13 @@ def worker_identify_all(
     """Worker function to identify files against ALL available DATs."""
     logger = GuiLogger(log_cb)
     report = VerifyReport(text="")
-    
+
     dats_roots = getattr(args, "dats_roots", [])
     # Backwards compatibility / fallback
     single_root = getattr(args, "dats_root", None)
     if single_root:
         dats_roots.append(single_root)
-        
+
     # Filter existing roots
     dats_roots = [r for r in dats_roots if r and r.exists()]
 
@@ -94,34 +98,34 @@ def worker_identify_all(
     # 1. Load all DATs
     master_db = dat_parser.DatDb()
     master_db.name = "Master DB"
-    
+
     dat_files_set = set()
     for root in dats_roots:
         dat_files_set.update(root.rglob("*.dat"))
         dat_files_set.update(root.rglob("*.xml"))
-        
+
     dat_files = sorted(list(dat_files_set))
-    
+
     if not dat_files:
         report.text = "No DAT files found."
         return report
-        
+
     logger.info(f"Loading {len(dat_files)} DAT files into memory...")
-    
+
     progress_cb = getattr(args, "progress_callback", None)
-    
+
     for i, dat_file in enumerate(dat_files):
         try:
             if progress_cb:
                 progress_cb(i / len(dat_files), f"Loading DAT: {dat_file.name}")
-                
+
             db = dat_parser.parse_dat_file(dat_file)
             dat_parser.merge_dbs(master_db, db)
         except Exception as e:
             logger.warning(f"Failed to parse {dat_file.name}: {e}")
-            
+
     logger.info(f"Master DB loaded. CRC entries: {len(master_db.crc_index)}")
-    
+
     return _run_verification(base_path, master_db, args, logger, list_files_fn)
 
 
@@ -155,7 +159,9 @@ def _run_verification(base_path, db, args, logger, list_files_fn) -> VerifyRepor
         start_prog = i / total
         file_weight = 1.0 / total
 
-        res = _verify_single_file(f, db, args, progress_cb, start_prog, file_weight, lib_db)
+        res = _verify_single_file(
+            f, db, args, progress_cb, start_prog, file_weight, lib_db
+        )
 
         if res.status == "VERIFIED":
             verified += 1
@@ -214,9 +220,17 @@ def _check_mismatch(db, crc, md5, sha1) -> Optional[str]:
 
 
 def _verify_single_file(
-    f: Path, db, args, progress_cb, start_prog, file_weight, lib_db: Optional[LibraryDB] = None
+    f: Path,
+    db,
+    args,
+    progress_cb,
+    start_prog,
+    file_weight,
+    lib_db: Optional[LibraryDB] = None,
 ) -> VerifyResult:
-    file_prog_cb = create_file_progress_cb(progress_cb, start_prog, file_weight, f.name)
+    file_prog_cb = create_file_progress_cb(
+        progress_cb, start_prog, file_weight, f.name
+    )
 
     # Check Library DB first
     if lib_db:
@@ -228,8 +242,11 @@ def _verify_single_file(
                 # Check if file hasn't changed (size and mtime)
                 if st.st_size == entry.size and abs(st.st_mtime - entry.mtime) < 1.0:
                     if progress_cb:
-                        progress_cb(start_prog + file_weight, f"Using cached result for {f.name}")
-                    
+                        progress_cb(
+                            start_prog + file_weight,
+                            f"Using cached result for {f.name}",
+                        )
+
                     return VerifyResult(
                         filename=f.name,
                         status=entry.status,
@@ -319,7 +336,7 @@ def worker_identify_single_file(
 ) -> str:
     """Identify a single file against a DAT database."""
     logger = GuiLogger(log_cb)
-    
+
     # Initialize LibraryDB
     lib_db = LibraryDB()
 
@@ -362,13 +379,13 @@ def worker_identify_single_file(
 
     matches = db.lookup(crc=crc, md5=md5, sha1=sha1)
     match = matches[0] if matches else None
-    
+
     # Update DB with result
     try:
         st = file_path.stat()
         status = "VERIFIED" if match else "UNKNOWN"
         match_name = match.game_name if match else None
-        
+
         new_entry = LibraryEntry(
             path=str(file_path.resolve()),
             system="unknown",

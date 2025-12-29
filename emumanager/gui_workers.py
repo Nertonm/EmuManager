@@ -50,9 +50,9 @@ from emumanager.workers.switch import (
     worker_switch_decompress,
 )
 from emumanager.workers.verification import (
-    worker_hash_verify, 
+    worker_hash_verify,
     worker_identify_single_file,
-    worker_identify_all
+    worker_identify_all,
 )
 
 __all__ = [

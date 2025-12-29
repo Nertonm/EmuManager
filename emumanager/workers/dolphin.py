@@ -142,7 +142,7 @@ def _verify_dolphin_file(
     cached_valid = None
     cached_md5 = None
     cached_sha1 = None
-    
+
     try:
         entry = lib_db.get_entry(str(f.resolve()))
         if entry:
@@ -152,7 +152,7 @@ def _verify_dolphin_file(
                     cached_valid = True
                 elif entry.status == "BAD_DUMP":
                     cached_valid = False
-                
+
                 cached_md5 = entry.md5
                 cached_sha1 = entry.sha1
     except (OSError, ValueError):

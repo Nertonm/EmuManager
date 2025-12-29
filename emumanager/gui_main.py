@@ -885,7 +885,7 @@ class MainWindowBase:
                         # Enable UI since we have a library
                         self._set_ui_enabled(True)
                         self.log_msg(f"Restored last library: {self._last_base}")
-                        
+
                         # Update logger to write to the new library's log folder
                         self._update_logger(self._last_base)
                     except Exception:
@@ -1135,7 +1135,7 @@ class MainWindowBase:
 
             # Verification Tab
             self.ui.btn_select_dat.setEnabled(enabled)
-            
+
             # Verify DAT button logic
             # It should be enabled if we have a DAT selected OR a library open
             # (for auto-discovery)
@@ -1661,8 +1661,6 @@ class MainWindowBase:
         args.standardize_names = self.chk_standardize_names.isChecked()
         return args
 
-
-
     def on_open_library(self):
         qt = self._qtwidgets
         dlg = qt.QFileDialog(self.window, "Select Library Directory")
@@ -1692,6 +1690,7 @@ class MainWindowBase:
                 self.on_list()
             except Exception:
                 pass
+
     def on_select_dat(self):
         qt = self._qtwidgets
         dlg = qt.QFileDialog(self.window, "Select DAT File")
@@ -1722,7 +1721,7 @@ class MainWindowBase:
             # Try to resolve system path
             p1 = self._last_base / system_name
             p2 = self._last_base / "roms" / system_name
-            
+
             if p1.exists():
                 target_path = p1
                 self.log_msg(f"Targeting system folder: {system_name}")
@@ -1927,7 +1926,6 @@ class MainWindowBase:
         except Exception as e:
             self.log_msg(f"Export CSV error: {e}")
 
-
     def _list_files_selected(self, root: Path) -> list[Path]:
         """Return only selected files from the UI, resolved to absolute paths."""
         if not self.rom_list or not self.sys_list:
@@ -2122,7 +2120,6 @@ class MainWindowBase:
         except Exception as e:
             self.log_msg(f"Error verifying file: {e}")
 
-
     def _on_rom_selection_changed(self, current, previous):
         if not current:
             self.cover_label.clear()
@@ -2252,25 +2249,28 @@ class MainWindowBase:
         # If not found, ask user
         if not dat_path:
             dat_path, _ = self._qtwidgets.QFileDialog.getOpenFileName(
-                self.window, "Select DAT File", str(self._last_base), "DAT Files (*.dat *.xml)"
+                self.window,
+                "Select DAT File",
+                str(self._last_base),
+                "DAT Files (*.dat *.xml)",
             )
-        
+
         if not dat_path:
             return
 
-        self.log_msg(
-            f"Identifying {full_path.name} using {Path(dat_path).name}..."
-        )
+        self.log_msg(f"Identifying {full_path.name} using {Path(dat_path).name}...")
 
         def _work():
             return worker_identify_single_file(
                 full_path, Path(dat_path), self.log_msg, self._progress_slot
             )
-            
+
         def _done(res):
             self.log_msg(str(res))
-            self._qtwidgets.QMessageBox.information(self.window, "Identification Result", str(res))
-            
+            self._qtwidgets.QMessageBox.information(
+                self.window, "Identification Result", str(res)
+            )
+
         self._run_in_background(_work, _done)
 
     def on_identify_all(self):
@@ -2280,23 +2280,23 @@ class MainWindowBase:
 
         # Confirm with user as this is heavy
         if not self._ask_yes_no(
-            "Start Full Identification?", 
+            "Start Full Identification?",
             "This will load ALL DAT files into memory and scan the library. "
-            "It may take a significant amount of RAM and time. Continue?"
+            "It may take a significant amount of RAM and time. Continue?",
         ):
             return
 
         args = self._get_common_args()
-        
+
         # Collect potential DAT locations
         # We include the library folder itself to find DATs installed there
         potential_roots = [
             self._last_base / "dats",
             self._last_base,
             self._last_base.parent / "dats",
-            self._last_base.parent.parent / "dats"
+            self._last_base.parent.parent / "dats",
         ]
-        
+
         # Filter only existing directories
         args.dats_roots = [p for p in potential_roots if p.exists()]
 
@@ -2345,15 +2345,16 @@ class MainWindowBase:
 
         def _work():
             import concurrent.futures
+
             downloader = DatDownloader(dats_dir)
-            
+
             # Phase 1: Listing
             self.progress_hook(0.0, "Fetching No-Intro file list...")
             ni_files = downloader.list_available_dats("no-intro")
-            
+
             self.progress_hook(0.0, "Fetching Redump file list...")
             rd_files = downloader.list_available_dats("redump")
-            
+
             total_files = len(ni_files) + len(rd_files)
             if total_files == 0:
                 return "No DAT files found to download."
@@ -2366,7 +2367,7 @@ class MainWindowBase:
             # Phase 2: Downloading
             completed = 0
             success = 0
-            
+
             def _download_task(source, filename):
                 return downloader.download_dat(source, filename)
 
@@ -2378,18 +2379,18 @@ class MainWindowBase:
                 # Submit Redump
                 for f in rd_files:
                     futures.append(executor.submit(_download_task, "redump", f))
-                
+
                 for future in concurrent.futures.as_completed(futures):
                     completed += 1
                     percent = completed / total_files
-                    
+
                     try:
                         res = future.result()
                         if res:
                             success += 1
                     except Exception:
                         pass
-                        
+
                     msg = f"Downloading: {completed}/{total_files} ({(percent*100):.1f}%)"
                     self.progress_hook(percent, msg)
 
@@ -2401,5 +2402,6 @@ class MainWindowBase:
             self.progress_hook(1.0, "DAT update complete")
 
         self._run_in_background(_work, _done)
+
 
 

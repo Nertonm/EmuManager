@@ -54,7 +54,7 @@ class ToolsController:
         self.ui.btn_compress.clicked.connect(self.on_compress_selected)
         self.ui.btn_recompress.clicked.connect(self.on_recompress_selected)
         self.ui.btn_decompress.clicked.connect(self.on_decompress_selected)
-        
+
         # Tools Tab - Switch
         self.ui.btn_organize.clicked.connect(self.on_organize)
         self.ui.btn_health.clicked.connect(self.on_health_check)

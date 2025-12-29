@@ -81,7 +81,7 @@ def _scan_files(
     total = len(all_files)
     progress_cb = getattr(args, "progress_callback", None)
     cancel_event = getattr(args, "cancel_event", None)
-    
+
     # Initialize LibraryDB
     lib_db = LibraryDB()
 
@@ -94,7 +94,7 @@ def _scan_files(
         cached_ok = False
         cached_av = False
         used_cache = False
-        
+
         try:
             entry = lib_db.get_entry(str(f.resolve()))
             if entry:
@@ -103,14 +103,14 @@ def _scan_files(
                     # Interpret status
                     if entry.status == "VERIFIED":
                         cached_ok = True
-                        cached_av = None # Assume clean if verified
+                        cached_av = None  # Assume clean if verified
                         used_cache = True
                     elif entry.status == "CORRUPT":
                         cached_ok = False
                         cached_av = None
                         used_cache = True
                     elif entry.status == "INFECTED":
-                        cached_ok = True # Might be valid file but infected? Usually corrupt too.
+                        cached_ok = True  # Might be valid file but infected? Usually corrupt too.
                         cached_av = True
                         used_cache = True
         except (OSError, ValueError):
@@ -119,7 +119,7 @@ def _scan_files(
         if used_cache:
             if progress_cb:
                 progress_cb(i / total, f"Checking {f.name} (Cached)...")
-            
+
             ok = cached_ok
             av_result = cached_av
             verify_out = "Cached Result"
@@ -131,7 +131,7 @@ def _scan_files(
             ok, verify_out, av_result, av_out = _check_file_health(
                 f, args, verify_integrity, scan_for_virus
             )
-            
+
             # Update Cache
             try:
                 st = f.stat()
@@ -142,7 +142,7 @@ def _scan_files(
                     status = "CORRUPT"
                 else:
                     status = "VERIFIED"
-                
+
                 new_entry = LibraryEntry(
                     path=str(f.resolve()),
                     system="switch",

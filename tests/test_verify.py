@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from emumanager.switch.verify import (
     verify_hactool_deep,
     verify_metadata_tool,

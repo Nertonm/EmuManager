@@ -383,11 +383,13 @@ class Ui_MainWindow:
         grp_layout = qt.QVBoxLayout()
         
         self.btn_sega_convert = qt.QPushButton("Convert CD-based to CHD")
-        self.btn_sega_convert.setToolTip("Converts GDI/CUE/ISO to CHD (Dreamcast, Saturn, SegaCD)")
-        
+        self.btn_sega_convert.setToolTip(
+            "Converts GDI/CUE/ISO to CHD (Dreamcast, Saturn, SegaCD)"
+        )
+
         self.btn_sega_verify = qt.QPushButton(IDENTIFY_VERIFY_LABEL)
         self.btn_sega_verify.setToolTip("Verify Sega games using DAT files")
-        
+
         self.btn_sega_organize = qt.QPushButton(ORGANIZE_LABEL)
         self.btn_sega_organize.setToolTip("Rename Sega games based on DAT/Metadata")
 
@@ -395,13 +397,25 @@ class Ui_MainWindow:
             style = qt.QApplication.style()
             # Use safe enum access or fallback
             try:
-                self.btn_sega_convert.setIcon(style.standardIcon(qt.QStyle.StandardPixmap.SP_DriveCDIcon))
-                self.btn_sega_verify.setIcon(style.standardIcon(qt.QStyle.StandardPixmap.SP_DialogApplyButton))
-                self.btn_sega_organize.setIcon(style.standardIcon(qt.QStyle.StandardPixmap.SP_FileDialogListView))
+                self.btn_sega_convert.setIcon(
+                    style.standardIcon(qt.QStyle.StandardPixmap.SP_DriveCDIcon)
+                )
+                self.btn_sega_verify.setIcon(
+                    style.standardIcon(qt.QStyle.StandardPixmap.SP_DialogApplyButton)
+                )
+                self.btn_sega_organize.setIcon(
+                    style.standardIcon(qt.QStyle.StandardPixmap.SP_FileDialogListView)
+                )
             except AttributeError:
-                self.btn_sega_convert.setIcon(style.standardIcon(qt.QStyle.SP_DriveCDIcon))
-                self.btn_sega_verify.setIcon(style.standardIcon(qt.QStyle.SP_DialogApplyButton))
-                self.btn_sega_organize.setIcon(style.standardIcon(qt.QStyle.SP_FileDialogListView))
+                self.btn_sega_convert.setIcon(
+                    style.standardIcon(qt.QStyle.SP_DriveCDIcon)
+                )
+                self.btn_sega_verify.setIcon(
+                    style.standardIcon(qt.QStyle.SP_DialogApplyButton)
+                )
+                self.btn_sega_organize.setIcon(
+                    style.standardIcon(qt.QStyle.SP_FileDialogListView)
+                )
         except Exception:
             pass
 
@@ -418,21 +432,29 @@ class Ui_MainWindow:
         layout = qt.QVBoxLayout(self.tab_microsoft)
         grp = qt.QGroupBox("Microsoft Systems (Xbox, Xbox 360)")
         grp_layout = qt.QVBoxLayout()
-        
+
         self.btn_ms_verify = qt.QPushButton(IDENTIFY_VERIFY_LABEL)
         self.btn_ms_verify.setToolTip("Verify Xbox games using DAT files")
-        
+
         self.btn_ms_organize = qt.QPushButton(ORGANIZE_LABEL)
         self.btn_ms_organize.setToolTip("Rename Xbox games based on DAT/Metadata")
 
         try:
             style = qt.QApplication.style()
             try:
-                self.btn_ms_verify.setIcon(style.standardIcon(qt.QStyle.StandardPixmap.SP_DialogApplyButton))
-                self.btn_ms_organize.setIcon(style.standardIcon(qt.QStyle.StandardPixmap.SP_FileDialogListView))
+                self.btn_ms_verify.setIcon(
+                    style.standardIcon(qt.QStyle.StandardPixmap.SP_DialogApplyButton)
+                )
+                self.btn_ms_organize.setIcon(
+                    style.standardIcon(qt.QStyle.StandardPixmap.SP_FileDialogListView)
+                )
             except AttributeError:
-                self.btn_ms_verify.setIcon(style.standardIcon(qt.QStyle.SP_DialogApplyButton))
-                self.btn_ms_organize.setIcon(style.standardIcon(qt.QStyle.SP_FileDialogListView))
+                self.btn_ms_verify.setIcon(
+                    style.standardIcon(qt.QStyle.SP_DialogApplyButton)
+                )
+                self.btn_ms_organize.setIcon(
+                    style.standardIcon(qt.QStyle.SP_FileDialogListView)
+                )
         except Exception:
             pass
 
@@ -448,26 +470,38 @@ class Ui_MainWindow:
         layout = qt.QVBoxLayout(self.tab_nintendo_legacy)
         grp = qt.QGroupBox("Nintendo Legacy (NES, SNES, N64, GBA, NDS)")
         grp_layout = qt.QVBoxLayout()
-        
+
         self.btn_nint_compress = qt.QPushButton("Compress to 7z/Zip")
         self.btn_nint_compress.setToolTip("Compress ROMs to save space")
-        
+
         self.btn_nint_verify = qt.QPushButton(IDENTIFY_VERIFY_LABEL)
         self.btn_nint_verify.setToolTip("Verify games using DAT files")
-        
+
         self.btn_nint_organize = qt.QPushButton(ORGANIZE_LABEL)
         self.btn_nint_organize.setToolTip("Rename games based on DAT/Metadata")
 
         try:
             style = qt.QApplication.style()
             try:
-                self.btn_nint_compress.setIcon(style.standardIcon(qt.QStyle.StandardPixmap.SP_ArrowDown))
-                self.btn_nint_verify.setIcon(style.standardIcon(qt.QStyle.StandardPixmap.SP_DialogApplyButton))
-                self.btn_nint_organize.setIcon(style.standardIcon(qt.QStyle.StandardPixmap.SP_FileDialogListView))
+                self.btn_nint_compress.setIcon(
+                    style.standardIcon(qt.QStyle.StandardPixmap.SP_ArrowDown)
+                )
+                self.btn_nint_verify.setIcon(
+                    style.standardIcon(qt.QStyle.StandardPixmap.SP_DialogApplyButton)
+                )
+                self.btn_nint_organize.setIcon(
+                    style.standardIcon(qt.QStyle.StandardPixmap.SP_FileDialogListView)
+                )
             except AttributeError:
-                self.btn_nint_compress.setIcon(style.standardIcon(qt.QStyle.SP_ArrowDown))
-                self.btn_nint_verify.setIcon(style.standardIcon(qt.QStyle.SP_DialogApplyButton))
-                self.btn_nint_organize.setIcon(style.standardIcon(qt.QStyle.SP_FileDialogListView))
+                self.btn_nint_compress.setIcon(
+                    style.standardIcon(qt.QStyle.SP_ArrowDown)
+                )
+                self.btn_nint_verify.setIcon(
+                    style.standardIcon(qt.QStyle.SP_DialogApplyButton)
+                )
+                self.btn_nint_organize.setIcon(
+                    style.standardIcon(qt.QStyle.SP_FileDialogListView)
+                )
         except Exception:
             pass
 
@@ -856,7 +890,9 @@ class Ui_MainWindow:
 
         # Update DATs Button
         self.btn_update_dats = qt.QPushButton("Download/Update DATs (No-Intro/Redump)")
-        self.btn_update_dats.setToolTip("Download latest DAT files from Libretro database")
+        self.btn_update_dats.setToolTip(
+            "Download latest DAT files from Libretro database"
+        )
         dat_layout.addWidget(self.btn_update_dats)
 
         self.btn_verify_dat = qt.QPushButton("Verify Library against DAT")
@@ -865,14 +901,14 @@ class Ui_MainWindow:
             "selected DAT file (or auto-detects if none selected)."
         )
         self.btn_verify_dat.setEnabled(False)  # Disabled until Library Open
-        
+
         self.btn_identify_all = qt.QPushButton("Identify Files (Scan All DATs)")
         self.btn_identify_all.setToolTip(
             "Loads ALL available DAT files into memory and scans the library "
             "to identify unknown files. (Heavy operation!)"
         )
         self.btn_identify_all.setEnabled(False)
-        
+
         dat_layout.addWidget(self.btn_verify_dat)
         dat_layout.addWidget(self.btn_identify_all)
 
@@ -1220,19 +1256,19 @@ class Ui_MainWindow:
 
         # Grid View
         self.list_gallery = qt.QListWidget()
-        
+
         # Handle Enums for ViewMode
         try:
             self.list_gallery.setViewMode(qt.QListWidget.ViewMode.IconMode)
         except AttributeError:
             self.list_gallery.setViewMode(qt.QListWidget.IconMode)
-            
+
         # Handle Enums for ResizeMode
         try:
             self.list_gallery.setResizeMode(qt.QListWidget.ResizeMode.Adjust)
         except AttributeError:
             self.list_gallery.setResizeMode(qt.QListWidget.Adjust)
-            
+
         # Handle Enums for Movement
         try:
             self.list_gallery.setMovement(qt.QListWidget.Movement.Static)
@@ -1242,5 +1278,5 @@ class Ui_MainWindow:
         if self._QSize:
             self.list_gallery.setIconSize(self._QSize(140, 200))
         self.list_gallery.setSpacing(15)
-        
+
         layout.addWidget(self.list_gallery)

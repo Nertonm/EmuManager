@@ -54,7 +54,7 @@ class DatDb:
             matches.extend(self.md5_index.get(md5.lower(), []))
         elif crc:
             matches.extend(self.crc_index.get(crc.lower(), []))
-        
+
         # Deduplicate by object identity
         return list({id(r): r for r in matches}.values())
 
@@ -68,7 +68,7 @@ def parse_dat_file(dat_path: Path) -> DatDb:
             return _parse_xml_dat(dat_path)
     except Exception:
         pass
-    
+
     # Fallback to ClrMamePro
     return _parse_clrmamepro(dat_path)
 
@@ -152,11 +152,11 @@ def _parse_clrmamepro(dat_path: Path) -> DatDb:
             elif content[end] == ')':
                 depth -= 1
             end += 1
-            
+
         if depth == 0:
-            game_block = content[start:end-1]
+            game_block = content[start:end - 1]
             _parse_game_block(db, game_block)
-            
+
     return db
 
 
@@ -164,7 +164,7 @@ def _parse_game_block(db, block_content):
     # Extract game name
     name_match = re.search(r'name\s+"([^"]+)"', block_content)
     game_name = name_match.group(1) if name_match else "Unknown"
-    
+
     # Find roms
     rom_iter = re.finditer(r'rom\s*\(', block_content)
     for match in rom_iter:
@@ -177,28 +177,28 @@ def _parse_game_block(db, block_content):
             elif block_content[end] == ')':
                 depth -= 1
             end += 1
-            
+
         if depth == 0:
-            rom_content = block_content[start:end-1]
+            rom_content = block_content[start:end - 1]
             _parse_rom(db, game_name, rom_content)
 
 
 def _parse_rom(db, game_name, rom_content):
     name_match = re.search(r'name\s+"([^"]+)"', rom_content)
     rom_name = name_match.group(1) if name_match else "Unknown"
-    
+
     size_match = re.search(r'size\s+(\d+)', rom_content)
     size = int(size_match.group(1)) if size_match else 0
-    
+
     crc_match = re.search(r'crc\s+([0-9A-Fa-f]+)', rom_content)
     crc = crc_match.group(1) if crc_match else None
-    
+
     md5_match = re.search(r'md5\s+([0-9A-Fa-f]+)', rom_content)
     md5 = md5_match.group(1) if md5_match else None
-    
+
     sha1_match = re.search(r'sha1\s+([0-9A-Fa-f]+)', rom_content)
     sha1 = sha1_match.group(1) if sha1_match else None
-    
+
     info = RomInfo(
         game_name=game_name,
         rom_name=rom_name,
@@ -206,7 +206,7 @@ def _parse_rom(db, game_name, rom_content):
         crc=crc,
         md5=md5,
         sha1=sha1,
-        dat_name=db.name
+        dat_name=db.name,
     )
     db.add_rom(info)
 

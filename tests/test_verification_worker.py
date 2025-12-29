@@ -50,7 +50,7 @@ def test_worker_hash_verify_success(
         "crc32": "12345678",
         "sha1": "abcdef",
     }
-    
+
     # Mock LibraryDB
     mock_lib_instance = mock_lib_db.return_value
     mock_lib_instance.get_entry.return_value = None
@@ -97,7 +97,7 @@ def test_worker_hash_verify_unknown(
         "crc32": "12345678",
         "sha1": "abcdef",
     }
-    
+
     # Mock LibraryDB
     mock_lib_instance = mock_lib_db.return_value
     mock_lib_instance.get_entry.return_value = None

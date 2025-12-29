@@ -412,8 +412,8 @@ def verify_integrity(
                     filebase=logbase_n,
                     timeout=cmd_timeout,
                 )
-                # Use the verify helper but avoid re-running the tool by passing a lambda
-                # that returns the captured result
+                # Use the verify helper but avoid re-running the tool by
+                # passing a lambda that returns the captured result
                 ok_nsz = verify_nsz(
                     filepath,
                     lambda *a, **k: res_nsz,
@@ -438,10 +438,7 @@ def verify_integrity(
                 cmd.insert(1, "-k")
                 cmd.insert(2, str(keys_path))
             logbase_m = (
-                Path(roms_dir)
-                / "logs"
-                / "nsz"
-                / (filepath.stem + ".verify_meta")
+                Path(roms_dir) / "logs" / "nsz" / (filepath.stem + ".verify_meta")
             )
             res_meta = run_cmd(cmd, filebase=logbase_m, timeout=cmd_timeout)
             ok_meta = verify_metadata_tool(
@@ -581,8 +578,9 @@ def detect_nsz_level(filepath, *, tool_nsz, roms_dir, cmd_timeout) -> Optional[i
             return None
 
         # Look for typical patterns indicating zstd level
-        # Fix for python:S5852 (slow regex due to overlapping \s* and optional separator)
-        # We replace \s*[:=\-]?\s* with \s*(?:[:=\-]\s*)? to avoid \s*\s* when separator is missing.
+        # Fix for python:S5852 (slow regex due to overlapping \s* and optional
+        # separator). We replace \s*[:=\-]?\s* with \s*(?:[:=\-]\s*)? to avoid
+        # \s*\s* when separator is missing.
         m = re.search(
             r"zstd(?: compression)? level\s*(?:[:=\-]\s*)?(\d+)",
             out,

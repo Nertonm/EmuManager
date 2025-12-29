@@ -226,5 +226,5 @@ class CoverDownloader(QRunnable):
                 return get_ps2_serial(path)
         except Exception:
             pass
-            
+
         return None
