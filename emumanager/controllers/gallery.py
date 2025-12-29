@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import logging
 from functools import partial
 from pathlib import Path

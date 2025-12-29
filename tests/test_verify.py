@@ -1,8 +1,5 @@
-from emumanager.switch.verify import (
-    verify_hactool_deep,
-    verify_metadata_tool,
-    verify_nsz,
-)
+from emumanager.switch.verify import (verify_hactool_deep,
+                                      verify_metadata_tool, verify_nsz)
 
 
 class DummyRes:

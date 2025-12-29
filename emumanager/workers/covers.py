@@ -1,6 +1,7 @@
 import os
+
 import requests
-from PyQt6.QtCore import QRunnable, pyqtSignal, QObject
+from PyQt6.QtCore import QObject, QRunnable, pyqtSignal
 
 
 class CoverSignals(QObject):

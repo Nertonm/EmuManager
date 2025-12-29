@@ -14,12 +14,14 @@ class Ui_MainWindow:
         self._Qt_enum = None
         self._QSize = None
         try:
-            from PyQt6.QtCore import Qt as _Qt, QSize as _QSize
+            from PyQt6.QtCore import QSize as _QSize
+            from PyQt6.QtCore import Qt as _Qt
             self._Qt_enum = _Qt
             self._QSize = _QSize
         except ImportError:
             try:
-                from PySide6.QtCore import Qt as _Qt, QSize as _QSize
+                from PySide6.QtCore import QSize as _QSize
+                from PySide6.QtCore import Qt as _Qt
                 self._Qt_enum = _Qt
                 self._QSize = _QSize
             except ImportError:

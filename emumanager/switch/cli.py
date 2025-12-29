@@ -1,26 +1,22 @@
 #!/usr/bin/env python3
 # ruff: noqa
+import argparse
+import csv
+import logging
 import re
 import shutil
 import signal
 import subprocess
 import sys
 import tempfile
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, List, Optional
 
-from emumanager.switch import metadata
-from emumanager.common.execution import (
-    run_cmd,
-    cancel_current_process,
-    find_tool,
-)
-import argparse
-import csv
-import logging
-from logging.handlers import RotatingFileHandler
-from emumanager.switch import meta_extractor, meta_parser
+from emumanager.common.execution import (cancel_current_process, find_tool,
+                                         run_cmd)
 from emumanager.logging_cfg import Col, get_fileops_logger
+from emumanager.switch import meta_extractor, meta_parser, metadata
 from emumanager.verification.hasher import get_file_hash
 
 # Keep original reference so test monkeypatches (which replace subprocess.run)
@@ -393,11 +389,8 @@ def verify_integrity(
     is_nsz = filepath.suffix.lower() in {".nsz", ".xcz"}
     try:
         # local import to avoid circular dependencies during early package staging
-        from emumanager.switch.verify import (
-            verify_nsz,
-            verify_metadata_tool,
-            verify_hactool_deep,
-        )
+        from emumanager.switch.verify import (verify_hactool_deep,
+                                              verify_metadata_tool, verify_nsz)
 
         results = []
 
@@ -723,9 +716,7 @@ def _handle_recompression(
                 ]
                 # delegate attempts execution to compression helper
                 from emumanager.switch.compression import (
-                    try_multiple_recompress_attempts,
-                    handle_produced_file,
-                )
+                    handle_produced_file, try_multiple_recompress_attempts)
 
                 produced = try_multiple_recompress_attempts(
                     tmpdir,

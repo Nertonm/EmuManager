@@ -6,16 +6,11 @@ from typing import Any, Callable, Optional
 
 from emumanager.ps3 import database as ps3_db
 from emumanager.ps3 import metadata as ps3_meta
-from emumanager.workers.common import (
-    MSG_CANCELLED,
-    GuiLogger,
-    VerifyResult,
-    calculate_file_hash,
-    create_file_progress_cb,
-    emit_verification_result,
-    find_target_dir,
-    make_result_collector,
-)
+from emumanager.workers.common import (MSG_CANCELLED, GuiLogger, VerifyResult,
+                                       calculate_file_hash,
+                                       create_file_progress_cb,
+                                       emit_verification_result,
+                                       find_target_dir, make_result_collector)
 
 PARAM_SFO = "PARAM.SFO"
 MSG_PS3_DIR_NOT_FOUND = "PS3 ROMs directory not found."

@@ -3,12 +3,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from emumanager.workers.n3ds import (
-    worker_n3ds_compress,
-    worker_n3ds_convert_cia,
-    worker_n3ds_decompress,
-    worker_n3ds_decrypt,
-)
+from emumanager.workers.n3ds import (worker_n3ds_compress,
+                                     worker_n3ds_convert_cia,
+                                     worker_n3ds_decompress,
+                                     worker_n3ds_decrypt)
 
 
 @pytest.fixture

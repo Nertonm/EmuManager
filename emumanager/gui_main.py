@@ -15,19 +15,15 @@ from typing import Any, Callable, Optional
 from emumanager.controllers.gallery import GalleryController
 from emumanager.controllers.tools import ToolsController
 from emumanager.logging_cfg import get_logger, setup_gui_logging
-from emumanager.verification.hasher import calculate_hashes
 from emumanager.verification.dat_downloader import DatDownloader
+from emumanager.verification.hasher import calculate_hashes
 from emumanager.workers.distributor import worker_distribute_root
-from .architect import get_roms_dir
 
-from .gui_ui import Ui_MainWindow
+from .architect import get_roms_dir
 from .gui_covers import CoverDownloader
-from .gui_workers import (
-    worker_hash_verify,
-    worker_identify_single_file,
-    worker_identify_all,
-    worker_organize,
-)
+from .gui_ui import Ui_MainWindow
+from .gui_workers import (worker_hash_verify, worker_identify_all,
+                          worker_identify_single_file, worker_organize)
 
 # Constants
 MSG_NO_ROM = "No ROM selected"

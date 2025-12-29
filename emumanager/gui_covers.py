@@ -1,7 +1,8 @@
 import os
-import requests
 from pathlib import Path
-from PyQt6.QtCore import QRunnable, pyqtSignal, QObject
+
+import requests
+from PyQt6.QtCore import QObject, QRunnable, pyqtSignal
 
 # Import metadata extractors
 try:

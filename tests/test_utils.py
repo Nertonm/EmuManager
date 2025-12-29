@@ -1,12 +1,6 @@
-from emumanager.switch.cli import (
-    determine_region,
-    determine_type,
-    get_base_id,
-    get_file_hash,
-    get_metadata,
-    parse_languages,
-    sanitize_name,
-)
+from emumanager.switch.cli import (determine_region, determine_type,
+                                   get_base_id, get_file_hash, get_metadata,
+                                   parse_languages, sanitize_name)
 
 
 def test_sanitize_name_basic():
@@ -73,8 +67,9 @@ def test_safe_move_creates_unique(tmp_path):
     class A:
         pass
 
-    import emumanager.switch.cli as so
     import logging
+
+    import emumanager.switch.cli as so
 
     so.args = A()
     so.args.dry_run = False

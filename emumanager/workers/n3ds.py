@@ -4,24 +4,16 @@ import re
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from emumanager.converters.n3ds_converter import (
-    compress_to_7z,
-    convert_to_cia,
-    decompress_7z,
-    decrypt_3ds,
-)
+from emumanager.converters.n3ds_converter import (compress_to_7z,
+                                                  convert_to_cia,
+                                                  decompress_7z, decrypt_3ds)
 from emumanager.n3ds import database as n3ds_db
 from emumanager.n3ds import metadata as n3ds_meta
-from emumanager.workers.common import (
-    MSG_CANCELLED,
-    GuiLogger,
-    VerifyResult,
-    calculate_file_hash,
-    create_file_progress_cb,
-    emit_verification_result,
-    find_target_dir,
-    make_result_collector,
-)
+from emumanager.workers.common import (MSG_CANCELLED, GuiLogger, VerifyResult,
+                                       calculate_file_hash,
+                                       create_file_progress_cb,
+                                       emit_verification_result,
+                                       find_target_dir, make_result_collector)
 
 MSG_N3DS_DIR_NOT_FOUND = "3DS ROMs directory not found."
 N3DS_SUBDIRS = ["roms/3ds", "3ds", "n3ds", "roms/n3ds"]

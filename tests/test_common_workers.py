@@ -1,12 +1,8 @@
 from unittest.mock import MagicMock
 
-from emumanager.workers.common import (
-    _clean_junk_files,
-    calculate_file_hash,
-    create_file_progress_cb,
-    find_target_dir,
-    worker_clean_junk,
-)
+from emumanager.workers.common import (_clean_junk_files, calculate_file_hash,
+                                       create_file_progress_cb,
+                                       find_target_dir, worker_clean_junk)
 
 
 def test_calculate_file_hash(tmp_path):

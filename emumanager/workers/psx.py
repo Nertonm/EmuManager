@@ -8,15 +8,11 @@ from typing import Any, Callable, Optional
 from emumanager.common.execution import find_tool
 from emumanager.psx import database as psx_db
 from emumanager.psx import metadata as psx_meta
-from emumanager.workers.common import (
-    MSG_CANCELLED,
-    GuiLogger,
-    calculate_file_hash,
-    create_file_progress_cb,
-    emit_verification_result,
-    find_target_dir,
-    make_result_collector,
-)
+from emumanager.workers.common import (MSG_CANCELLED, GuiLogger,
+                                       calculate_file_hash,
+                                       create_file_progress_cb,
+                                       emit_verification_result,
+                                       find_target_dir, make_result_collector)
 
 MSG_PSX_DIR_NOT_FOUND = "PS1 ROMs directory not found."
 PSX_SUBDIRS = ["roms/psx", "psx"]

@@ -1,7 +1,7 @@
 import sqlite3
-from pathlib import Path
-from typing import Optional, List
 from dataclasses import dataclass
+from pathlib import Path
+from typing import List, Optional
 
 
 @dataclass
