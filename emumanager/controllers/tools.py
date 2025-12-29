@@ -20,7 +20,6 @@ from emumanager.gui_workers import (
     worker_n3ds_decompress,
     worker_n3ds_decompress_single,
     worker_n3ds_convert_cia,
-    worker_n3ds_decrypt,
     worker_organize,
     worker_ps2_convert,
     worker_ps2_organize,
@@ -42,6 +41,7 @@ if TYPE_CHECKING:
     from emumanager.gui_main import MainWindowBase
 
 MSG_SELECT_BASE = "Please select a base directory first (Open Library)."
+
 
 class ToolsController:
     def __init__(self, main_window: MainWindowBase):
@@ -128,16 +128,18 @@ class ToolsController:
                 return worker_n3ds_compress_single(path, args, log_cb)
             # PSP
             elif ext == ".iso":
-                # Check if it's PSP by path or magic? 
+                # Check if it's PSP by path or magic?
                 # For now, if it's in a PSP folder, use PSP compressor (cso)
                 # Otherwise, generic zip/7z?
                 if "psp" in str(path).lower():
-                    # PSP worker expects base_path, not single file. 
+                    # PSP worker expects base_path, not single file.
                     # We need a single file worker for PSP or adapt.
                     # For now, let's just log not implemented for single file PSP
-                    logging.warning("Single file compression for PSP not yet implemented via context menu.")
+                    logging.warning(
+                        "Single file compression for PSP not yet implemented via context menu."
+                    )
                     return None
-            
+
             logging.warning(f"No compression handler for {ext}")
             return None
 
@@ -150,7 +152,7 @@ class ToolsController:
                 return worker_dolphin_recompress_single(path, args, log_cb)
             elif ext in (".nsz", ".xcz"):
                 return worker_recompress_single(path, env, args, log_cb)
-            
+
             logging.warning(f"No recompression handler for {ext}")
             return None
 
@@ -167,10 +169,10 @@ class ToolsController:
                 return worker_decompress_single(path, env, args, log_cb)
             # 3DS
             elif ext == ".7z":
-                 # Check if it's a 3DS 7z?
-                 if "3ds" in str(path).lower() or "n3ds" in str(path).lower():
-                     return worker_n3ds_decompress_single(path, args, log_cb)
-            
+                # Check if it's a 3DS 7z?
+                if "3ds" in str(path).lower() or "n3ds" in str(path).lower():
+                    return worker_n3ds_decompress_single(path, args, log_cb)
+
             logging.warning(f"No decompression handler for {ext}")
             return None
 
@@ -184,19 +186,19 @@ class ToolsController:
         if not item:
             logging.error("No ROM selected")
             return
-        
-        # We need to resolve the full path. 
+
+        # We need to resolve the full path.
         # MW has logic for this in _on_rom_selection_changed but we can reconstruct it.
         if not self.mw._last_base:
             logging.error("No base directory selected")
             return
-            
+
         sys_item = self.mw.sys_list.currentItem()
         if not sys_item:
             logging.error("No system selected")
             return
         system = sys_item.text()
-        
+
         rom_rel_path = item.text()
         # Assuming standard structure
         # Check if _last_base already ends with "roms" to avoid duplication
@@ -205,13 +207,13 @@ class ToolsController:
             full_path = base / system / rom_rel_path
         else:
             full_path = base / "roms" / system / rom_rel_path
-        
+
         if not full_path.exists():
             logging.error(f"File not found: {full_path}")
             return
 
         logging.info(f"{label}ing {full_path.name}...")
-        
+
         args = self.mw._get_common_args()
         env = self.mw._env
 
@@ -220,11 +222,11 @@ class ToolsController:
                 return worker_func(full_path, env, args, self.mw.log_msg)
             else:
                 return worker_func(full_path, self.mw.log_msg)
-            
+
         def _done(res):
             logging.info(str(res))
-            self.mw.on_list() # Refresh list
-            
+            self.mw.on_list()  # Refresh list
+
         self.mw._run_in_background(_work, _done)
 
     def on_organize(self):
@@ -234,10 +236,14 @@ class ToolsController:
         self._run_tool_task(worker_health_check, "Health Check", needs_env=True)
 
     def on_switch_compress(self):
-        self._run_tool_task(worker_switch_compress, "Compress Switch Library", needs_env=True)
+        self._run_tool_task(
+            worker_switch_compress, "Compress Switch Library", needs_env=True
+        )
 
     def on_switch_decompress(self):
-        self._run_tool_task(worker_switch_decompress, "Decompress Switch Library", needs_env=True)
+        self._run_tool_task(
+            worker_switch_decompress, "Decompress Switch Library", needs_env=True
+        )
 
     def on_psx_convert(self):
         self._run_tool_task(worker_psx_convert, "Convert PS1 to CHD")
@@ -321,14 +327,18 @@ class ToolsController:
             return
 
         args = self.mw._get_common_args()
-        
+
         # Define list_dirs_fn
         def list_dirs(path):
             return [p for p in path.rglob("*") if p.is_dir()]
 
         def _work():
             return worker_clean_junk(
-                self.mw._last_base, args, self.mw.log_msg, self.mw._get_list_files_fn(), list_dirs
+                self.mw._last_base,
+                args,
+                self.mw.log_msg,
+                self.mw._get_list_files_fn(),
+                list_dirs,
             )
 
         def _done(res):
@@ -350,11 +360,18 @@ class ToolsController:
         def _work():
             if needs_env:
                 return worker_func(
-                    self.mw._last_base, env, args, self.mw.log_msg, self.mw._get_list_files_fn()
+                    self.mw._last_base,
+                    env,
+                    args,
+                    self.mw.log_msg,
+                    self.mw._get_list_files_fn(),
                 )
             else:
                 return worker_func(
-                    self.mw._last_base, args, self.mw.log_msg, self.mw._get_list_files_fn()
+                    self.mw._last_base,
+                    args,
+                    self.mw.log_msg,
+                    self.mw._get_list_files_fn(),
                 )
 
         def _done(res):
@@ -370,13 +387,13 @@ class ToolsController:
         self.ui.tabs.setCurrentWidget(self.ui.tab_verification)
         logging.info("Please select a DAT file to verify your games.")
         self.ui.btn_select_dat.setFocus()
-        
+
     def on_generic_organize_click(self):
         self.mw._qtwidgets.QMessageBox.information(
-            self.mw.window, 
-            "Feature Not Available", 
+            self.mw.window,
+            "Feature Not Available",
             "Automatic organization for this system is not yet implemented.\n"
-            "Please use the 'Organize (Rename)' button in the Dashboard for generic renaming."
+            "Please use the 'Organize (Rename)' button in the Dashboard for generic renaming.",
         )
 
     def on_sega_convert(self):
@@ -384,12 +401,12 @@ class ToolsController:
             self.mw.window,
             "Sega Conversion",
             "CHD conversion for Sega systems (Dreamcast/Saturn) uses the same 'chdman' tool as PS1.\n"
-            "This feature will be fully enabled in the next update."
+            "This feature will be fully enabled in the next update.",
         )
 
     def on_nint_compress(self):
         self.mw._qtwidgets.QMessageBox.information(
             self.mw.window,
             "Compression",
-            "Generic 7z/Zip compression for legacy systems is coming soon."
+            "Generic 7z/Zip compression for legacy systems is coming soon.",
         )

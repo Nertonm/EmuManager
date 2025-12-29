@@ -19,12 +19,13 @@ try:
 except ImportError:
     get_ps2_serial = None
 
+
 class CoverSignals(QObject):
     finished = pyqtSignal(str)  # Returns the path of the image
     log = pyqtSignal(str)       # Returns log messages
 
+
 class CoverDownloader(QRunnable):
-    
     def __init__(self, system, game_id, region, cache_dir, file_path=None):
         super().__init__()
         self.system = system
@@ -35,8 +36,10 @@ class CoverDownloader(QRunnable):
         self.signals = CoverSignals()
 
     def run(self):
-        self.signals.log.emit(f"CoverDownloader started for {self.system}, ID: {self.game_id}")
-        
+        self.signals.log.emit(
+            f"CoverDownloader started for {self.system}, ID: {self.game_id}"
+        )
+
         # Try to extract game_id if missing
         if not self.game_id and self.file_path and os.path.exists(self.file_path):
             self.game_id = self._extract_game_id()
@@ -57,28 +60,30 @@ class CoverDownloader(QRunnable):
         # Map system names to GameTDB system codes
         system_map = {
             "wii": "wii",
-            "gamecube": "wii", # GameTDB stores GC covers under wii/cover/
+            "gamecube": "wii",  # GameTDB stores GC covers under wii/cover/
             "switch": "switch",
             "ps2": "ps2",
             "ps3": "ps3",
-            "psp": "psp", # GameTDB might not have PSP, need to check or use fallback
+            "psp": "psp",  # GameTDB might not have PSP, need to check or use fallback
             "wiiu": "wiiu",
             "ds": "ds",
-            "3ds": "3ds"
+            "3ds": "3ds",
         }
-        
+
         gametdb_system = system_map.get(self.system.lower())
-        
+
         # Strategy 1: GameTDB (requires Game ID)
         if self.game_id and gametdb_system:
             # Determine file extension and URL pattern based on system
             ext = "png"
             if gametdb_system in ["ps2", "ps3", "switch"]:
                 ext = "jpg"
-                
+
             # Construct local path
-            file_path = os.path.join(self.cache_dir, "covers", self.system, f"{self.game_id}.{ext}")
-            
+            file_path = os.path.join(
+                self.cache_dir, "covers", self.system, f"{self.game_id}.{ext}"
+            )
+
             # If already exists, return immediately
             if os.path.exists(file_path):
                 self.signals.log.emit(f"Cover found in cache: {file_path}")
@@ -88,11 +93,11 @@ class CoverDownloader(QRunnable):
             # Construct URL
             # GameTDB URL structure: https://art.gametdb.com/{system}/cover/{region}/{game_id}.{ext}
             # Region mapping might be needed. For now, try passed region or default to US/EN
-            
+
             regions_to_try = [self.region, "US", "EN", "JA", "Other"]
             # Filter out None or empty regions
             regions_to_try = [r for r in regions_to_try if r]
-            
+
             # Add a generic fallback if no specific region worked
             if "US" not in regions_to_try:
                 regions_to_try.append("US")
@@ -130,7 +135,7 @@ class CoverDownloader(QRunnable):
             "saturn": "Sega - Saturn",
             "dreamcast": "Sega - Dreamcast",
         }
-        
+
         libretro_system = libretro_map.get(self.system.lower())
         if libretro_system and game_name:
             # Libretro uses specific characters replacement
@@ -144,20 +149,34 @@ class CoverDownloader(QRunnable):
             # ? -> _
             # \ -> _
             # | -> _
-            safe_name = game_name.replace("&", "_").replace("*", "_").replace("/", "_").replace(":", "_").replace("`", "_").replace("<", "_").replace(">", "_").replace("?", "_").replace("\\", "_").replace("|", "_")
-            
+            safe_name = (
+                game_name.replace("&", "_")
+                .replace("*", "_")
+                .replace("/", "_")
+                .replace(":", "_")
+                .replace("`", "_")
+                .replace("<", "_")
+                .replace(">", "_")
+                .replace("?", "_")
+                .replace("\\", "_")
+                .replace("|", "_")
+            )
+
             url = f"https://thumbnails.libretro.com/{libretro_system}/Named_Boxarts/{safe_name}.png"
             # Use URL encoding for spaces etc
             import urllib.parse
+
             url = urllib.parse.quote(url, safe=":/")
-            
-            file_path = os.path.join(self.cache_dir, "covers", self.system, f"{safe_name}.png")
-            
+
+            file_path = os.path.join(
+                self.cache_dir, "covers", self.system, f"{safe_name}.png"
+            )
+
             if os.path.exists(file_path):
                 self.signals.log.emit(f"Cover found in cache (Libretro): {file_path}")
                 self.signals.finished.emit(file_path)
                 return
-                
+
             self.signals.log.emit(f"Trying Libretro URL: {url}")
             if self._download_file(url, file_path):
                 self.signals.log.emit(f"Downloaded from Libretro: {url}")
@@ -172,25 +191,24 @@ class CoverDownloader(QRunnable):
             response = requests.get(url, timeout=5)
             if response.status_code == 200:
                 os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-                with open(dest_path, 'wb') as f:
+                with open(dest_path, "wb") as f:
                     f.write(response.content)
                 return True
             else:
                 # self.signals.log.emit(f"Failed to download {url}: Status {response.status_code}")
                 pass
-        except Exception as e:
+        except Exception:
             # self.signals.log.emit(f"Exception downloading {url}: {e}")
             pass
         return False
 
-
     def _extract_game_id(self):
         if not self.file_path:
             return None
-            
+
         path = Path(self.file_path)
         sys_lower = self.system.lower()
-        
+
         try:
             if sys_lower in ["gamecube", "gc"] and get_gc_metadata:
                 meta = get_gc_metadata(path)

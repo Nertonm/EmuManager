@@ -11,7 +11,11 @@ import sys
 from pathlib import Path
 from typing import Callable, Optional
 
-from ..common.execution import find_tool, run_cmd, _register_process, _unregister_process
+from ..common.execution import (
+    find_tool,
+    _register_process,
+    _unregister_process,
+)
 
 
 def _run_tool_with_progress(
@@ -90,7 +94,16 @@ def compress_to_7z(
         raise FileNotFoundError("7z tool not found")
 
     # 7z a -t7z -mx=9 -m0=lzma2 dest source
-    cmd = [str(seven_z), "a", "-t7z", f"-mx={level}", "-m0=lzma2", "-y", str(dest), str(source)]
+    cmd = [
+        str(seven_z),
+        "a",
+        "-t7z",
+        f"-mx={level}",
+        "-m0=lzma2",
+        "-y",
+        str(dest),
+        str(source),
+    ]
 
     if dry_run:
         return True
@@ -174,7 +187,9 @@ def convert_to_cia(
             return True
         try:
             # 3dsconv might output progress like "10% ...", try to capture it
-            return _run_tool_with_progress(cmd, progress_cb, r"(\d+)%") and dest.exists()
+            return (
+                _run_tool_with_progress(cmd, progress_cb, r"(\d+)%") and dest.exists()
+            )
         except Exception:
             return False
 
