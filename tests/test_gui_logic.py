@@ -1,8 +1,8 @@
 import sys
-import importlib
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 
 # We will import MainWindowBase inside the test/fixture to avoid global side effects
 
@@ -16,19 +16,19 @@ class TestMainWindowLogic:
             "PyQt6.QtCore": MagicMock(),
             "PyQt6.QtGui": MagicMock(),
         }
-        
+
         # Start patching sys.modules
         patcher = patch.dict(sys.modules, mock_modules)
         patcher.start()
-        
+
         # Remove gui_main from sys.modules if it exists, to force re-import with mocks
         if "emumanager.gui_main" in sys.modules:
             del sys.modules["emumanager.gui_main"]
-            
+
         yield
-        
+
         patcher.stop()
-        
+
         # Clean up gui_main so other tests don't use the mocked version
         if "emumanager.gui_main" in sys.modules:
             del sys.modules["emumanager.gui_main"]
@@ -38,7 +38,7 @@ class TestMainWindowLogic:
         # Import inside the fixture to use the mocks
         with patch("emumanager.gui_ui.Ui_MainWindow"):
             from emumanager.gui_main import MainWindowBase
-            
+
             # Mock dependencies
             mock_qt = MagicMock()
             mock_manager = MagicMock()
