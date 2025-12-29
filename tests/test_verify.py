@@ -14,39 +14,39 @@ class DummyRes:
         self.returncode = returncode
 
 
-def test_verify_nsz_success():
+def test_verify_nsz_success(tmp_path):
     def run_cmd(cmd, *, filebase=None, timeout=None):
         return DummyRes(stdout="Verification: OK", returncode=0)
 
-    assert verify_nsz(Path("/tmp/test.nsz"), run_cmd, tool_nsz="nsz") is True
+    assert verify_nsz(tmp_path / "test.nsz", run_cmd, tool_nsz="nsz") is True
 
 
-def test_verify_nsz_failure():
+def test_verify_nsz_failure(tmp_path):
     def run_cmd(cmd, *, filebase=None, timeout=None):
         return DummyRes(stdout="Error: corrupt archive", returncode=2)
 
-    assert verify_nsz(Path("/tmp/test.nsz"), run_cmd, tool_nsz="nsz") is False
+    assert verify_nsz(tmp_path / "test.nsz", run_cmd, tool_nsz="nsz") is False
 
 
-def test_verify_metadata_tool_success():
+def test_verify_metadata_tool_success(tmp_path):
     def run_cmd(cmd, *, filebase=None, timeout=None):
         return DummyRes(stdout="Name: Foo\nTitle ID: 0100ABCDEF000011", returncode=0)
 
     assert verify_metadata_tool(
-        Path("/tmp/test.nsp"),
+        tmp_path / "test.nsp",
         run_cmd,
         tool_metadata="/usr/bin/nstool",
         is_nstool=True,
     )
 
 
-def test_verify_metadata_tool_failure():
+def test_verify_metadata_tool_failure(tmp_path):
     def run_cmd(cmd, *, filebase=None, timeout=None):
         return DummyRes(stdout="", returncode=1)
 
     assert (
         verify_metadata_tool(
-            Path("/tmp/test.nsp"),
+            tmp_path / "test.nsp",
             run_cmd,
             tool_metadata="/usr/bin/nstool",
             is_nstool=True,
@@ -55,17 +55,17 @@ def test_verify_metadata_tool_failure():
     )
 
 
-def test_verify_hactool_deep_success():
+def test_verify_hactool_deep_success(tmp_path):
     def run_cmd(cmd, *, filebase=None, timeout=None):
         return DummyRes(
             stdout="Some output... Title ID: 0100ABCDEF000012", returncode=0
         )
 
-    assert verify_hactool_deep(Path("/tmp/game.nsp"), run_cmd, keys_path=None) is True
+    assert verify_hactool_deep(tmp_path / "game.nsp", run_cmd, keys_path=None) is True
 
 
-def test_verify_hactool_deep_failure():
+def test_verify_hactool_deep_failure(tmp_path):
     def run_cmd(cmd, *, filebase=None, timeout=None):
         return DummyRes(stdout="ERROR: failed to parse", returncode=1)
 
-    assert verify_hactool_deep(Path("/tmp/game.nsp"), run_cmd, keys_path=None) is False
+    assert verify_hactool_deep(tmp_path / "game.nsp", run_cmd, keys_path=None) is False
