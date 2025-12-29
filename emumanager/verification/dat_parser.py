@@ -12,13 +12,14 @@ class RomInfo:
     crc: Optional[str] = None
     md5: Optional[str] = None
     sha1: Optional[str] = None
+    dat_name: Optional[str] = None
 
 
 class DatDb:
     def __init__(self):
         self.crc_index: Dict[str, List[RomInfo]] = {}
-        self.md5_index: Dict[str, RomInfo] = {}
-        self.sha1_index: Dict[str, RomInfo] = {}
+        self.md5_index: Dict[str, List[RomInfo]] = {}
+        self.sha1_index: Dict[str, List[RomInfo]] = {}
         self.name: str = ""
         self.version: str = ""
 
@@ -30,36 +31,31 @@ class DatDb:
             self.crc_index[crc].append(rom)
 
         if rom.md5:
-            self.md5_index[rom.md5.lower()] = rom
+            md5 = rom.md5.lower()
+            if md5 not in self.md5_index:
+                self.md5_index[md5] = []
+            self.md5_index[md5].append(rom)
 
         if rom.sha1:
-            self.sha1_index[rom.sha1.lower()] = rom
+            sha1 = rom.sha1.lower()
+            if sha1 not in self.sha1_index:
+                self.sha1_index[sha1] = []
+            self.sha1_index[sha1].append(rom)
 
     def lookup(
         self, crc: str = None, md5: str = None, sha1: str = None
-    ) -> Optional[RomInfo]:
-        # Try SHA1 first (most unique)
+    ) -> List[RomInfo]:
+        # Return all matches
+        matches = []
         if sha1:
-            res = self.sha1_index.get(sha1.lower())
-            if res:
-                return res
-
-        # Try MD5
-        if md5:
-            res = self.md5_index.get(md5.lower())
-            if res:
-                return res
-
-        # Try CRC (might have collisions, return first match or refine)
-        if crc:
-            matches = self.crc_index.get(crc.lower())
-            if matches:
-                # If we have multiple matches for CRC but no other hash provided,
-                # we can't distinguish. Return the first one.
-                # If we had other hashes but they didn't match (e.g. sha1 mismatch),
-                # then we shouldn't be here if we checked them above.
-                # But if the user ONLY provided CRC, we return the first match.
-                return matches[0]
+            matches.extend(self.sha1_index.get(sha1.lower(), []))
+        elif md5:
+            matches.extend(self.md5_index.get(md5.lower(), []))
+        elif crc:
+            matches.extend(self.crc_index.get(crc.lower(), []))
+        
+        # Deduplicate by object identity
+        return list({id(r): r for r in matches}.values())
 
         return None
 
@@ -103,6 +99,7 @@ def parse_dat_file(dat_path: Path) -> DatDb:
                     crc=crc,
                     md5=md5,
                     sha1=sha1,
+                    dat_name=db.name,
                 )
                 db.add_rom(info)
 
@@ -110,3 +107,20 @@ def parse_dat_file(dat_path: Path) -> DatDb:
         pass
 
     return db
+
+def merge_dbs(target: DatDb, source: DatDb):
+    """Merge source DatDb into target DatDb."""
+    for crc, roms in source.crc_index.items():
+        if crc not in target.crc_index:
+            target.crc_index[crc] = []
+        target.crc_index[crc].extend(roms)
+
+    for md5, roms in source.md5_index.items():
+        if md5 not in target.md5_index:
+            target.md5_index[md5] = []
+        target.md5_index[md5].extend(roms)
+
+    for sha1, roms in source.sha1_index.items():
+        if sha1 not in target.sha1_index:
+            target.sha1_index[sha1] = []
+        target.sha1_index[sha1].extend(roms)

@@ -12,6 +12,7 @@ class VerifyResult:
     md5: Optional[str] = None
     sha256: Optional[str] = None
     full_path: Optional[str] = None
+    dat_name: Optional[str] = None
 
 
 @dataclass

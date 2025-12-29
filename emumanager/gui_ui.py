@@ -862,9 +862,19 @@ class Ui_MainWindow:
         self.btn_verify_dat = qt.QPushButton("Verify Library against DAT")
         self.btn_verify_dat.setToolTip(
             "Hashes all files in the current library and checks against the "
-            "selected DAT file."
+            "selected DAT file (or auto-detects if none selected)."
         )
-        self.btn_verify_dat.setEnabled(False)  # Disabled until DAT selected
+        self.btn_verify_dat.setEnabled(False)  # Disabled until Library Open
+        
+        self.btn_identify_all = qt.QPushButton("Identify Files (Scan All DATs)")
+        self.btn_identify_all.setToolTip(
+            "Loads ALL available DAT files into memory and scans the library "
+            "to identify unknown files. (Heavy operation!)"
+        )
+        self.btn_identify_all.setEnabled(False)
+        
+        dat_layout.addWidget(self.btn_verify_dat)
+        dat_layout.addWidget(self.btn_identify_all)
 
         try:
             style = qt.QApplication.style()
@@ -886,7 +896,6 @@ class Ui_MainWindow:
             except Exception:
                 pass
 
-        dat_layout.addWidget(self.btn_verify_dat)
         grp_dat.setLayout(dat_layout)
 
         layout.addWidget(grp_dat)
@@ -904,12 +913,13 @@ class Ui_MainWindow:
         controls_layout.addStretch()
         results_layout.addLayout(controls_layout)
         self.table_results = qt.QTableWidget()
-        self.table_results.setColumnCount(7)
+        self.table_results.setColumnCount(8)
         self.table_results.setHorizontalHeaderLabels(
             [
                 "Status",
                 "File Name",
                 "Game Name (DAT)",
+                "Source DAT",
                 "CRC32",
                 "SHA1",
                 "MD5",

@@ -27,6 +27,7 @@ from .gui_covers import CoverDownloader
 from .gui_workers import (
     worker_hash_verify,
     worker_identify_single_file,
+    worker_identify_all,
     worker_organize,
 )
 
@@ -52,6 +53,8 @@ class MainWindowBase:
         self._qtwidgets = qtwidgets
         self._manager = manager_module
         self.ui = Ui_MainWindow()
+        self._last_base = None
+        self._current_dat_path = None
 
         # Create widgets (use local alias to the qt binding)
         qt = self._qtwidgets
@@ -176,6 +179,51 @@ class MainWindowBase:
             self._setup_verification_context_menu()
         except Exception:
             pass
+            
+        # Setup smart startup hook
+        if self._qtcore:
+            self._setup_startup_hook()
+
+    def _setup_startup_hook(self):
+        """Install an event filter to trigger logic only when the window is actually shown."""
+        QEvent = self._qtcore.QEvent
+        QObject = self._qtcore.QObject
+
+        # Define filter class dynamically to use the imported QObject
+        class StartupFilter(QObject):
+            def __init__(self, callback):
+                super().__init__()
+                self.callback = callback
+                self.has_run = False
+
+            def eventFilter(self, obj, event):
+                # Check for Show event (17)
+                # Handle both PyQt6 (enum) and PySide6 (int/enum)
+                t = event.type()
+                val = t.value if hasattr(t, "value") else t
+                
+                if val == 17:  # QEvent.Show
+                    if not self.has_run:
+                        self.has_run = True
+                        self.callback()
+                return False
+
+        self._startup_filter = StartupFilter(self._on_ui_shown)
+        self.window.installEventFilter(self._startup_filter)
+
+    def _on_ui_shown(self):
+        """Called when the window receives the Show event."""
+        # Defer slightly to ensure the window is fully painted and event loop is running
+        self._qtcore.QTimer.singleShot(100, self._startup_logic)
+
+    def _startup_logic(self):
+        """Perform startup checks: load last library or prompt user."""
+        if self._last_base and self._last_base.exists():
+            self.log_msg(f"Library ready: {self._last_base}")
+            self.on_list()
+        else:
+            self.log_msg("Welcome! Please select a library.")
+            self.on_open_library()
 
     def _connect_signals(self):
         # Dashboard Tab
@@ -210,6 +258,8 @@ class MainWindowBase:
         # Verification Tab
         self.ui.btn_select_dat.clicked.connect(self.on_select_dat)
         self.ui.btn_verify_dat.clicked.connect(self.on_verify_dat)
+        if hasattr(self.ui, "btn_update_dats"):
+            self.ui.btn_update_dats.clicked.connect(self.on_update_dats)
         if hasattr(self.ui, "combo_verif_filter"):
             self.ui.combo_verif_filter.currentTextChanged.connect(
                 self.on_verification_filter_changed
@@ -231,6 +281,8 @@ class MainWindowBase:
             )
         if hasattr(self.ui, "btn_export_csv"):
             self.ui.btn_export_csv.clicked.connect(self.on_export_verification_csv)
+        if hasattr(self.ui, "btn_identify_all"):
+            self.ui.btn_identify_all.clicked.connect(self.on_identify_all)
 
     def show(self):
         self.window.show()
@@ -816,14 +868,24 @@ class MainWindowBase:
             # Last base
             last = self._settings.value("last_base")
             if last:
-                self._last_base = Path(str(last))
-                try:
-                    self.ui.lbl_library.setText(str(self._last_base))
-                    self.ui.lbl_library.setStyleSheet(
-                        "font-weight: bold; color: #3daee9;"
-                    )
-                except Exception:
-                    pass
+                path = Path(str(last))
+                if path.exists():
+                    self._last_base = path
+                    try:
+                        self.ui.lbl_library.setText(str(self._last_base))
+                        self.ui.lbl_library.setStyleSheet(
+                            "font-weight: bold; color: #3daee9;"
+                        )
+                        # Enable UI since we have a library
+                        self._set_ui_enabled(True)
+                        self.log_msg(f"Restored last library: {self._last_base}")
+                        
+                        # Update logger to write to the new library's log folder
+                        self._update_logger(self._last_base)
+                    except Exception:
+                        pass
+                else:
+                    self.log_msg(f"Last library path not found: {path}")
         except Exception:
             pass
 
@@ -1047,7 +1109,7 @@ class MainWindowBase:
             self.ui.btn_list.setEnabled(enabled)
             self.ui.btn_add.setEnabled(enabled)
             self.ui.btn_clear.setEnabled(enabled)
-            self.ui.btn_open_library.setEnabled(enabled)
+            self.ui.btn_open_lib.setEnabled(enabled)
 
             # Also disable/enable tool buttons
             self.ui.btn_organize.setEnabled(enabled)
@@ -1067,14 +1129,19 @@ class MainWindowBase:
 
             # Verification Tab
             self.ui.btn_select_dat.setEnabled(enabled)
-            if (
-                enabled
-                and hasattr(self, "_current_dat_path")
-                and self._current_dat_path
-            ):
-                self.ui.btn_verify_dat.setEnabled(True)
-            else:
-                self.ui.btn_verify_dat.setEnabled(False)
+            
+            # Verify DAT button logic
+            # It should be enabled if we have a DAT selected OR a library open (for auto-discovery)
+            has_dat = bool(getattr(self, "_current_dat_path", None))
+            has_base = bool(getattr(self, "_last_base", None))
+            can_verify = enabled and (has_dat or has_base)
+            
+            # print(f"DEBUG: enabled={enabled} has_dat={has_dat} has_base={has_base} -> can_verify={can_verify}")
+            self.ui.btn_verify_dat.setEnabled(can_verify)
+
+            # Identify All button logic
+            if hasattr(self.ui, "btn_identify_all"):
+                self.ui.btn_identify_all.setEnabled(enabled and bool(self._last_base))
 
             # Compression buttons
             self.ui.btn_compress.setEnabled(enabled)
@@ -1150,6 +1217,10 @@ class MainWindowBase:
         if not base:
             self.log_msg(MSG_SELECT_BASE)
             return
+            
+        # Ensure UI is enabled before listing
+        self._set_ui_enabled(True)
+        
         systems = self._manager.cmd_list_systems(base)
         self._refresh_system_list_ui(systems)
         self._log_systems(systems)
@@ -1330,21 +1401,41 @@ class MainWindowBase:
             pass
 
     def _list_files_recursive(self, root: Path) -> list[Path]:
-        """List files recursively, excluding hidden files and directories."""
+        """List files recursively, excluding hidden files, DATs, and non-game files."""
         files = []
         if not root.exists():
             return files
+            
+        # Extensions to ignore (junk, metadata, images, etc)
+        IGNORED_EXTENSIONS = {
+            ".dat", ".xml", 
+            ".txt", ".nfo", ".pdf", ".doc", ".docx",
+            ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".ico",
+            ".ini", ".cfg", ".conf", ".db", ".ds_store",
+            ".url", ".lnk", ".desktop",
+            ".py", ".pyc", ".log",
+            ".err", ".out"
+        }
 
         for p in root.rglob("*"):
             if not p.is_file():
                 continue
             if p.name.startswith("."):
                 continue
+            
+            if p.suffix.lower() in IGNORED_EXTENSIONS:
+                continue
 
             try:
                 rel = p.relative_to(root)
                 if any(part.startswith(".") for part in rel.parts):
                     continue
+                
+                # Exclude dats/no-intro/redump folders
+                parts_lower = [part.lower() for part in rel.parts]
+                if "dats" in parts_lower or "no-intro" in parts_lower or "redump" in parts_lower:
+                    continue
+
                 files.append(p)
             except ValueError:
                 continue
@@ -1377,16 +1468,31 @@ class MainWindowBase:
         return dirs
 
     def _list_files_flat(self, root: Path) -> list[Path]:
-        """List files in the directory (non-recursive), excluding hidden files."""
+        """List files in the directory (non-recursive), excluding hidden files and junk."""
         files = []
         if not root.exists():
             return files
+
+        # Extensions to ignore (junk, metadata, images, etc)
+        IGNORED_EXTENSIONS = {
+            ".dat", ".xml", 
+            ".txt", ".nfo", ".pdf", ".doc", ".docx",
+            ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".ico",
+            ".ini", ".cfg", ".conf", ".db", ".ds_store",
+            ".url", ".lnk", ".desktop",
+            ".py", ".pyc", ".log",
+            ".err", ".out"
+        }
 
         for p in root.iterdir():
             if not p.is_file():
                 continue
             if p.name.startswith("."):
                 continue
+            
+            if p.suffix.lower() in IGNORED_EXTENSIONS:
+                continue
+
             files.append(p)
         return files
 
@@ -1560,8 +1666,11 @@ class MainWindowBase:
             self._update_logger(base)
 
             self.log_msg(f"Library opened: {base}")
-
-           
+            
+            # Enable verification button (auto-discovery possible)
+            self.ui.btn_verify_dat.setEnabled(True)
+            if hasattr(self.ui, "btn_identify_all"):
+                self.ui.btn_identify_all.setEnabled(True)
 
             # Auto-refresh list if possible
             try:
@@ -1592,19 +1701,48 @@ class MainWindowBase:
             self.log_msg(MSG_SELECT_BASE)
             return
 
-        if not hasattr(self, "_current_dat_path") or not self._current_dat_path:
-            self.log_msg("Please select a DAT file first.")
-            return
+        # Determine target path (System specific if selected)
+        target_path = self._last_base
+        selected_items = self.ui.sys_list.selectedItems()
+        if selected_items:
+            system_name = selected_items[0].text()
+            # Try to resolve system path
+            p1 = self._last_base / system_name
+            p2 = self._last_base / "roms" / system_name
+            
+            if p1.exists():
+                target_path = p1
+                self.log_msg(f"Targeting system folder: {system_name}")
+            elif p2.exists():
+                target_path = p2
+                self.log_msg(f"Targeting system folder: {system_name}")
 
+        # If no DAT selected, prompt user
+        if not getattr(self, "_current_dat_path", None):
+             self.on_select_dat()
+             # If still no DAT, return (user cancelled)
+             if not getattr(self, "_current_dat_path", None):
+                 return
+
+        dat_path = self._current_dat_path
+        
         args = self._get_common_args()
-        args.dat_path = self._current_dat_path
+        args.dat_path = dat_path
+        
+        # Try to locate 'dats' folder in common locations
+        candidates = [
+            self._last_base / "dats",
+            self._last_base.parent / "dats",
+            self._last_base.parent.parent / "dats"
+        ]
+        args.dats_root = next((p for p in candidates if p.exists()), None)
 
         # Clear previous results
         self.ui.table_results.setRowCount(0)
 
         def _work():
             return worker_hash_verify(
-                self._last_base, args, self.log_msg, self._get_list_files_fn()
+                target_path, args, self.log_msg, self._get_list_files_fn()
             )
 
         def _done(res):
@@ -1643,20 +1781,23 @@ class MainWindowBase:
         self.ui.table_results.setItem(
             row_idx, 2, qt.QTableWidgetItem(result.match_name or "")
         )
-        self.ui.table_results.setItem(row_idx, 3, qt.QTableWidgetItem(result.crc or ""))
         self.ui.table_results.setItem(
-            row_idx, 4, qt.QTableWidgetItem(result.sha1 or "")
+            row_idx, 3, qt.QTableWidgetItem(result.dat_name or "")
+        )
+        self.ui.table_results.setItem(row_idx, 4, qt.QTableWidgetItem(result.crc or ""))
+        self.ui.table_results.setItem(
+            row_idx, 5, qt.QTableWidgetItem(result.sha1 or "")
         )
         # New columns: MD5 and SHA256 (if deep verify)
         try:
             self.ui.table_results.setItem(
                 row_idx,
-                5,
+                6,
                 qt.QTableWidgetItem(getattr(result, "md5", "") or ""),
             )
             self.ui.table_results.setItem(
                 row_idx,
-                6,
+                7,
                 qt.QTableWidgetItem(getattr(result, "sha256", "") or ""),
             )
         except Exception:
@@ -2075,10 +2216,23 @@ class MainWindowBase:
             self.log_msg(f"File not found: {full_path}")
             return
 
-        # Ask user for DAT file
-        dat_path, _ = self._qtwidgets.QFileDialog.getOpenFileName(
-            self.window, "Select DAT File", str(self._last_base), "DAT Files (*.dat *.xml)"
-        )
+        # Try to auto-discover DAT first
+        from emumanager.verification.dat_manager import find_dat_for_system
+        
+        dat_path = None
+        
+        # Look in dats folder
+        dats_dir = self._last_base / "dats"
+        if dats_dir.exists():
+            found = find_dat_for_system(dats_dir, system)
+            if found:
+                dat_path = str(found)
+        
+        # If not found, ask user
+        if not dat_path:
+            dat_path, _ = self._qtwidgets.QFileDialog.getOpenFileName(
+                self.window, "Select DAT File", str(self._last_base), "DAT Files (*.dat *.xml)"
+            )
         
         if not dat_path:
             return
@@ -2096,6 +2250,58 @@ class MainWindowBase:
             
         self._run_in_background(_work, _done)
 
+    def on_identify_all(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+
+        # Confirm with user as this is heavy
+        if not self._ask_yes_no(
+            "Start Full Identification?", 
+            "This will load ALL DAT files into memory and scan the library. "
+            "It may take a significant amount of RAM and time. Continue?"
+        ):
+            return
+
+        args = self._get_common_args()
+        
+        # Collect potential DAT locations
+        # We include the library folder itself to find DATs installed there
+        potential_roots = [
+            self._last_base / "dats",
+            self._last_base,
+            self._last_base.parent / "dats",
+            self._last_base.parent.parent / "dats"
+        ]
+        
+        # Filter only existing directories
+        args.dats_roots = [p for p in potential_roots if p.exists()]
+        
+        if not args.dats_roots:
+            self.log_msg("Error: No DATs locations found. Please run 'Update DATs' or place .dat files in the library.")
+            return
+
+        # Clear previous results
+        self.ui.table_results.setRowCount(0)
+        self.log_msg("Starting full identification...")
+
+        def _work():
+            return worker_identify_all(
+                self._last_base, args, self.log_msg, self._get_list_files_fn()
+            )
+
+        def _done(res):
+            if hasattr(res, "results"):
+                self.log_msg(res.text)
+                self._last_verify_results = res.results
+                self.on_verification_filter_changed()
+            else:
+                self.log_msg(str(res))
+            self._set_ui_enabled(True)
+
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
     def on_update_dats(self):
         if not self._last_base:
             self.log_msg(MSG_SELECT_BASE)
@@ -2106,26 +2312,65 @@ class MainWindowBase:
             self.log_msg(f"Creating DATs directory at {dats_dir}")
             dats_dir.mkdir(parents=True, exist_ok=True)
 
+        # Immediate feedback
+        self.log_msg("Initializing DAT update process...")
+        self.progress_hook(0.0, "Connecting to GitHub...")
+        self._set_ui_enabled(False)
+
         def _work():
+            import concurrent.futures
             downloader = DatDownloader(dats_dir)
             
-            def progress_cb(filename, current, total):
-                percent = current / total
-                msg = f"Downloading DATs: {current}/{total} ({filename})"
-                self.progress_hook(percent, msg)
+            # Phase 1: Listing
+            self.progress_hook(0.0, "Fetching No-Intro file list...")
+            ni_files = downloader.list_available_dats("no-intro")
             
-            self.log_msg("Starting DAT download (No-Intro & Redump)...")
-            count_ni = downloader.download_all("no-intro", progress_callback=progress_cb)
-            count_rd = downloader.download_all("redump", progress_callback=progress_cb)
+            self.progress_hook(0.0, "Fetching Redump file list...")
+            rd_files = downloader.list_available_dats("redump")
             
-            return f"Downloaded {count_ni} No-Intro and {count_rd} Redump DATs."
+            total_files = len(ni_files) + len(rd_files)
+            if total_files == 0:
+                return "No DAT files found to download."
+
+            self.log_msg(f"Found {len(ni_files)} No-Intro and {len(rd_files)} Redump DATs. Starting download...")
+            
+            # Phase 2: Downloading
+            completed = 0
+            success = 0
+            
+            def _download_task(source, filename):
+                return downloader.download_dat(source, filename)
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                futures = []
+                # Submit No-Intro
+                for f in ni_files:
+                    futures.append(executor.submit(_download_task, "no-intro", f))
+                # Submit Redump
+                for f in rd_files:
+                    futures.append(executor.submit(_download_task, "redump", f))
+                
+                for future in concurrent.futures.as_completed(futures):
+                    completed += 1
+                    percent = completed / total_files
+                    
+                    try:
+                        res = future.result()
+                        if res:
+                            success += 1
+                    except Exception:
+                        pass
+                        
+                    msg = f"Downloading: {completed}/{total_files} ({(percent*100):.1f}%)"
+                    self.progress_hook(percent, msg)
+
+            return f"Update complete. Downloaded {success}/{total_files} DATs."
 
         def _done(res):
             self.log_msg(str(res))
             self._set_ui_enabled(True)
             self.progress_hook(1.0, "DAT update complete")
 
-        self._set_ui_enabled(False)
         self._run_in_background(_work, _done)
 
 

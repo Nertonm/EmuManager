@@ -5,6 +5,7 @@ from typing import Any, Callable, Optional
 
 from emumanager.common.models import VerifyReport, VerifyResult
 from emumanager.verification import dat_parser, hasher
+from emumanager.verification.dat_manager import find_dat_for_system
 from emumanager.workers.common import (
     MSG_CANCELLED,
     GuiLogger,
@@ -23,8 +24,36 @@ def worker_hash_verify(
     report = VerifyReport(text="")
 
     dat_path = getattr(args, "dat_path", None)
+    
+    # Auto-discovery logic if no specific DAT is provided
+    if not dat_path:
+        dats_roots = getattr(args, "dats_roots", [])
+        # Backwards compatibility
+        single_root = getattr(args, "dats_root", None)
+        if single_root:
+            dats_roots.append(single_root)
+            
+        # Try to infer system from base_path name (e.g. "snes", "ps2")
+        system_name = base_path.name
+        
+        if dats_roots and system_name:
+            logger.info(f"Attempting to find DAT for system: {system_name}")
+            
+            # Search in all roots
+            for root in dats_roots:
+                if not root.exists(): continue
+                
+                found = find_dat_for_system(Path(root), system_name)
+                if found:
+                    dat_path = found
+                    logger.info(f"Auto-selected DAT: {found.name} (in {root})")
+                    break
+            
+            if not dat_path:
+                logger.warning(f"No matching DAT found for system '{system_name}' in {len(dats_roots)} locations")
+
     if not dat_path or not Path(dat_path).exists():
-        report.text = "Error: No valid DAT file selected."
+        report.text = "Error: No valid DAT file selected or found."
         return report
 
     logger.info(f"Parsing DAT file: {dat_path}...")
@@ -35,16 +64,79 @@ def worker_hash_verify(
         report.text = f"Error parsing DAT: {e}"
         return report
 
+    return _run_verification(base_path, db, args, logger, list_files_fn)
+
+
+def worker_identify_all(
+    base_path: Path,
+    args: Any,
+    log_cb: Callable[[str], None],
+    list_files_fn: Callable[[Path], list[Path]],
+) -> VerifyReport:
+    """Worker function to identify files against ALL available DATs."""
+    logger = GuiLogger(log_cb)
+    report = VerifyReport(text="")
+    
+    dats_roots = getattr(args, "dats_roots", [])
+    # Backwards compatibility / fallback
+    single_root = getattr(args, "dats_root", None)
+    if single_root:
+        dats_roots.append(single_root)
+        
+    # Filter existing roots
+    dats_roots = [r for r in dats_roots if r and r.exists()]
+
+    if not dats_roots:
+        report.text = "Error: DATs directory not found."
+        return report
+
+    # 1. Load all DATs
+    master_db = dat_parser.DatDb()
+    master_db.name = "Master DB"
+    
+    dat_files_set = set()
+    for root in dats_roots:
+        dat_files_set.update(root.rglob("*.dat"))
+        dat_files_set.update(root.rglob("*.xml"))
+        
+    dat_files = sorted(list(dat_files_set))
+    
+    if not dat_files:
+        report.text = "No DAT files found."
+        return report
+        
+    logger.info(f"Loading {len(dat_files)} DAT files into memory...")
+    
+    progress_cb = getattr(args, "progress_callback", None)
+    
+    for i, dat_file in enumerate(dat_files):
+        try:
+            if progress_cb:
+                progress_cb(i / len(dat_files), f"Loading DAT: {dat_file.name}")
+                
+            db = dat_parser.parse_dat_file(dat_file)
+            dat_parser.merge_dbs(master_db, db)
+        except Exception as e:
+            logger.warning(f"Failed to parse {dat_file.name}: {e}")
+            
+    logger.info(f"Master DB loaded. CRC entries: {len(master_db.crc_index)}")
+    
+    return _run_verification(base_path, master_db, args, logger, list_files_fn)
+
+
+def _run_verification(base_path, db, args, logger, list_files_fn) -> VerifyReport:
+    report = VerifyReport(text="")
     files = list_files_fn(base_path)
     if not files:
         report.text = "No files found to verify."
         return report
 
-    logger.info(f"Verifying {len(files)} files against DAT...")
+    logger.info(f"Verifying {len(files)} files against DB...")
 
     verified = 0
     unknown = 0
     mismatch = 0
+    compressed = 0
 
     total = len(files)
     progress_cb = getattr(args, "progress_callback", None)
@@ -71,6 +163,12 @@ def worker_hash_verify(
                 f"(Expected: {res.match_name}, CRC: {res.crc}, "
                 f"SHA1: {res.sha1}, MD5: {res.md5})"
             )
+        elif res.status == "COMPRESSED":
+            compressed += 1
+            logger.info(
+                f"ℹ️ COMPRESSED: {f.name} "
+                f"(Cannot verify against ISO DAT without decompression)"
+            )
         else:
             unknown += 1
             logger.warning(
@@ -85,7 +183,7 @@ def worker_hash_verify(
 
     report.text = (
         f"Verification complete. Verified: {verified}, "
-        f"Unknown: {unknown}, Mismatch: {mismatch}"
+        f"Unknown: {unknown}, Mismatch: {mismatch}, Compressed: {compressed}"
     )
     return report
 
@@ -131,7 +229,8 @@ def _verify_single_file(
     sha1 = hashes.get("sha1")
     sha256 = hashes.get("sha256")
 
-    match = db.lookup(crc=crc, md5=md5, sha1=sha1)
+    matches = db.lookup(crc=crc, md5=md5, sha1=sha1)
+    match = matches[0] if matches else None
 
     res = VerifyResult(
         filename=f.name,
@@ -147,12 +246,19 @@ def _verify_single_file(
     if match:
         res.status = "VERIFIED"
         res.match_name = match.game_name
+        res.dat_name = getattr(match, "dat_name", None)
         return res
 
     mismatch_reason = _check_mismatch(db, crc, md5, sha1)
     if mismatch_reason:
         res.status = "MISMATCH"
         res.match_name = mismatch_reason
+        return res
+
+    # Check for known compressed formats
+    if f.suffix.lower() in (".rvz", ".cso", ".chd", ".nkit.iso", ".wbfs", ".gcZ"):
+        res.status = "COMPRESSED"
+        res.match_name = "Compressed File"
         return res
 
     return res
