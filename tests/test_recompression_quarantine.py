@@ -8,10 +8,10 @@ def test_handle_compression_replacement(monkeypatch, tmp_path):
     fp = tmp_path / "game.nsz"
     fp.write_text("data")
 
-    so = importlib.import_module("switch_organizer")
+    so = importlib.import_module("emumanager.switch.cli")
     # configure args to force recompress path
     so.args = Args(compress=True, recompress=True, dry_run=False, level=19)
-    so.TOOL_NSZ = "nsz"
+    tool_nsz = "nsz"
     so.ROMS_DIR = tmp_path
 
     # Monkeypatch compression helpers
@@ -30,7 +30,17 @@ def test_handle_compression_replacement(monkeypatch, tmp_path):
     monkeypatch.setattr(comp_mod, "try_multiple_recompress_attempts", fake_try_multiple)
     monkeypatch.setattr(comp_mod, "handle_produced_file", fake_handle)
 
-    res = so.handle_compression(fp)
+    res = so.handle_compression(
+        fp,
+        args=so.args,
+        tool_nsz=tool_nsz,
+        roms_dir=tmp_path,
+        tool_metadata=None,
+        is_nstool=False,
+        keys_path=None,
+        cmd_timeout=None,
+        tool_hactool=None,
+    )
     assert res == fp
 
 
@@ -38,9 +48,9 @@ def test_handle_compression_returns_candidate(monkeypatch, tmp_path):
     fp = tmp_path / "game.nsz"
     fp.write_text("data")
 
-    so = importlib.import_module("switch_organizer")
+    so = importlib.import_module("emumanager.switch.cli")
     so.args = Args(compress=True, recompress=True, dry_run=False, level=19)
-    so.TOOL_NSZ = "nsz"
+    tool_nsz = "nsz"
     so.ROMS_DIR = tmp_path
 
     comp_mod = importlib.import_module("emumanager.switch.compression")
@@ -57,7 +67,17 @@ def test_handle_compression_returns_candidate(monkeypatch, tmp_path):
     monkeypatch.setattr(comp_mod, "try_multiple_recompress_attempts", fake_try_multiple)
     monkeypatch.setattr(comp_mod, "handle_produced_file", fake_handle)
 
-    res = so.handle_compression(fp)
+    res = so.handle_compression(
+        fp,
+        args=so.args,
+        tool_nsz=tool_nsz,
+        roms_dir=tmp_path,
+        tool_metadata=None,
+        is_nstool=False,
+        keys_path=None,
+        cmd_timeout=None,
+        tool_hactool=None,
+    )
     assert res == produced[0]
 
 
@@ -65,9 +85,9 @@ def test_handle_compression_handle_raises(monkeypatch, tmp_path):
     fp = tmp_path / "game.nsz"
     fp.write_text("data")
 
-    so = importlib.import_module("switch_organizer")
+    so = importlib.import_module("emumanager.switch.cli")
     so.args = Args(compress=True, recompress=True, dry_run=False, level=19)
-    so.TOOL_NSZ = "nsz"
+    tool_nsz = "nsz"
     so.ROMS_DIR = tmp_path
 
     comp_mod = importlib.import_module("emumanager.switch.compression")
@@ -84,7 +104,17 @@ def test_handle_compression_handle_raises(monkeypatch, tmp_path):
     monkeypatch.setattr(comp_mod, "handle_produced_file", fake_handle)
 
     # if handler raises, handle_compression should catch and return original
-    res = so.handle_compression(fp)
+    res = so.handle_compression(
+        fp,
+        args=so.args,
+        tool_nsz=tool_nsz,
+        roms_dir=tmp_path,
+        tool_metadata=None,
+        is_nstool=False,
+        keys_path=None,
+        cmd_timeout=None,
+        tool_hactool=None,
+    )
     assert res == fp
 
 
@@ -92,10 +122,10 @@ def test_handle_compression_dry_run_skips_recompress(monkeypatch, tmp_path):
     fp = tmp_path / "game.nsz"
     fp.write_text("data")
 
-    so = importlib.import_module("switch_organizer")
+    so = importlib.import_module("emumanager.switch.cli")
     # dry_run should short-circuit recompression
     so.args = Args(compress=True, recompress=True, dry_run=True, level=19)
-    so.TOOL_NSZ = "nsz"
+    tool_nsz = "nsz"
     so.ROMS_DIR = tmp_path
 
     comp_mod = importlib.import_module("emumanager.switch.compression")
@@ -108,5 +138,15 @@ def test_handle_compression_dry_run_skips_recompress(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(comp_mod, "handle_produced_file", should_not_be_called)
 
-    res = so.handle_compression(fp)
+    res = so.handle_compression(
+        fp,
+        args=so.args,
+        tool_nsz=tool_nsz,
+        roms_dir=tmp_path,
+        tool_metadata=None,
+        is_nstool=False,
+        keys_path=None,
+        cmd_timeout=None,
+        tool_hactool=None,
+    )
     assert res == fp

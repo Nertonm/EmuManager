@@ -1,6 +1,6 @@
 from pathlib import Path
 
-import switch_organizer as so
+import emumanager.switch.cli as so
 
 
 class Args:
@@ -48,7 +48,7 @@ def test_main_compress_rm_dryrun(tmp_path, monkeypatch):
     args = make_args(dir=str(tmp_path), compress=True, rm_originals=True, dry_run=True)
 
     # Monkeypatch parser.parse_args to return our args
-    monkeypatch.setattr(so.parser, "parse_args", lambda: args)
+    monkeypatch.setattr(so.parser, "parse_args", lambda *a, **k: args)
 
     # Monkeypatch subprocess.run to simulate nsz (should not be called due to dry-run)
     def fake_run(cmd, **kwargs):
@@ -78,10 +78,10 @@ def test_health_check_quarantine_report(tmp_path, monkeypatch):
         quarantine=True,
         report_csv=str(tmp_path / "report.csv"),
     )
-    monkeypatch.setattr(so.parser, "parse_args", lambda: args)
+    monkeypatch.setattr(so.parser, "parse_args", lambda *a, **k: args)
 
     # Monkeypatch verify_integrity: good->True, bad->False
-    def fake_verify(f, deep=False, return_output=False):
+    def fake_verify(f, deep=False, return_output=False, **kwargs):
         if isinstance(f, (str,)):
             p = Path(f)
         else:
@@ -94,9 +94,13 @@ def test_health_check_quarantine_report(tmp_path, monkeypatch):
     monkeypatch.setattr(so, "verify_integrity", fake_verify)
 
     # Monkeypatch scan_for_virus: none infected
-    monkeypatch.setattr(so, "scan_for_virus", lambda f: (False, "clean"))
+    monkeypatch.setattr(so, "scan_for_virus", lambda f, **k: (False, "clean"))
 
-    so.main()
+    import pytest
+
+    with pytest.raises(SystemExit) as excinfo:
+        so.main()
+    assert excinfo.value.code == 1
 
     # report should be written
     report = tmp_path / "report.csv"

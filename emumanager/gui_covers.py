@@ -24,6 +24,7 @@ class CoverSignals(QObject):
     log = pyqtSignal(str)       # Returns log messages
 
 class CoverDownloader(QRunnable):
+    
     def __init__(self, system, game_id, region, cache_dir, file_path=None):
         super().__init__()
         self.system = system

@@ -1,6 +1,6 @@
 import types
 
-import switch_organizer as so
+import emumanager.switch.cli as so
 
 
 class A:
@@ -35,7 +35,7 @@ def test_recompress_explicit(monkeypatch, tmp_path):
     src = tmp_path / "SomeGame [0100ABCDEF000030].nsz"
     src.write_bytes(b"oldcompressed")
 
-    so.TOOL_NSZ = tmp_path / "nsz"
+    tool_nsz = tmp_path / "nsz"
     so.args = setup_args(A(), compress=True, recompress=True, dry_run=False, level=19)
 
     # prepare a tmpdir for nsz to write its output
@@ -52,7 +52,7 @@ def test_recompress_explicit(monkeypatch, tmp_path):
     # Fake subprocess.run: when called with nsz -C create a new .nsz inside prod_dir
     def fake_run(cmd, **kwargs):
         cmd_str = " ".join(map(str, cmd))
-        if str(so.TOOL_NSZ) in cmd_str and "-C" in cmd_str:
+        if str(tool_nsz) in cmd_str and "-C" in cmd_str:
             out_file = prod_dir / (src.stem + "_recomp.nsz")
             out_file.write_bytes(b"newcompressed")
             return types.SimpleNamespace(returncode=0, stdout="ok", stderr="")
@@ -60,11 +60,21 @@ def test_recompress_explicit(monkeypatch, tmp_path):
 
     monkeypatch.setattr(so.subprocess, "run", fake_run)
     # ensure verification passes
-    monkeypatch.setattr(so, "verify_integrity", lambda f, deep=False: True)
+    monkeypatch.setattr(so, "verify_integrity", lambda f, **k: True)
     # make detect_nsz_level return lower than target so recompress is triggered
-    monkeypatch.setattr(so, "detect_nsz_level", lambda f: 1)
+    monkeypatch.setattr(so, "detect_nsz_level", lambda f, **k: 1)
 
-    res = so.handle_compression(src)
+    res = so.handle_compression(
+        src,
+        args=so.args,
+        tool_nsz=tool_nsz,
+        roms_dir=tmp_path,
+        tool_metadata=None,
+        is_nstool=False,
+        keys_path=None,
+        cmd_timeout=None,
+        tool_hactool=None,
+    )
     # After successful recompress replacement the function returns the filepath
     assert res == src
     assert src.exists()
@@ -74,7 +84,7 @@ def test_recompress_verify_fail(monkeypatch, tmp_path):
     src = tmp_path / "FailGame [0100ABCDEF000031].nsz"
     src.write_bytes(b"oldcompressed2")
 
-    so.TOOL_NSZ = tmp_path / "nsz"
+    tool_nsz = tmp_path / "nsz"
     so.args = setup_args(A(), compress=True, recompress=True, dry_run=False, level=19)
 
     prod_dir = tmp_path / "recomp_out2"
@@ -86,17 +96,27 @@ def test_recompress_verify_fail(monkeypatch, tmp_path):
     )
 
     def fake_run(cmd, **kwargs):
-        if str(so.TOOL_NSZ) in " ".join(map(str, cmd)) and "-C" in cmd:
+        if str(tool_nsz) in " ".join(map(str, cmd)) and "-C" in cmd:
             out_file = prod_dir / (src.stem + "_recomp.nsz")
             out_file.write_bytes(b"new")
             return types.SimpleNamespace(returncode=0, stdout="ok", stderr="")
         return types.SimpleNamespace(returncode=1, stdout="", stderr="err")
 
     monkeypatch.setattr(so.subprocess, "run", fake_run)
-    monkeypatch.setattr(so, "verify_integrity", lambda f, deep=False: False)
-    monkeypatch.setattr(so, "detect_nsz_level", lambda f: 1)
+    monkeypatch.setattr(so, "verify_integrity", lambda f, **k: False)
+    monkeypatch.setattr(so, "detect_nsz_level", lambda f, **k: 1)
 
-    res = so.handle_compression(src)
+    res = so.handle_compression(
+        src,
+        args=so.args,
+        tool_nsz=tool_nsz,
+        roms_dir=tmp_path,
+        tool_metadata=None,
+        is_nstool=False,
+        keys_path=None,
+        cmd_timeout=None,
+        tool_hactool=None,
+    )
     # When verification fails, original should remain
     assert src.exists()
     assert res == src
@@ -106,7 +126,7 @@ def test_recompress_dry_run(monkeypatch, tmp_path):
     src = tmp_path / "Dry [0100ABCDEF000032].nsz"
     src.write_bytes(b"old")
 
-    so.TOOL_NSZ = tmp_path / "nsz"
+    tool_nsz = tmp_path / "nsz"
     so.args = setup_args(A(), compress=True, recompress=True, dry_run=True, level=19)
 
     # If dry-run, subprocess.run should not be called; we'll set a fake that raises
@@ -114,8 +134,18 @@ def test_recompress_dry_run(monkeypatch, tmp_path):
         raise RuntimeError("should not call nsz in dry-run")
 
     monkeypatch.setattr(so.subprocess, "run", fake_run)
-    monkeypatch.setattr(so, "detect_nsz_level", lambda f: 1)
+    monkeypatch.setattr(so, "detect_nsz_level", lambda f, **k: 1)
 
-    res = so.handle_compression(src)
+    res = so.handle_compression(
+        src,
+        args=so.args,
+        tool_nsz=tool_nsz,
+        roms_dir=tmp_path,
+        tool_metadata=None,
+        is_nstool=False,
+        keys_path=None,
+        cmd_timeout=None,
+        tool_hactool=None,
+    )
     assert res == src
     assert src.exists()

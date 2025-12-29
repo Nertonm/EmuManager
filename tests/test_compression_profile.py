@@ -1,4 +1,4 @@
-import switch_organizer as so
+import emumanager.switch.cli as so
 
 
 class A:
