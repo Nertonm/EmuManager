@@ -40,7 +40,7 @@ jobs:
 
       - name: Run tests
         run: |
-          python -m pytest -q --cov=emumanager --cov-report=xml
+          python -m pytest -q --cov=emumanager --cov=scripts --cov-report=xml
 
       - name: SonarQube Scan
         if: matrix.python-version == '3.13'

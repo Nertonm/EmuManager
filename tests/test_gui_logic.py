@@ -1,45 +1,64 @@
 import sys
+import importlib
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Mock PyQt6 modules before importing gui_main
-sys.modules["PyQt6"] = MagicMock()
-sys.modules["PyQt6.QtWidgets"] = MagicMock()
-sys.modules["PyQt6.QtCore"] = MagicMock()
-sys.modules["PyQt6.QtGui"] = MagicMock()
-
-# Now we can import the class to test
-# We need to mock the UI class as well
-with patch("emumanager.gui_ui.Ui_MainWindow") as MockUi:
-    from emumanager.gui_main import MainWindowBase
-
+# We will import MainWindowBase inside the test/fixture to avoid global side effects
 
 class TestMainWindowLogic:
+    @pytest.fixture(scope="class", autouse=True)
+    def setup_mocks(self):
+        # Mock PyQt6 modules for this test class only
+        mock_modules = {
+            "PyQt6": MagicMock(),
+            "PyQt6.QtWidgets": MagicMock(),
+            "PyQt6.QtCore": MagicMock(),
+            "PyQt6.QtGui": MagicMock(),
+        }
+        
+        # Start patching sys.modules
+        patcher = patch.dict(sys.modules, mock_modules)
+        patcher.start()
+        
+        # Remove gui_main from sys.modules if it exists, to force re-import with mocks
+        if "emumanager.gui_main" in sys.modules:
+            del sys.modules["emumanager.gui_main"]
+            
+        yield
+        
+        patcher.stop()
+        
+        # Clean up gui_main so other tests don't use the mocked version
+        if "emumanager.gui_main" in sys.modules:
+            del sys.modules["emumanager.gui_main"]
+
     @pytest.fixture
-    def window(self):
-        # Mock the UI setup
+    def window(self, setup_mocks):
+        # Import inside the fixture to use the mocks
+        with patch("emumanager.gui_ui.Ui_MainWindow"):
+            from emumanager.gui_main import MainWindowBase
+            
+            # Mock dependencies
+            mock_qt = MagicMock()
+            mock_manager = MagicMock()
 
-        # Mock dependencies
-        mock_qt = MagicMock()
-        mock_manager = MagicMock()
+            window = MainWindowBase(mock_qt, mock_manager)
+            # Manually attach the mock UI elements that are expected
+            window.ui = MagicMock()
+            window.ui.progress_bar = MagicMock()
+            # Default isVisible to False so setVisible(True) is called
+            window.ui.progress_bar.isVisible.return_value = False
+            window.status = MagicMock()
 
-        window = MainWindowBase(mock_qt, mock_manager)
-        # Manually attach the mock UI elements that are expected
-        window.ui = MagicMock()
-        window.ui.progress_bar = MagicMock()
-        # Default isVisible to False so setVisible(True) is called
-        window.ui.progress_bar.isVisible.return_value = False
-        window.status = MagicMock()
+            # Mock the buttons that _set_ui_enabled expects
+            window.ui.btn_organize = MagicMock()
+            window.ui.btn_ps2_convert = MagicMock()
+            window.ui.btn_dolphin_convert = MagicMock()
+            window.ui.btn_dolphin_verify = MagicMock()
+            window.ui.btn_open_lib = MagicMock()
 
-        # Mock the buttons that _set_ui_enabled expects
-        window.ui.btn_organize = MagicMock()
-        window.ui.btn_ps2_convert = MagicMock()
-        window.ui.btn_dolphin_convert = MagicMock()
-        window.ui.btn_dolphin_verify = MagicMock()
-        window.ui.btn_open_library = MagicMock()
-
-        return window
+            return window
 
     def test_progress_hook_updates_ui(self, window):
         # Force direct UI update path (no signal)
