@@ -130,7 +130,7 @@ def _parse_clrmamepro(dat_path: Path) -> DatDb:
         return db
 
     # Extract header info (clrmamepro block)
-    header_match = re.search(r'clrmamepro\s*\((.*?)\)', content, re.DOTALL)
+    header_match = re.search(r"clrmamepro\s*\((.*?)\)", content, re.DOTALL)
     if header_match:
         header_content = header_match.group(1)
         name_match = re.search(r'name\s+"([^"]+)"', header_content)
@@ -141,20 +141,20 @@ def _parse_clrmamepro(dat_path: Path) -> DatDb:
             db.version = version_match.group(1)
 
     # Iterate over "game (" occurrences
-    iterator = re.finditer(r'game\s*\(', content)
+    iterator = re.finditer(r"game\s*\(", content)
     for match in iterator:
         start = match.end()
         depth = 1
         end = start
         while depth > 0 and end < len(content):
-            if content[end] == '(':
+            if content[end] == "(":
                 depth += 1
-            elif content[end] == ')':
+            elif content[end] == ")":
                 depth -= 1
             end += 1
 
         if depth == 0:
-            game_block = content[start:end - 1]
+            game_block = content[start : end - 1]
             _parse_game_block(db, game_block)
 
     return db
@@ -166,20 +166,20 @@ def _parse_game_block(db, block_content):
     game_name = name_match.group(1) if name_match else "Unknown"
 
     # Find roms
-    rom_iter = re.finditer(r'rom\s*\(', block_content)
+    rom_iter = re.finditer(r"rom\s*\(", block_content)
     for match in rom_iter:
         start = match.end()
         depth = 1
         end = start
         while depth > 0 and end < len(block_content):
-            if block_content[end] == '(':
+            if block_content[end] == "(":
                 depth += 1
-            elif block_content[end] == ')':
+            elif block_content[end] == ")":
                 depth -= 1
             end += 1
 
         if depth == 0:
-            rom_content = block_content[start:end - 1]
+            rom_content = block_content[start : end - 1]
             _parse_rom(db, game_name, rom_content)
 
 
@@ -187,16 +187,16 @@ def _parse_rom(db, game_name, rom_content):
     name_match = re.search(r'name\s+"([^"]+)"', rom_content)
     rom_name = name_match.group(1) if name_match else "Unknown"
 
-    size_match = re.search(r'size\s+(\d+)', rom_content)
+    size_match = re.search(r"size\s+(\d+)", rom_content)
     size = int(size_match.group(1)) if size_match else 0
 
-    crc_match = re.search(r'crc\s+([0-9A-Fa-f]+)', rom_content)
+    crc_match = re.search(r"crc\s+([0-9A-Fa-f]+)", rom_content)
     crc = crc_match.group(1) if crc_match else None
 
-    md5_match = re.search(r'md5\s+([0-9A-Fa-f]+)', rom_content)
+    md5_match = re.search(r"md5\s+([0-9A-Fa-f]+)", rom_content)
     md5 = md5_match.group(1) if md5_match else None
 
-    sha1_match = re.search(r'sha1\s+([0-9A-Fa-f]+)', rom_content)
+    sha1_match = re.search(r"sha1\s+([0-9A-Fa-f]+)", rom_content)
     sha1 = sha1_match.group(1) if sha1_match else None
 
     info = RomInfo(

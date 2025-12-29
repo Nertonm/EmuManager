@@ -16,12 +16,14 @@ class Ui_MainWindow:
         try:
             from PyQt6.QtCore import QSize as _QSize
             from PyQt6.QtCore import Qt as _Qt
+
             self._Qt_enum = _Qt
             self._QSize = _QSize
         except ImportError:
             try:
                 from PySide6.QtCore import QSize as _QSize
                 from PySide6.QtCore import Qt as _Qt
+
                 self._Qt_enum = _Qt
                 self._QSize = _QSize
             except ImportError:

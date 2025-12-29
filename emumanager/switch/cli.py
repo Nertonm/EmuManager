@@ -65,9 +65,7 @@ def show_manual():
 
     print(f"  4. {Col.GREEN}Modo Simulação (Teste):{Col.RESET}")
     print("     python3 script.py --organize --dry-run")
-    print(
-        f"     {Col.GREY}* Mostra o que seria feito sem alterar nada.{Col.RESET}\n"
-    )
+    print(f"     {Col.GREY}* Mostra o que seria feito sem alterar nada.{Col.RESET}\n")
 
     print(f"{Col.YELLOW}ARGUMENTOS DISPONÍVEIS:{Col.RESET}")
     print("  --dir [PASTA]    : Define a pasta dos jogos (Padrão: atual).")
@@ -243,10 +241,7 @@ parser.add_argument(
 parser.add_argument(
     "--deep-verify",
     action="store_true",
-    help=(
-        "Executa verificação mais profunda quando possível "
-        "(usa hactool/nsz juntos)"
-    ),
+    help=("Executa verificação mais profunda quando possível (usa hactool/nsz juntos)"),
 )
 parser.add_argument(
     "--report-csv",
@@ -855,8 +850,7 @@ def _handle_new_compression(
                         try:
                             filepath.unlink()
                             logger.info(
-                                "Original removido após compressão bem-sucedida: "
-                                "%s",
+                                "Original removido após compressão bem-sucedida: %s",
                                 filepath.name,
                             )
                             logger.debug(
@@ -1200,9 +1194,7 @@ def main(argv: Optional[List[str]] = None):
                     ]
                 )
                 writer.writerows(catalog)
-            print(
-                f"📊 Catálogo salvo em: {Col.YELLOW}{CSV_FILE.name}{Col.RESET}"
-            )
+            print(f"📊 Catálogo salvo em: {Col.YELLOW}{CSV_FILE.name}{Col.RESET}")
         except Exception as e:
             logger.exception(f"Erro ao salvar CSV: {e}")
 

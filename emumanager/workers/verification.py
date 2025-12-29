@@ -224,9 +224,7 @@ def _verify_single_file(
     file_weight,
     lib_db: Optional[LibraryDB] = None,
 ) -> VerifyResult:
-    file_prog_cb = create_file_progress_cb(
-        progress_cb, start_prog, file_weight, f.name
-    )
+    file_prog_cb = create_file_progress_cb(progress_cb, start_prog, file_weight, f.name)
 
     # Check Library DB first
     if lib_db:
@@ -252,7 +250,7 @@ def _verify_single_file(
                         md5=entry.md5,
                         sha256=entry.sha256,
                         full_path=str(f),
-                        dat_name=entry.dat_name
+                        dat_name=entry.dat_name,
                     )
         except (OSError, ValueError):
             # File might have been deleted or path issue
@@ -315,7 +313,7 @@ def _verify_single_file(
                 sha256=res.sha256,
                 status=res.status,
                 match_name=res.match_name,
-                dat_name=res.dat_name
+                dat_name=res.dat_name,
             )
             lib_db.update_entry(new_entry)
         except OSError:
@@ -356,7 +354,7 @@ def worker_identify_single_file(
                 cached_hashes = {
                     "crc32": entry.crc32,
                     "md5": entry.md5,
-                    "sha1": entry.sha1
+                    "sha1": entry.sha1,
                 }
     except (OSError, ValueError):
         pass
@@ -393,7 +391,7 @@ def worker_identify_single_file(
             sha256=None,
             status=status,
             match_name=match_name,
-            dat_name=getattr(match, "dat_name", None)
+            dat_name=getattr(match, "dat_name", None),
         )
         lib_db.update_entry(new_entry)
     except OSError:

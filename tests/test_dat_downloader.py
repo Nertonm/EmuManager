@@ -19,7 +19,7 @@ def test_list_available_dats(mock_session, tmp_path):
     mock_response.json.return_value = [
         {"name": "Nintendo - Game Boy.dat", "type": "file"},
         {"name": "readme.md", "type": "file"},
-        {"name": "subdir", "type": "dir"}
+        {"name": "subdir", "type": "dir"},
     ]
     mock_response.raise_for_status.return_value = None
     mock_session.get.return_value = mock_response
@@ -56,7 +56,7 @@ def test_download_all(mock_session, tmp_path):
     mock_list_resp = MagicMock()
     mock_list_resp.json.return_value = [
         {"name": "file1.dat", "type": "file"},
-        {"name": "file2.dat", "type": "file"}
+        {"name": "file2.dat", "type": "file"},
     ]
 
     # Mock download response

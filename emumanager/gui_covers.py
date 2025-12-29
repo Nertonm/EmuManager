@@ -23,7 +23,7 @@ except ImportError:
 
 class CoverSignals(QObject):
     finished = pyqtSignal(str)  # Returns the path of the image
-    log = pyqtSignal(str)       # Returns log messages
+    log = pyqtSignal(str)  # Returns log messages
 
 
 class CoverDownloader(QRunnable):
@@ -182,9 +182,7 @@ class CoverDownloader(QRunnable):
             )
 
             if os.path.exists(file_path):
-                self.signals.log.emit(
-                    f"Cover found in cache (Libretro): {file_path}"
-                )
+                self.signals.log.emit(f"Cover found in cache (Libretro): {file_path}")
                 self.signals.finished.emit(file_path)
                 return
 

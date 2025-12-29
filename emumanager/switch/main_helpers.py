@@ -155,7 +155,7 @@ def _scan_files(
                     sha256=None,
                     status=status,
                     match_name="Integrity Check",
-                    dat_name=None
+                    dat_name=None,
                 )
                 lib_db.update_entry(new_entry)
             except OSError:

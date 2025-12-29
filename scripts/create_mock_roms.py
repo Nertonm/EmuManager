@@ -50,9 +50,7 @@ def main():
     print("Creating Switch mocks...")
     switch_dir = roms / "switch"
     # Valid files
-    create_dummy_file(
-        switch_dir / "Super Mario Odyssey [0100000000010000][v0].nsp"
-    )
+    create_dummy_file(switch_dir / "Super Mario Odyssey [0100000000010000][v0].nsp")
     create_dummy_file(
         switch_dir / "The Legend of Zelda BOTW [01007EF00011E000][v0].xci"
     )

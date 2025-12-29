@@ -197,7 +197,7 @@ def _verify_dolphin_file(
             sha256=None,
             status=status,
             match_name=title,
-            dat_name=None
+            dat_name=None,
         )
         lib_db.update_entry(new_entry)
     except OSError:
@@ -533,10 +533,7 @@ def worker_dolphin_recompress_single(
 
         logger.info(f"Recompressing {filepath.name} with zstd level {level}...")
         success = converter.convert_to_rvz(
-            filepath,
-            temp_output,
-            compression="zstd",
-            level=level
+            filepath, temp_output, compression="zstd", level=level
         )
 
         if success:
@@ -593,10 +590,7 @@ def worker_dolphin_compress_single(
 
     # Default compression settings
     success = converter.convert_to_rvz(
-        filepath,
-        rvz_file,
-        compression="zstd",
-        level=level
+        filepath, rvz_file, compression="zstd", level=level
     )
 
     if success:

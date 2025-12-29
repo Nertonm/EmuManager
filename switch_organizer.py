@@ -22,5 +22,6 @@ if __name__ == "__main__":
         raise
     except Exception:
         import logging
+
         logging.getLogger("organizer_v13").exception("Fatal error")
         sys.exit(2)

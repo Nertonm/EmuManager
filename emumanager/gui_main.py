@@ -1354,6 +1354,7 @@ class MainWindowBase:
         # If no systems found (empty library), populate with known systems
         if not systems:
             from emumanager.config import EXT_TO_SYSTEM
+
             systems = sorted(list(set(EXT_TO_SYSTEM.values())))
 
         items = sorted(systems)
@@ -1417,13 +1418,32 @@ class MainWindowBase:
 
         # Extensions to ignore (junk, metadata, images, etc)
         IGNORED_EXTENSIONS = {
-            ".dat", ".xml",
-            ".txt", ".nfo", ".pdf", ".doc", ".docx",
-            ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".ico",
-            ".ini", ".cfg", ".conf", ".db", ".ds_store",
-            ".url", ".lnk", ".desktop",
-            ".py", ".pyc", ".log",
-            ".err", ".out"
+            ".dat",
+            ".xml",
+            ".txt",
+            ".nfo",
+            ".pdf",
+            ".doc",
+            ".docx",
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".bmp",
+            ".gif",
+            ".ico",
+            ".ini",
+            ".cfg",
+            ".conf",
+            ".db",
+            ".ds_store",
+            ".url",
+            ".lnk",
+            ".desktop",
+            ".py",
+            ".pyc",
+            ".log",
+            ".err",
+            ".out",
         }
 
         for p in root.rglob("*"):
@@ -1490,13 +1510,32 @@ class MainWindowBase:
 
         # Extensions to ignore (junk, metadata, images, etc)
         IGNORED_EXTENSIONS = {
-            ".dat", ".xml",
-            ".txt", ".nfo", ".pdf", ".doc", ".docx",
-            ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".ico",
-            ".ini", ".cfg", ".conf", ".db", ".ds_store",
-            ".url", ".lnk", ".desktop",
-            ".py", ".pyc", ".log",
-            ".err", ".out"
+            ".dat",
+            ".xml",
+            ".txt",
+            ".nfo",
+            ".pdf",
+            ".doc",
+            ".docx",
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".bmp",
+            ".gif",
+            ".ico",
+            ".ini",
+            ".cfg",
+            ".conf",
+            ".db",
+            ".ds_store",
+            ".url",
+            ".lnk",
+            ".desktop",
+            ".py",
+            ".pyc",
+            ".log",
+            ".err",
+            ".out",
         }
 
         for p in root.iterdir():
@@ -1745,7 +1784,7 @@ class MainWindowBase:
         candidates = [
             self._last_base / "dats",
             self._last_base.parent / "dats",
-            self._last_base.parent.parent / "dats"
+            self._last_base.parent.parent / "dats",
         ]
         args.dats_root = next((p for p in candidates if p.exists()), None)
 
@@ -1982,7 +2021,7 @@ class MainWindowBase:
                 target_root,
                 self.log_msg,
                 progress_cb=getattr(self, "progress_hook", None),
-                cancel_event=self._cancel_event
+                cancel_event=self._cancel_event,
             )
             results.append(f"Distribution: {dist_stats}")
 
@@ -2177,6 +2216,7 @@ class MainWindowBase:
 
     def _update_cover_image(self, image_path):
         import threading
+
         self.log_msg(
             f"Update cover called in thread: {threading.current_thread().name}"
         )
@@ -2222,9 +2262,7 @@ class MainWindowBase:
             return
 
         system = (
-            self.sys_list.currentItem().text()
-            if self.sys_list.currentItem()
-            else ""
+            self.sys_list.currentItem().text() if self.sys_list.currentItem() else ""
         )
         if not system:
             self.log_msg(MSG_NO_SYSTEM)
@@ -2397,7 +2435,7 @@ class MainWindowBase:
 
                     msg = (
                         f"Downloading: {completed}/{total_files} "
-                        f"({(percent*100):.1f}%)"
+                        f"({(percent * 100):.1f}%)"
                     )
                     self.progress_hook(percent, msg)
 

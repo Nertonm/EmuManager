@@ -183,9 +183,7 @@ class DolphinConverter:
                 )
                 # Output might contain details
                 if result.stdout:
-                    self.logger.info(
-                        f"Output: {result.stdout}"
-                    )
+                    self.logger.info(f"Output: {result.stdout}")
                 return False
         except Exception as e:
             self.logger.error(f"Exception during verification: {e}")

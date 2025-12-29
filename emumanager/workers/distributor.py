@@ -69,9 +69,7 @@ def worker_distribute_root(
                     file_path.rename(target_path)
                     stats["moved"] += 1
             else:
-                logger.warning(
-                    f"Could not determine system for: {file_path.name}"
-                )
+                logger.warning(f"Could not determine system for: {file_path.name}")
                 stats["skipped"] += 1
 
         except Exception as e:
