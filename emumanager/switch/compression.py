@@ -278,120 +278,176 @@ def decompress_and_find_candidate(
     Returns the chosen candidate Path (or None) following the same heuristics
     as the legacy code: direct-name match, mtime proximity, metadata probe, size match.
     """
+    if not _perform_decompression(filepath, run_cmd, tool_nsz, args, roms_dir):
+        return None
+
+    archive_mtime = _get_mtime_safe(filepath)
+    parent = filepath.parent
+
+    # 1. Direct-name candidates
+    chosen = _find_direct_candidate(filepath, parent, archive_mtime)
+    if chosen:
+        # Legacy behavior: check keep_on_failure for direct match
+        _cleanup_original(filepath, args, check_keep_failure=True)
+        return chosen
+
+    # 2. Broader recent-file probe
+    if archive_mtime is not None:
+        chosen = _find_recent_candidate(
+            filepath,
+            parent,
+            archive_mtime,
+            run_cmd,
+            tool_metadata,
+            is_nstool,
+            keys_path,
+            args,
+        )
+        if chosen:
+            # Legacy behavior: do NOT check keep_on_failure for recent match
+            _cleanup_original(filepath, args, check_keep_failure=False)
+            return chosen
+
+    return None
+
+
+def _perform_decompression(
+    filepath: Path, run_cmd: Callable, tool_nsz: str, args, roms_dir: Path
+) -> bool:
     parent = filepath.parent
     logbase_d = Path(roms_dir) / "logs" / "nsz" / (filepath.stem + ".decomp_act")
+    cmd = [str(tool_nsz), "-D", "-o", str(parent), str(filepath)]
+    timeout = getattr(args, "cmd_timeout", None) if args else None
+
     try:
         if tqdm:
             with tqdm(total=1, desc=f"Decompressing {filepath.name}", unit="op"):
-                run_cmd(
-                    [str(tool_nsz), "-D", "-o", str(parent), str(filepath)],
-                    filebase=logbase_d,
-                    timeout=getattr(args, "cmd_timeout", None) if args else None,
-                )
+                run_cmd(cmd, filebase=logbase_d, timeout=timeout)
         else:
-            run_cmd(
-                [str(tool_nsz), "-D", "-o", str(parent), str(filepath)],
-                filebase=logbase_d,
-                timeout=getattr(args, "cmd_timeout", None) if args else None,
-            )
+            run_cmd(cmd, filebase=logbase_d, timeout=timeout)
+        return True
+    except Exception:
+        return False
+
+
+def _get_mtime_safe(filepath: Path) -> Optional[float]:
+    try:
+        return os.path.getmtime(filepath)
     except Exception:
         return None
 
-    try:
-        archive_mtime = os.path.getmtime(filepath)
-    except Exception:
-        archive_mtime = None
 
-    # direct-name candidates
+def _find_direct_candidate(
+    filepath: Path, parent: Path, archive_mtime: Optional[float]
+) -> Optional[Path]:
     candidates = []
     for ext in (".nsp", ".xci", ".xcz"):
         candidates.extend(list(parent.glob(filepath.stem + f"*{ext}")))
 
-    chosen = None
     if archive_mtime is not None:
         for c in candidates:
             try:
                 if c.exists() and os.path.getmtime(c) >= archive_mtime - 2:
-                    chosen = c
-                    break
+                    return c
             except Exception:
                 continue
+    return None
 
-    if chosen:
-        if (
-            filepath.exists()
-            and not getattr(args, "dry_run", False)
-            and not getattr(args, "keep_on_failure", False)
-        ):
+
+def _find_recent_candidate(
+    filepath: Path,
+    parent: Path,
+    archive_mtime: float,
+    run_cmd: Callable,
+    tool_metadata: Optional[str],
+    is_nstool: bool,
+    keys_path: Optional[Path],
+    args,
+) -> Optional[Path]:
+    look_window = 300
+    recent_candidates = []
+    for ext in (".nsp", ".xci", ".xcz"):
+        for c in parent.glob(f"*{ext}"):
             try:
-                filepath.unlink()
-            except Exception:
-                pass
-        return chosen
-
-    # Broader recent-file probe
-    if archive_mtime is not None:
-        look_window = 300
-        recent_candidates = []
-        for ext in (".nsp", ".xci", ".xcz"):
-            for c in parent.glob(f"*{ext}"):
-                try:
-                    mtime = os.path.getmtime(c)
-                except Exception:
-                    continue
+                mtime = os.path.getmtime(c)
                 if archive_mtime - look_window <= mtime <= archive_mtime + look_window:
                     recent_candidates.append(c)
-
-        for cand in recent_candidates:
-            try:
-                # Use run_cmd for metadata probe so tests can mock it
-                if tool_metadata:
-                    cmd = [
-                        str(tool_metadata),
-                        "-v" if is_nstool else "-k",
-                        str(cand),
-                    ]
-                    if not is_nstool and keys_path:
-                        cmd.insert(2, str(keys_path))
-                        cmd.insert(3, "-i")
-                    res_probe = run_cmd(
-                        cmd,
-                        timeout=getattr(args, "cmd_timeout", None) if args else None,
-                    )
-                    tid_probe = None
-                    out = getattr(res_probe, "stdout", "") or ""
-                    m = re.search(r"\[([0-9A-Fa-f]{16})\]", out)
-                    if m:
-                        tid_probe = m
-                    if tid_probe:
-                        arch_tid_match = re.search(
-                            r"\[([0-9A-Fa-f]{16})\]", filepath.name
-                        )
-                        if (
-                            arch_tid_match
-                            and arch_tid_match.group(1).upper()
-                            == tid_probe.group(1).upper()
-                        ):
-                            if filepath.exists() and not getattr(
-                                args, "dry_run", False
-                            ):
-                                try:
-                                    filepath.unlink()
-                                except Exception:
-                                    pass
-                            return cand
-                # size-match fallback
-                if abs(os.path.getsize(cand) - os.path.getsize(filepath)) < 1024 * 1024:
-                    if filepath.exists() and not getattr(args, "dry_run", False):
-                        try:
-                            filepath.unlink()
-                        except Exception:
-                            pass
-                    return cand
             except Exception:
                 continue
 
+    for cand in recent_candidates:
+        if _check_candidate_match(
+            cand, filepath, run_cmd, tool_metadata, is_nstool, keys_path, args
+        ):
+            return cand
     return None
+
+
+def _check_candidate_match(
+    cand: Path,
+    filepath: Path,
+    run_cmd: Callable,
+    tool_metadata: Optional[str],
+    is_nstool: bool,
+    keys_path: Optional[Path],
+    args,
+) -> bool:
+    try:
+        # Metadata probe
+        if tool_metadata:
+            if _probe_metadata_match(
+                cand, filepath, run_cmd, tool_metadata, is_nstool, keys_path, args
+            ):
+                return True
+
+        # Size-match fallback
+        if abs(os.path.getsize(cand) - os.path.getsize(filepath)) < 1024 * 1024:
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _probe_metadata_match(
+    cand: Path,
+    filepath: Path,
+    run_cmd: Callable,
+    tool_metadata: str,
+    is_nstool: bool,
+    keys_path: Optional[Path],
+    args,
+) -> bool:
+    cmd = [str(tool_metadata), "-v" if is_nstool else "-k", str(cand)]
+    if not is_nstool and keys_path:
+        cmd.insert(2, str(keys_path))
+        cmd.insert(3, "-i")
+
+    res_probe = run_cmd(
+        cmd, timeout=getattr(args, "cmd_timeout", None) if args else None
+    )
+    out = getattr(res_probe, "stdout", "") or ""
+
+    m = re.search(r"\[([0-9A-Fa-f]{16})\]", out)
+    if m:
+        tid_probe = m.group(1).upper()
+        arch_tid_match = re.search(r"\[([0-9A-Fa-f]{16})\]", filepath.name)
+        if arch_tid_match and arch_tid_match.group(1).upper() == tid_probe:
+            return True
+    return False
+
+
+def _cleanup_original(filepath: Path, args, check_keep_failure: bool = False):
+    if getattr(args, "dry_run", False):
+        return
+
+    if check_keep_failure and getattr(args, "keep_on_failure", False):
+        return
+
+    if filepath.exists():
+        try:
+            filepath.unlink()
+        except Exception:
+            pass
 
 
 def replace_if_verified(
