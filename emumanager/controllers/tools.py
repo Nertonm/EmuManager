@@ -136,7 +136,8 @@ class ToolsController:
                     # We need a single file worker for PSP or adapt.
                     # For now, let's just log not implemented for single file PSP
                     logging.warning(
-                        "Single file compression for PSP not yet implemented via context menu."
+                        "Single file compression for PSP not yet implemented "
+                        "via context menu."
                     )
                     return None
 
@@ -393,14 +394,16 @@ class ToolsController:
             self.mw.window,
             "Feature Not Available",
             "Automatic organization for this system is not yet implemented.\n"
-            "Please use the 'Organize (Rename)' button in the Dashboard for generic renaming.",
+            "Please use the 'Organize (Rename)' button in the Dashboard "
+            "for generic renaming.",
         )
 
     def on_sega_convert(self):
         self.mw._qtwidgets.QMessageBox.information(
             self.mw.window,
             "Sega Conversion",
-            "CHD conversion for Sega systems (Dreamcast/Saturn) uses the same 'chdman' tool as PS1.\n"
+            "CHD conversion for Sega systems (Dreamcast/Saturn) uses the same "
+            "'chdman' tool as PS1.\n"
             "This feature will be fully enabled in the next update.",
         )
 

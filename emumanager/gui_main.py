@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import logging
 import threading
-from datetime import datetime
-from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -133,7 +131,7 @@ class MainWindowBase:
                 else:
                     log_signal = self._qtcore.Signal(str)
                     progress_signal = self._qtcore.Signal(float, str)
-                
+
                 def emit_log(self, msg, level):
                     # We can optionally use level to colorize, but for now just emit msg
                     self.log_signal.emit(msg)
@@ -141,7 +139,7 @@ class MainWindowBase:
             self._signaler = LogSignaler()
             self._signaler.log_signal.connect(self._log_msg_slot)
             self._signaler.progress_signal.connect(self._progress_slot)
-            
+
             # Configure standard logging to use this signaler
             setup_gui_logging(self._signaler)
 
@@ -179,14 +177,15 @@ class MainWindowBase:
             self._setup_verification_context_menu()
         except Exception:
             pass
-            
+
         # Setup smart startup hook
         if self._qtcore:
             self._setup_startup_hook()
 
     def _setup_startup_hook(self):
-        """Install an event filter to trigger logic only when the window is actually shown."""
-        QEvent = self._qtcore.QEvent
+        """
+        Install an event filter to trigger logic only when the window is actually shown.
+        """
         QObject = self._qtcore.QObject
 
         # Define filter class dynamically to use the imported QObject
@@ -201,7 +200,7 @@ class MainWindowBase:
                 # Handle both PyQt6 (enum) and PySide6 (int/enum)
                 t = event.type()
                 val = t.value if hasattr(t, "value") else t
-                
+
                 if val == 17:  # QEvent.Show
                     if not self.has_run:
                         self.has_run = True
@@ -288,7 +287,7 @@ class MainWindowBase:
         self.window.show()
 
     def _log_msg_slot(self, text: str):
-        # Just append to the log window. 
+        # Just append to the log window.
         # The text is already formatted by the logging handler if it came from there.
         self.log.append(text)
         # Show brief status in the status bar
@@ -321,6 +320,7 @@ class MainWindowBase:
 
     def log_msg(self, text: str):
         """Thread-safe logging method.
+
         Now redirects to standard logging.
         """
         logging.info(text)
@@ -436,10 +436,14 @@ class MainWindowBase:
         self.act_health.triggered.connect(self.tools_controller.on_health_check)
 
         self.act_switch_compress = qt.QAction("Switch: Compress", self.window)
-        self.act_switch_compress.triggered.connect(self.tools_controller.on_switch_compress)
+        self.act_switch_compress.triggered.connect(
+            self.tools_controller.on_switch_compress
+        )
 
         self.act_switch_decompress = qt.QAction("Switch: Decompress", self.window)
-        self.act_switch_decompress.triggered.connect(self.tools_controller.on_switch_decompress)
+        self.act_switch_decompress.triggered.connect(
+            self.tools_controller.on_switch_decompress
+        )
 
         self.act_ps2_convert = qt.QAction("PS2: Convert to CHD", self.window)
         self.act_ps2_convert.triggered.connect(self.tools_controller.on_ps2_convert)
@@ -487,7 +491,9 @@ class MainWindowBase:
         self.act_dol_verify.triggered.connect(self.tools_controller.on_dolphin_verify)
 
         self.act_dol_organize = qt.QAction("GC/Wii: Organize", self.window)
-        self.act_dol_organize.triggered.connect(self.tools_controller.on_dolphin_organize)
+        self.act_dol_organize.triggered.connect(
+            self.tools_controller.on_dolphin_organize
+        )
 
         self.act_clean_junk = qt.QAction("Clean Junk Files", self.window)
         self.act_clean_junk.triggered.connect(self.tools_controller.on_clean_junk)
@@ -1131,12 +1137,13 @@ class MainWindowBase:
             self.ui.btn_select_dat.setEnabled(enabled)
             
             # Verify DAT button logic
-            # It should be enabled if we have a DAT selected OR a library open (for auto-discovery)
+            # It should be enabled if we have a DAT selected OR a library open
+            # (for auto-discovery)
             has_dat = bool(getattr(self, "_current_dat_path", None))
             has_base = bool(getattr(self, "_last_base", None))
             can_verify = enabled and (has_dat or has_base)
-            
-            # print(f"DEBUG: enabled={enabled} has_dat={has_dat} has_base={has_base} -> can_verify={can_verify}")
+
+            # print(f"DEBUG: enabled={enabled} has_dat={has_dat} ...")
             self.ui.btn_verify_dat.setEnabled(can_verify)
 
             # Identify All button logic
@@ -1217,10 +1224,10 @@ class MainWindowBase:
         if not base:
             self.log_msg(MSG_SELECT_BASE)
             return
-            
+
         # Ensure UI is enabled before listing
         self._set_ui_enabled(True)
-        
+
         systems = self._manager.cmd_list_systems(base)
         self._refresh_system_list_ui(systems)
         self._log_systems(systems)
@@ -1246,7 +1253,9 @@ class MainWindowBase:
                     # Count files recursively
                     total_files += sum(1 for _ in p.rglob("*") if _.is_file())
                 except Exception:
-                    logging.warning(f"Failed to count files for {sys_name}", exc_info=True)
+                    logging.warning(
+                        f"Failed to count files for {sys_name}", exc_info=True
+                    )
 
             if hasattr(self.ui, "lbl_total_roms"):
                 self.ui.lbl_total_roms.setText(f"Total Files: {total_files}")
@@ -1260,7 +1269,7 @@ class MainWindowBase:
                 for s in systems:
                     self.sys_list.addItem(s)
                 self._auto_select_last_system()
-            
+
             # Update Gallery Combo
             if hasattr(self.ui, "combo_gallery_system"):
                 self.ui.combo_gallery_system.clear()
@@ -1405,10 +1414,10 @@ class MainWindowBase:
         files = []
         if not root.exists():
             return files
-            
+
         # Extensions to ignore (junk, metadata, images, etc)
         IGNORED_EXTENSIONS = {
-            ".dat", ".xml", 
+            ".dat", ".xml",
             ".txt", ".nfo", ".pdf", ".doc", ".docx",
             ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".ico",
             ".ini", ".cfg", ".conf", ".db", ".ds_store",
@@ -1422,7 +1431,7 @@ class MainWindowBase:
                 continue
             if p.name.startswith("."):
                 continue
-            
+
             if p.suffix.lower() in IGNORED_EXTENSIONS:
                 continue
 
@@ -1430,10 +1439,14 @@ class MainWindowBase:
                 rel = p.relative_to(root)
                 if any(part.startswith(".") for part in rel.parts):
                     continue
-                
+
                 # Exclude dats/no-intro/redump folders
                 parts_lower = [part.lower() for part in rel.parts]
-                if "dats" in parts_lower or "no-intro" in parts_lower or "redump" in parts_lower:
+                if (
+                    "dats" in parts_lower
+                    or "no-intro" in parts_lower
+                    or "redump" in parts_lower
+                ):
                     continue
 
                 files.append(p)
@@ -1468,14 +1481,16 @@ class MainWindowBase:
         return dirs
 
     def _list_files_flat(self, root: Path) -> list[Path]:
-        """List files in the directory (non-recursive), excluding hidden files and junk."""
+        """
+        List files in the directory (non-recursive), excluding hidden files and junk.
+        """
         files = []
         if not root.exists():
             return files
 
         # Extensions to ignore (junk, metadata, images, etc)
         IGNORED_EXTENSIONS = {
-            ".dat", ".xml", 
+            ".dat", ".xml",
             ".txt", ".nfo", ".pdf", ".doc", ".docx",
             ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".ico",
             ".ini", ".cfg", ".conf", ".db", ".ds_store",
@@ -1489,7 +1504,7 @@ class MainWindowBase:
                 continue
             if p.name.startswith("."):
                 continue
-            
+
             if p.suffix.lower() in IGNORED_EXTENSIONS:
                 continue
 
@@ -1666,7 +1681,7 @@ class MainWindowBase:
             self._update_logger(base)
 
             self.log_msg(f"Library opened: {base}")
-            
+
             # Enable verification button (auto-discovery possible)
             self.ui.btn_verify_dat.setEnabled(True)
             if hasattr(self.ui, "btn_identify_all"):
@@ -1677,8 +1692,6 @@ class MainWindowBase:
                 self.on_list()
             except Exception:
                 pass
-
-
     def on_select_dat(self):
         qt = self._qtwidgets
         dlg = qt.QFileDialog(self.window, "Select DAT File")
@@ -1719,16 +1732,16 @@ class MainWindowBase:
 
         # If no DAT selected, prompt user
         if not getattr(self, "_current_dat_path", None):
-             self.on_select_dat()
-             # If still no DAT, return (user cancelled)
-             if not getattr(self, "_current_dat_path", None):
-                 return
+            self.on_select_dat()
+            # If still no DAT, return (user cancelled)
+            if not getattr(self, "_current_dat_path", None):
+                return
 
         dat_path = self._current_dat_path
-        
+
         args = self._get_common_args()
         args.dat_path = dat_path
-        
+
         # Try to locate 'dats' folder in common locations
         candidates = [
             self._last_base / "dats",
@@ -2124,20 +2137,20 @@ class MainWindowBase:
         # Get file path
         if not self._last_base:
             return
-            
+
         base_roms_dir = get_roms_dir(Path(self._last_base))
         system_dir = base_roms_dir / system
-        
+
         rom_rel_path = current.text()
         full_path = system_dir / rom_rel_path
-        
+
         # Start cover download/extraction
         # Use a cache dir for covers
         cache_dir = Path(self._last_base) / ".covers"
         cache_dir.mkdir(exist_ok=True)
-        
+
         self.log_msg(f"Fetching cover for {rom_rel_path} (System: {system})...")
-        
+
         # Guess region from filename
         region = None
         if "(USA)" in rom_rel_path or "(US)" in rom_rel_path:
@@ -2146,27 +2159,35 @@ class MainWindowBase:
             region = "EN"
         elif "(Japan)" in rom_rel_path or "(JP)" in rom_rel_path:
             region = "JA"
-            
-        downloader = CoverDownloader(system, None, region, str(cache_dir), str(full_path))
-        
+
+        downloader = CoverDownloader(
+            system, None, region, str(cache_dir), str(full_path)
+        )
+
         # Force QueuedConnection to ensure UI updates happen in the main thread
-        conn_type = self._Qt_enum.ConnectionType.QueuedConnection if self._Qt_enum and hasattr(self._Qt_enum, "ConnectionType") else self._qtcore.Qt.QueuedConnection
-        
+        conn_type = (
+            self._Qt_enum.ConnectionType.QueuedConnection
+            if self._Qt_enum and hasattr(self._Qt_enum, "ConnectionType")
+            else self._qtcore.Qt.QueuedConnection
+        )
+
         downloader.signals.finished.connect(self._update_cover_image, conn_type)
         downloader.signals.log.connect(self.log_msg, conn_type)
-        
+
         # Run in thread pool
         if self._qtcore:
             self._qtcore.QThreadPool.globalInstance().start(downloader)
 
     def _update_cover_image(self, image_path):
         import threading
-        self.log_msg(f"Update cover called in thread: {threading.current_thread().name}")
-        
+        self.log_msg(
+            f"Update cover called in thread: {threading.current_thread().name}"
+        )
+
         if not image_path or not Path(image_path).exists():
             self.cover_label.setText("No Cover Found")
             return
-            
+
         # Check file size
         try:
             size = Path(image_path).stat().st_size
@@ -2179,7 +2200,7 @@ class MainWindowBase:
 
         self.log_msg(f"Displaying cover: {image_path}")
         pixmap = self._qtgui.QPixmap(image_path)
-        
+
         if not pixmap.isNull():
             self.log_msg(f"Loaded pixmap: {pixmap.width()}x{pixmap.height()}")
             self.cover_label.setPixmap(pixmap)
@@ -2236,9 +2257,11 @@ class MainWindowBase:
         
         if not dat_path:
             return
-            
-        self.log_msg(f"Identifying {full_path.name} using {Path(dat_path).name}...")
-        
+
+        self.log_msg(
+            f"Identifying {full_path.name} using {Path(dat_path).name}..."
+        )
+
         def _work():
             return worker_identify_single_file(
                 full_path, Path(dat_path), self.log_msg, self._progress_slot
@@ -2276,9 +2299,12 @@ class MainWindowBase:
         
         # Filter only existing directories
         args.dats_roots = [p for p in potential_roots if p.exists()]
-        
+
         if not args.dats_roots:
-            self.log_msg("Error: No DATs locations found. Please run 'Update DATs' or place .dat files in the library.")
+            self.log_msg(
+                "Error: No DATs locations found. "
+                "Please run 'Update DATs' or place .dat files in the library."
+            )
             return
 
         # Clear previous results
@@ -2332,8 +2358,11 @@ class MainWindowBase:
             if total_files == 0:
                 return "No DAT files found to download."
 
-            self.log_msg(f"Found {len(ni_files)} No-Intro and {len(rd_files)} Redump DATs. Starting download...")
-            
+            self.log_msg(
+                f"Found {len(ni_files)} No-Intro and {len(rd_files)} Redump DATs. "
+                "Starting download..."
+            )
+
             # Phase 2: Downloading
             completed = 0
             success = 0

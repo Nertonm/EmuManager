@@ -103,7 +103,10 @@ class CoverDownloader(QRunnable):
                 regions_to_try.append("US")
 
             for reg in regions_to_try:
-                url = f"https://art.gametdb.com/{gametdb_system}/cover/{reg}/{self.game_id}.{ext}"
+                url = (
+                    f"https://art.gametdb.com/{gametdb_system}/cover/{reg}/"
+                    f"{self.game_id}.{ext}"
+                )
                 self.signals.log.emit(f"Trying GameTDB URL: {url}")
                 if self._download_file(url, file_path):
                     self.signals.log.emit(f"Downloaded from GameTDB: {url}")
@@ -162,7 +165,10 @@ class CoverDownloader(QRunnable):
                 .replace("|", "_")
             )
 
-            url = f"https://thumbnails.libretro.com/{libretro_system}/Named_Boxarts/{safe_name}.png"
+            url = (
+                f"https://thumbnails.libretro.com/{libretro_system}/"
+                f"Named_Boxarts/{safe_name}.png"
+            )
             # Use URL encoding for spaces etc
             import urllib.parse
 
