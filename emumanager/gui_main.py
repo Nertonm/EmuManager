@@ -24,7 +24,6 @@ from .architect import get_roms_dir
 from .gui_ui import Ui_MainWindow
 from .gui_covers import CoverDownloader
 from .gui_workers import (
-    worker_distribute_root,
     worker_hash_verify,
     worker_identify_single_file,
     worker_organize,
@@ -207,41 +206,6 @@ class MainWindowBase:
         # Cancel button
         self.ui.btn_cancel.clicked.connect(self.on_cancel_requested)
 
-        self.ui.btn_dolphin_convert.clicked.connect(self.on_dolphin_convert)
-        self.ui.btn_dolphin_verify.clicked.connect(self.on_dolphin_verify)
-
-        # Tools Tab - 3DS
-        self.ui.btn_n3ds_organize.clicked.connect(self.on_n3ds_organize)
-        self.ui.btn_n3ds_verify.clicked.connect(self.on_n3ds_verify)
-        self.ui.btn_n3ds_compress.clicked.connect(self.on_n3ds_compress)
-        self.ui.btn_n3ds_decompress.clicked.connect(self.on_n3ds_decompress)
-        self.ui.btn_n3ds_convert_cia.clicked.connect(self.on_n3ds_convert_cia)
-
-        # Tools Tab - Sega
-        if hasattr(self.ui, "btn_sega_convert"):
-            self.ui.btn_sega_convert.clicked.connect(self.on_sega_convert)
-        if hasattr(self.ui, "btn_sega_verify"):
-            self.ui.btn_sega_verify.clicked.connect(self.on_generic_verify_click)
-        if hasattr(self.ui, "btn_sega_organize"):
-            self.ui.btn_sega_organize.clicked.connect(self.on_generic_organize_click)
-
-        # Tools Tab - Microsoft
-        if hasattr(self.ui, "btn_ms_verify"):
-            self.ui.btn_ms_verify.clicked.connect(self.on_generic_verify_click)
-        if hasattr(self.ui, "btn_ms_organize"):
-            self.ui.btn_ms_organize.clicked.connect(self.on_generic_organize_click)
-
-        # Tools Tab - Nintendo Legacy
-        if hasattr(self.ui, "btn_nint_compress"):
-            self.ui.btn_nint_compress.clicked.connect(self.on_nint_compress)
-        if hasattr(self.ui, "btn_nint_verify"):
-            self.ui.btn_nint_verify.clicked.connect(self.on_generic_verify_click)
-        if hasattr(self.ui, "btn_nint_organize"):
-            self.ui.btn_nint_organize.clicked.connect(self.on_generic_organize_click)
-
-        # Tools Tab - General
-        self.ui.btn_clean_junk.clicked.connect(self.on_clean_junk)
-
         # Verification Tab
         self.ui.btn_select_dat.clicked.connect(self.on_select_dat)
         self.ui.btn_verify_dat.clicked.connect(self.on_verify_dat)
@@ -413,67 +377,67 @@ class MainWindowBase:
 
     def _create_tools_actions(self, qt):
         self.act_organize = qt.QAction("Organize Library", self.window)
-        self.act_organize.triggered.connect(self.on_organize)
+        self.act_organize.triggered.connect(self.tools_controller.on_organize)
 
         self.act_health = qt.QAction("Health Check", self.window)
-        self.act_health.triggered.connect(self.on_health_check)
+        self.act_health.triggered.connect(self.tools_controller.on_health_check)
 
         self.act_switch_compress = qt.QAction("Switch: Compress", self.window)
-        self.act_switch_compress.triggered.connect(self.on_switch_compress)
+        self.act_switch_compress.triggered.connect(self.tools_controller.on_switch_compress)
 
         self.act_switch_decompress = qt.QAction("Switch: Decompress", self.window)
-        self.act_switch_decompress.triggered.connect(self.on_switch_decompress)
+        self.act_switch_decompress.triggered.connect(self.tools_controller.on_switch_decompress)
 
         self.act_ps2_convert = qt.QAction("PS2: Convert to CHD", self.window)
-        self.act_ps2_convert.triggered.connect(self.on_ps2_convert)
+        self.act_ps2_convert.triggered.connect(self.tools_controller.on_ps2_convert)
 
         self.act_psx_convert = qt.QAction("PS1: Convert to CHD", self.window)
-        self.act_psx_convert.triggered.connect(self.on_psx_convert)
+        self.act_psx_convert.triggered.connect(self.tools_controller.on_psx_convert)
 
         self.act_ps2_verify = qt.QAction("PS2: Verify", self.window)
-        self.act_ps2_verify.triggered.connect(self.on_ps2_verify)
+        self.act_ps2_verify.triggered.connect(self.tools_controller.on_ps2_verify)
 
         self.act_psx_verify = qt.QAction("PS1: Verify", self.window)
-        self.act_psx_verify.triggered.connect(self.on_psx_verify)
+        self.act_psx_verify.triggered.connect(self.tools_controller.on_psx_verify)
 
         self.act_ps2_organize = qt.QAction("PS2: Organize", self.window)
-        self.act_ps2_organize.triggered.connect(self.on_ps2_organize)
+        self.act_ps2_organize.triggered.connect(self.tools_controller.on_ps2_organize)
 
         self.act_psx_organize = qt.QAction("PS1: Organize", self.window)
-        self.act_psx_organize.triggered.connect(self.on_psx_organize)
+        self.act_psx_organize.triggered.connect(self.tools_controller.on_psx_organize)
 
         self.act_ps3_verify = qt.QAction("PS3: Verify", self.window)
-        self.act_ps3_verify.triggered.connect(self.on_ps3_verify)
+        self.act_ps3_verify.triggered.connect(self.tools_controller.on_ps3_verify)
 
         self.act_ps3_organize = qt.QAction("PS3: Organize", self.window)
-        self.act_ps3_organize.triggered.connect(self.on_ps3_organize)
+        self.act_ps3_organize.triggered.connect(self.tools_controller.on_ps3_organize)
 
         self.act_psp_verify = qt.QAction("PSP: Verify", self.window)
-        self.act_psp_verify.triggered.connect(self.on_psp_verify)
+        self.act_psp_verify.triggered.connect(self.tools_controller.on_psp_verify)
 
         self.act_psp_organize = qt.QAction("PSP: Organize", self.window)
-        self.act_psp_organize.triggered.connect(self.on_psp_organize)
+        self.act_psp_organize.triggered.connect(self.tools_controller.on_psp_organize)
 
         self.act_psp_compress = qt.QAction("PSP: Compress ISO->CSO", self.window)
-        self.act_psp_compress.triggered.connect(self.on_psp_compress)
+        self.act_psp_compress.triggered.connect(self.tools_controller.on_psp_compress)
 
         self.act_n3ds_verify = qt.QAction("3DS: Verify", self.window)
-        self.act_n3ds_verify.triggered.connect(self.on_n3ds_verify)
+        self.act_n3ds_verify.triggered.connect(self.tools_controller.on_n3ds_verify)
 
         self.act_n3ds_organize = qt.QAction("3DS: Organize", self.window)
-        self.act_n3ds_organize.triggered.connect(self.on_n3ds_organize)
+        self.act_n3ds_organize.triggered.connect(self.tools_controller.on_n3ds_organize)
 
         self.act_dol_convert = qt.QAction("GC/Wii: Convert to RVZ", self.window)
-        self.act_dol_convert.triggered.connect(self.on_dolphin_convert)
+        self.act_dol_convert.triggered.connect(self.tools_controller.on_dolphin_convert)
 
         self.act_dol_verify = qt.QAction("GC/Wii: Verify", self.window)
-        self.act_dol_verify.triggered.connect(self.on_dolphin_verify)
+        self.act_dol_verify.triggered.connect(self.tools_controller.on_dolphin_verify)
 
         self.act_dol_organize = qt.QAction("GC/Wii: Organize", self.window)
-        self.act_dol_organize.triggered.connect(self.on_dolphin_organize)
+        self.act_dol_organize.triggered.connect(self.tools_controller.on_dolphin_organize)
 
         self.act_clean_junk = qt.QAction("Clean Junk Files", self.window)
-        self.act_clean_junk.triggered.connect(self.on_clean_junk)
+        self.act_clean_junk.triggered.connect(self.tools_controller.on_clean_junk)
 
         self.act_export_csv = qt.QAction("Export Verification CSV", self.window)
         self.act_export_csv.triggered.connect(self.on_export_verification_csv)
@@ -1360,7 +1324,7 @@ class MainWindowBase:
     def _on_rom_double_clicked(self, item):
         try:
             # double-click compresses by default
-            self.on_compress_selected()
+            self.tools_controller.on_compress_selected()
         except Exception:
             pass
 
