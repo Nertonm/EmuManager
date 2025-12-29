@@ -15,20 +15,20 @@ def test_dat_db_add_lookup():
     db.add_rom(rom)
 
     # Lookup by CRC
-    match = db.lookup(crc="12345678")
-    assert match is not None
-    assert match.game_name == "Test Game"
+    matches = db.lookup(crc="12345678")
+    assert matches
+    assert matches[0].game_name == "Test Game"
 
     # Lookup by MD5
-    match = db.lookup(md5="abcdef")
-    assert match is not None
+    matches = db.lookup(md5="abcdef")
+    assert matches
 
     # Lookup by SHA1
-    match = db.lookup(sha1="1234567890abcdef")
-    assert match is not None
+    matches = db.lookup(sha1="1234567890abcdef")
+    assert matches
 
     # Lookup non-existent
-    assert db.lookup(crc="00000000") is None
+    assert not db.lookup(crc="00000000")
 
 
 def test_dat_db_case_insensitive():
@@ -36,8 +36,8 @@ def test_dat_db_case_insensitive():
     rom = RomInfo(game_name="Test Game", rom_name="test.iso", size=1000, crc="ABCDEF12")
     db.add_rom(rom)
 
-    match = db.lookup(crc="abcdef12")
-    assert match is not None
+    matches = db.lookup(crc="abcdef12")
+    assert matches
 
 
 def test_parse_dat_file(tmp_path):
@@ -62,7 +62,7 @@ def test_parse_dat_file(tmp_path):
     assert db.name == "Nintendo - GameCube"
     assert db.version == "20231223"
 
-    match = db.lookup(crc="B429E728")
-    assert match is not None
-    assert match.game_name == "Super Mario Sunshine"
-    assert match.size == 1459978240
+    matches = db.lookup(crc="B429E728")
+    assert matches
+    assert matches[0].game_name == "Super Mario Sunshine"
+    assert matches[0].size == 1459978240

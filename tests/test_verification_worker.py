@@ -41,7 +41,7 @@ def test_worker_hash_verify_success(
     mock_db.version = "1.0"
     mock_match = MagicMock()
     mock_match.game_name = "Super Mario Bros."
-    mock_db.lookup.return_value = mock_match
+    mock_db.lookup.return_value = [mock_match]
     mock_dat_parser.parse_dat_file.return_value = mock_db
 
     # Mock hasher

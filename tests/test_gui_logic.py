@@ -73,7 +73,7 @@ class TestMainWindowLogic:
         window.ui.btn_ps2_convert.setEnabled.assert_called_with(False)
         window.ui.btn_dolphin_convert.setEnabled.assert_called_with(False)
         window.ui.btn_dolphin_verify.setEnabled.assert_called_with(False)
-        window.ui.btn_open_library.setEnabled.assert_called_with(False)
+        window.ui.btn_open_lib.setEnabled.assert_called_with(False)
 
         # Progress bar should be visible (based on _set_ui_enabled logic)
         # usually showing it when busy, but let's check the actual implementation.

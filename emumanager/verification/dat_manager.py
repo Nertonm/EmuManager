@@ -41,6 +41,7 @@ def find_dat_for_system(dats_root: Path, system_name: str) -> Optional[Path]:
     search_dirs = [dats_root]
     search_dirs.extend([dats_root / sub for sub in ["no-intro", "redump"]])
     
+    candidates = []
     for source_dir in search_dirs:
         if not source_dir.exists():
             continue
@@ -49,9 +50,11 @@ def find_dat_for_system(dats_root: Path, system_name: str) -> Optional[Path]:
             name = dat_file.stem
             for kw in keywords:
                 if kw in name:
-                    return dat_file
-                    
-    return None
+                    candidates.append(dat_file)
+                    break
+    
+    if not candidates:
+        return None
         
     # Sort by name descending (usually puts newer dates first if format is Name (YYYYMMDD))
     candidates.sort(key=lambda p: p.name, reverse=True)

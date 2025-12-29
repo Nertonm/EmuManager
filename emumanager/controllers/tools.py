@@ -143,7 +143,12 @@ class ToolsController:
         
         rom_rel_path = item.text()
         # Assuming standard structure
-        full_path = Path(self.mw._last_base) / "roms" / system / rom_rel_path
+        # Check if _last_base already ends with "roms" to avoid duplication
+        base = Path(self.mw._last_base)
+        if base.name == "roms":
+            full_path = base / system / rom_rel_path
+        else:
+            full_path = base / "roms" / system / rom_rel_path
         
         if not full_path.exists():
             logging.error(f"File not found: {full_path}")
