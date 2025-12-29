@@ -43,6 +43,8 @@ nav:
   - User Guide:
     - Installation: installation.md
     - Usage: usage.md
+    - Supported Systems: supported_systems.md
+    - Troubleshooting: troubleshooting.md
     - Configuration: configuration.md
   - API Reference:
     - Manager: reference/manager.md

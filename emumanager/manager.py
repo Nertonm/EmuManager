@@ -2,9 +2,13 @@
 """
 Manager module
 
-Provides the small CLI-like API that was previously `scripts/emumanager.py`.
-This module lives inside the `emumanager` package so it can be imported
-reliably by other modules/tests.
+O módulo Manager atua como o controlador principal e ponto de entrada para operações de alto nível.
+Ele orquestra as chamadas para outros módulos (Architect, Workers, Switch Tools) e fornece a interface CLI.
+
+Funcionalidades principais:
+-   **Detecção de Sistema**: Lógica heurística (`guess_system_for_file`) para determinar a qual console um arquivo pertence, baseando-se em extensão, padrões de nome (ex: Serial PS2) e caminhos.
+-   **Interface CLI**: Processamento de argumentos de linha de comando para operações como `init`, `add`, `organize`.
+-   **Integração**: Conecta a interface do usuário (GUI/CLI) com a lógica de negócios (Architect/Workers).
 """
 
 from __future__ import annotations

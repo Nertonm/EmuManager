@@ -2,9 +2,18 @@
 """
 Architect module (package version)
 
-This file is a near-copy of the previous `scripts/architect_roms_master.py` but
-lives inside the `emumanager` package. It keeps the same public API (main,
-build_acervo, etc.) so existing code and tests keep working.
+O módulo Architect é o núcleo de organização e estruturação da biblioteca do EmuManager.
+Ele é responsável por:
+
+1.  **Inicialização da Biblioteca**: Criação da estrutura de pastas padrão (`roms/`, `bios/`, etc.).
+2.  **Organização de ROMs**:
+    -   Varredura de diretórios em busca de arquivos de jogos.
+    -   Identificação de arquivos baseada em extensão e conteúdo (headers).
+    -   Renomeação automática baseada em metadados (GameTDB, Serial, etc.).
+    -   Movimentação de arquivos para as pastas corretas (`roms/<sistema>/`).
+3.  **Geração de Metadados**: Criação de arquivos `_INFO_TECNICA.txt` e `README.md` para cada sistema.
+
+Este módulo mantém a API pública compatível com scripts legados, mas agora reside dentro do pacote `emumanager`.
 """
 
 from __future__ import annotations

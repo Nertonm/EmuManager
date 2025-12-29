@@ -4,6 +4,16 @@
 
 **EmuManager** é uma ferramenta completa para organizar, validar e gerenciar coleções de emulação. Originalmente focado em Nintendo Switch, agora evoluiu para suportar múltiplos sistemas (GameCube, Wii, PS2, PS3, PSP) e oferecer uma interface gráfica moderna.
 
+## Documentação Completa
+
+A documentação completa está disponível na pasta `docs/` e pode ser visualizada online (se hospedada) ou localmente.
+
+- [Instalação](docs/installation.md)
+- [Guia de Uso](docs/usage.md)
+- [Sistemas Suportados](docs/supported_systems.md)
+- [Solução de Problemas](docs/troubleshooting.md)
+- [Configuração](docs/configuration.md)
+
 ## Recursos Principais
 
 ### Interface Gráfica (GUI)
