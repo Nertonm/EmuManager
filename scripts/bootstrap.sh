@@ -18,7 +18,7 @@ command_exists() {
 echo -e "\n${YELLOW}[1/6] Checking system dependencies...${NC}"
 
 # Detect Distribution
-if [ -f /etc/os-release ]; then
+if [[ -f /etc/os-release ]]; then
     . /etc/os-release
     DISTRO=$ID
 else
@@ -39,7 +39,7 @@ install_debian_deps() {
     if ! python3 -m venv --help >/dev/null 2>&1; then MISSING_PACKAGES="$MISSING_PACKAGES python3-venv"; fi
     if ! command_exists make; then MISSING_PACKAGES="$MISSING_PACKAGES build-essential libssl-dev zlib1g-dev"; fi
 
-    if [ ! -z "$MISSING_PACKAGES" ]; then
+    if [[ ! -z "$MISSING_PACKAGES" ]]; then
         echo -e "Installing missing packages: ${RED}$MISSING_PACKAGES${NC}"
         echo "Sudo access required for installation."
         sudo apt-get update
@@ -60,7 +60,7 @@ install_arch_deps() {
     if ! command_exists unzip; then MISSING_PACKAGES="$MISSING_PACKAGES unzip"; fi
     if ! command_exists make; then MISSING_PACKAGES="$MISSING_PACKAGES base-devel python openssl zlib"; fi
 
-    if [ ! -z "$MISSING_PACKAGES" ]; then
+    if [[ ! -z "$MISSING_PACKAGES" ]]; then
         echo -e "Installing missing official packages: ${RED}$MISSING_PACKAGES${NC}"
         sudo pacman -S --noconfirm $MISSING_PACKAGES
     else
@@ -98,7 +98,7 @@ install_fedora_deps() {
     if ! command_exists python3-config; then MISSING_PACKAGES="$MISSING_PACKAGES python3-devel"; fi
     if ! command_exists make; then MISSING_PACKAGES="$MISSING_PACKAGES make automake gcc gcc-c++ openssl-devel zlib-devel"; fi
 
-    if [ ! -z "$MISSING_PACKAGES" ]; then
+    if [[ ! -z "$MISSING_PACKAGES" ]]; then
         echo -e "Installing missing packages: ${RED}$MISSING_PACKAGES${NC}"
         echo "Sudo access required for installation."
         sudo dnf install -y $MISSING_PACKAGES
@@ -160,9 +160,9 @@ if ! command_exists ctrtool; then
     make
     
     echo "Installing to /usr/local/bin..."
-    if [ -f "bin/ctrtool" ]; then
+    if [[ -f "bin/ctrtool" ]]; then
         sudo cp bin/ctrtool /usr/local/bin/
-    elif [ -f "ctrtool/bin/ctrtool" ]; then
+    elif [[ -f "ctrtool/bin/ctrtool" ]]; then
         sudo cp ctrtool/bin/ctrtool /usr/local/bin/
     else
         echo "Could not find compiled ctrtool binary."
@@ -190,8 +190,8 @@ fi
 # 5. Python Environment
 echo -e "\n${YELLOW}[5/6] Setting up Python environment...${NC}"
 
-if [ -z "$VIRTUAL_ENV" ]; then
-    if [ ! -d ".venv" ]; then
+if [[ -z "$VIRTUAL_ENV" ]]; then
+    if [[ ! -d ".venv" ]]; then
         echo "Creating virtual environment in .venv..."
         python3 -m venv .venv
     else
@@ -209,7 +209,7 @@ fi
 echo -e "\n${YELLOW}[6/6] Installing Python dependencies...${NC}"
 # Ensure we are using the pip from the venv
 pip install --upgrade pip
-if [ -f "requirements.txt" ]; then
+if [[ -f "requirements.txt" ]]; then
     pip install -r requirements.txt
 fi
 

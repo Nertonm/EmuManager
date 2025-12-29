@@ -75,48 +75,61 @@ class CoverDownloader(QRunnable):
 
         # Strategy 1: GameTDB (requires Game ID)
         if self.game_id and gametdb_system:
-            # Determine file extension and URL pattern based on system
-            ext = "png"
-            if gametdb_system in ["ps2", "ps3", "switch"]:
-                ext = "jpg"
-
-            # Construct local path
-            file_path = os.path.join(
-                self.cache_dir, "covers", self.system, f"{self.game_id}.{ext}"
-            )
-
-            # If already exists, return immediately
-            if os.path.exists(file_path):
-                self.signals.log.emit(f"Cover found in cache: {file_path}")
-                self.signals.finished.emit(file_path)
+            if self._try_gametdb(gametdb_system):
                 return
 
-            # Construct URL
-            # GameTDB URL structure:
-            # https://art.gametdb.com/{system}/cover/{region}/{game_id}.{ext}
-            # Region mapping might be needed.
-            # For now, try passed region or default to US/EN
-
-            regions_to_try = [self.region, "US", "EN", "JA", "Other"]
-            # Filter out None or empty regions
-            regions_to_try = [r for r in regions_to_try if r]
-
-            # Add a generic fallback if no specific region worked
-            if "US" not in regions_to_try:
-                regions_to_try.append("US")
-
-            for reg in regions_to_try:
-                url = (
-                    f"https://art.gametdb.com/{gametdb_system}/cover/{reg}/"
-                    f"{self.game_id}.{ext}"
-                )
-                self.signals.log.emit(f"Trying GameTDB URL: {url}")
-                if self._download_file(url, file_path):
-                    self.signals.log.emit(f"Downloaded from GameTDB: {url}")
-                    self.signals.finished.emit(file_path)
-                    return
-
         # Strategy 2: Libretro Thumbnails (Fallback using Game Name)
+        if game_name:
+            if self._try_libretro(game_name):
+                return
+
+        self.signals.log.emit("Cover not found.")
+        self.signals.finished.emit(None)
+
+    def _try_gametdb(self, gametdb_system):
+        # Determine file extension and URL pattern based on system
+        ext = "png"
+        if gametdb_system in ["ps2", "ps3", "switch"]:
+            ext = "jpg"
+
+        # Construct local path
+        file_path = os.path.join(
+            self.cache_dir, "covers", self.system, f"{self.game_id}.{ext}"
+        )
+
+        # If already exists, return immediately
+        if os.path.exists(file_path):
+            self.signals.log.emit(f"Cover found in cache: {file_path}")
+            self.signals.finished.emit(file_path)
+            return True
+
+        # Construct URL
+        # GameTDB URL structure:
+        # https://art.gametdb.com/{system}/cover/{region}/{game_id}.{ext}
+        # Region mapping might be needed.
+        # For now, try passed region or default to US/EN
+
+        regions_to_try = [self.region, "US", "EN", "JA", "Other"]
+        # Filter out None or empty regions
+        regions_to_try = [r for r in regions_to_try if r]
+
+        # Add a generic fallback if no specific region worked
+        if "US" not in regions_to_try:
+            regions_to_try.append("US")
+
+        for reg in regions_to_try:
+            url = (
+                f"https://art.gametdb.com/{gametdb_system}/cover/{reg}/"
+                f"{self.game_id}.{ext}"
+            )
+            self.signals.log.emit(f"Trying GameTDB URL: {url}")
+            if self._download_file(url, file_path):
+                self.signals.log.emit(f"Downloaded from GameTDB: {url}")
+                self.signals.finished.emit(file_path)
+                return True
+        return False
+
+    def _try_libretro(self, game_name):
         # https://thumbnails.libretro.com/{System}/Named_Boxarts/{Name}.png
         # We need to map our system names to Libretro system names
         libretro_map = {
@@ -143,57 +156,57 @@ class CoverDownloader(QRunnable):
         }
 
         libretro_system = libretro_map.get(self.system.lower())
-        if libretro_system and game_name:
-            # Libretro uses specific characters replacement
-            # & -> _
-            # * -> _
-            # / -> _
-            # : -> _
-            # ` -> _
-            # < -> _
-            # > -> _
-            # ? -> _
-            # \ -> _
-            # | -> _
-            safe_name = (
-                game_name.replace("&", "_")
-                .replace("*", "_")
-                .replace("/", "_")
-                .replace(":", "_")
-                .replace("`", "_")
-                .replace("<", "_")
-                .replace(">", "_")
-                .replace("?", "_")
-                .replace("\\", "_")
-                .replace("|", "_")
-            )
+        if not libretro_system:
+            return False
 
-            url = (
-                f"https://thumbnails.libretro.com/{libretro_system}/"
-                f"Named_Boxarts/{safe_name}.png"
-            )
-            # Use URL encoding for spaces etc
-            import urllib.parse
+        # Libretro uses specific characters replacement
+        # & -> _
+        # * -> _
+        # / -> _
+        # : -> _
+        # ` -> _
+        # < -> _
+        # > -> _
+        # ? -> _
+        # \ -> _
+        # | -> _
+        safe_name = (
+            game_name.replace("&", "_")
+            .replace("*", "_")
+            .replace("/", "_")
+            .replace(":", "_")
+            .replace("`", "_")
+            .replace("<", "_")
+            .replace(">", "_")
+            .replace("?", "_")
+            .replace("\\", "_")
+            .replace("|", "_")
+        )
 
-            url = urllib.parse.quote(url, safe=":/")
+        url = (
+            f"https://thumbnails.libretro.com/{libretro_system}/"
+            f"Named_Boxarts/{safe_name}.png"
+        )
+        # Use URL encoding for spaces etc
+        import urllib.parse
 
-            file_path = os.path.join(
-                self.cache_dir, "covers", self.system, f"{safe_name}.png"
-            )
+        url = urllib.parse.quote(url, safe=":/")
 
-            if os.path.exists(file_path):
-                self.signals.log.emit(f"Cover found in cache (Libretro): {file_path}")
-                self.signals.finished.emit(file_path)
-                return
+        file_path = os.path.join(
+            self.cache_dir, "covers", self.system, f"{safe_name}.png"
+        )
 
-            self.signals.log.emit(f"Trying Libretro URL: {url}")
-            if self._download_file(url, file_path):
-                self.signals.log.emit(f"Downloaded from Libretro: {url}")
-                self.signals.finished.emit(file_path)
-                return
+        if os.path.exists(file_path):
+            self.signals.log.emit(f"Cover found in cache (Libretro): {file_path}")
+            self.signals.finished.emit(file_path)
+            return True
 
-        self.signals.log.emit("Cover not found.")
-        self.signals.finished.emit(None)
+        self.signals.log.emit(f"Trying Libretro URL: {url}")
+        if self._download_file(url, file_path):
+            self.signals.log.emit(f"Downloaded from Libretro: {url}")
+            self.signals.finished.emit(file_path)
+            return True
+        return False
 
     def _download_file(self, url, dest_path):
         try:

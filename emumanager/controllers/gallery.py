@@ -98,42 +98,48 @@ class GalleryController:
         )
 
         for f in files:
-            try:
-                name = f.name
-                item = self.mw._qtwidgets.QListWidgetItem(name)
-                item.setToolTip(str(f))
-
-                if default_icon:
-                    item.setIcon(default_icon)
-
-                self.ui.list_gallery.addItem(item)
-
-                # Trigger background check/download
-                # Guess region
-                region = None
-                if "(USA)" in name or "(US)" in name:
-                    region = "US"
-                elif "(Europe)" in name or "(EU)" in name:
-                    region = "EN"
-                elif "(Japan)" in name or "(JP)" in name:
-                    region = "JA"
-
-                downloader = CoverDownloader(
-                    system, None, region, str(cache_dir_root), str(f)
-                )
-
-                # Use partial to pass the item
-                downloader.signals.finished.connect(
-                    partial(self._update_gallery_icon, item), conn_type
-                )
-
-                self.mw._qtcore.QThreadPool.globalInstance().start(downloader)
-
-            except Exception as e:
-                logging.error(f"Error adding gallery item {f}: {e}")
-                continue
+            self._process_gallery_item(
+                f, system, cache_dir_root, default_icon, conn_type
+            )
 
         logging.info(f"Gallery population started for {len(files)} items.")
+
+    def _process_gallery_item(
+        self, f: Path, system: str, cache_dir_root: Path, default_icon, conn_type
+    ):
+        try:
+            name = f.name
+            item = self.mw._qtwidgets.QListWidgetItem(name)
+            item.setToolTip(str(f))
+
+            if default_icon:
+                item.setIcon(default_icon)
+
+            self.ui.list_gallery.addItem(item)
+
+            # Trigger background check/download
+            # Guess region
+            region = None
+            if "(USA)" in name or "(US)" in name:
+                region = "US"
+            elif "(Europe)" in name or "(EU)" in name:
+                region = "EN"
+            elif "(Japan)" in name or "(JP)" in name:
+                region = "JA"
+
+            downloader = CoverDownloader(
+                system, None, region, str(cache_dir_root), str(f)
+            )
+
+            # Use partial to pass the item
+            downloader.signals.finished.connect(
+                partial(self._update_gallery_icon, item), conn_type
+            )
+
+            self.mw._qtcore.QThreadPool.globalInstance().start(downloader)
+
+        except Exception as e:
+            logging.error(f"Error adding gallery item {f}: {e}")
 
     def _update_gallery_icon(self, item, image_path):
         if not image_path or not Path(image_path).exists():
