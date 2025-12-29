@@ -1,9 +1,6 @@
-from emumanager.verification.hasher import (
-    _finalize_hashes,
-    _init_hash_objects,
-    _update_hashes,
-    calculate_hashes,
-)
+from emumanager.verification.hasher import (_finalize_hashes,
+                                            _init_hash_objects, _update_hashes,
+                                            calculate_hashes)
 
 
 def test_init_hash_objects():

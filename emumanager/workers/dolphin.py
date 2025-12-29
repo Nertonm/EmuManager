@@ -12,15 +12,11 @@ from emumanager.gamecube import metadata as gc_meta
 from emumanager.library import LibraryDB, LibraryEntry
 from emumanager.wii import database as wii_db
 from emumanager.wii import metadata as wii_meta
-from emumanager.workers.common import (
-    MSG_CANCELLED,
-    GuiLogger,
-    VerifyResult,
-    calculate_file_hash,
-    create_file_progress_cb,
-    emit_verification_result,
-    make_result_collector,
-)
+from emumanager.workers.common import (MSG_CANCELLED, GuiLogger, VerifyResult,
+                                       calculate_file_hash,
+                                       create_file_progress_cb,
+                                       emit_verification_result,
+                                       make_result_collector)
 
 DOLPHIN_CONVERTIBLE_EXTENSIONS = {".iso", ".gcm", ".wbfs"}
 DOLPHIN_ALL_EXTENSIONS = {".iso", ".gcm", ".wbfs", ".rvz", ".gcZ"}

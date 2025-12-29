@@ -1,8 +1,6 @@
-from emumanager.switch.compression import (
-    build_nsz_command,
-    recompress_candidate,
-    replace_if_verified,
-)
+from emumanager.switch.compression import (build_nsz_command,
+                                           recompress_candidate,
+                                           replace_if_verified)
 
 
 class DummyRes:

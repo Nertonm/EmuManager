@@ -11,7 +11,8 @@ import sys
 from pathlib import Path
 from typing import Callable, Optional
 
-from ..common.execution import _register_process, _unregister_process, find_tool
+from ..common.execution import (_register_process, _unregister_process,
+                                find_tool)
 
 
 def _run_tool_with_progress(
