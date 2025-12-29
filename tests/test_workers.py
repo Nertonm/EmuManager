@@ -78,6 +78,7 @@ def test_ps2_verify_no_files(tmp_path, mock_args):
     assert "PS2 ROMs directory not found" in res
 
 
+@patch("emumanager.workers.ps2.LibraryDB")
 @patch("emumanager.ps2.metadata.get_ps2_serial")
 @patch(
     "emumanager.ps2.database.db.get_title",
@@ -85,6 +86,7 @@ def test_ps2_verify_no_files(tmp_path, mock_args):
 def test_ps2_verify_found(
     mock_get_title,
     mock_get_serial,
+    mock_lib_db,
     tmp_path,
     mock_args,
 ):

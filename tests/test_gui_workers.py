@@ -60,7 +60,8 @@ def test_worker_dolphin_convert_success(tmp_path, mock_converter):
     mock_converter.convert_to_rvz.assert_called_once()
 
 
-def test_worker_dolphin_verify_success(tmp_path, mock_converter):
+@patch("emumanager.workers.dolphin.LibraryDB")
+def test_worker_dolphin_verify_success(mock_lib_db, tmp_path, mock_converter):
     # Setup directories
     wii_dir = tmp_path / "roms" / "wii"
     wii_dir.mkdir(parents=True)

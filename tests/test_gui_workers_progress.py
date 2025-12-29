@@ -5,10 +5,11 @@ from emumanager.gui_workers import worker_dolphin_convert, worker_ps2_convert
 
 
 class TestWorkerProgress:
+    @patch("emumanager.workers.ps2.LibraryDB")
     @patch("emumanager.workers.ps2.ps2_converter.convert_directory")
     @patch("emumanager.workers.ps2.find_tool")
     def test_ps2_convert_progress(
-        self, mock_find_tool, mock_convert_directory, tmp_path
+        self, mock_find_tool, mock_convert_directory, mock_lib_db, tmp_path
     ):
         # Setup
         mock_find_tool.return_value = Path("/usr/bin/fake_tool")
@@ -71,8 +72,9 @@ class TestWorkerProgress:
         assert progress_cb.call_count >= 3
         progress_cb.assert_any_call(1.0, "Dolphin Conversion complete")
 
+    @patch("emumanager.workers.dolphin.LibraryDB")
     @patch("emumanager.workers.dolphin.DolphinConverter")
-    def test_dolphin_verify_progress(self, mock_dolphin_cls, tmp_path):
+    def test_dolphin_verify_progress(self, mock_dolphin_cls, mock_lib_db, tmp_path):
         # Setup
         mock_converter = mock_dolphin_cls.return_value
         mock_converter.check_tool.return_value = True
@@ -136,7 +138,8 @@ class TestWorkerProgress:
         assert progress_cb.call_count >= 2
         progress_cb.assert_any_call(1.0, "Cleanup complete")
 
-    def test_health_check_progress(self, tmp_path):
+    @patch("emumanager.switch.main_helpers.LibraryDB")
+    def test_health_check_progress(self, mock_lib_db, tmp_path):
         # Setup
         args = MagicMock()
         args.dry_run = True

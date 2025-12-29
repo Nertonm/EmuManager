@@ -26,6 +26,7 @@ dev = [
 	"ruff",
 	"pytest",
 	"pytest-cov",
+	"pytest-qt",
 	"build",
 	"mypy",
 	"types-requests",
