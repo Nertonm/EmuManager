@@ -5,10 +5,64 @@ N3DS Converter (3DS/CIA <-> 7Z)
 
 from __future__ import annotations
 
+import re
+import subprocess
+import sys
 from pathlib import Path
 from typing import Callable, Optional
 
-from ..common.execution import find_tool, run_cmd
+from ..common.execution import find_tool, run_cmd, _register_process, _unregister_process
+
+
+def _run_7z(
+    cmd: list[str], progress_cb: Optional[Callable[[float, str], None]] = None
+) -> bool:
+    """
+    Run 7z command with progress parsing.
+    """
+    # Ensure progress is output to stdout
+    if "-bsp1" not in cmd:
+        cmd.append("-bsp1")
+
+    # Prepare startup info for Windows to hide window
+    startupinfo = None
+    if sys.platform == "win32":
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        startupinfo=startupinfo,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+    _register_process(process)
+
+    try:
+        while True:
+            # readline handles \n and \r with text=True (universal_newlines)
+            line = process.stdout.readline()
+            if not line and process.poll() is not None:
+                break
+
+            if line and progress_cb:
+                # Parse progress: " 12%"
+                match = re.search(r"\s(\d+)%", line)
+                if match:
+                    try:
+                        percent = int(match.group(1))
+                        progress_cb(percent / 100.0, f"Processing: {percent}%")
+                    except ValueError:
+                        pass
+
+        process.wait()
+        return process.returncode == 0
+    finally:
+        _unregister_process(process)
 
 
 def compress_to_7z(
@@ -32,11 +86,7 @@ def compress_to_7z(
         return True
 
     try:
-        # 7z output parsing for progress is possible but complex.
-        # For now, we just run it.
-        # TODO: Implement progress parsing for 7z
-        run_cmd(cmd, check=True)
-        return dest.exists()
+        return _run_7z(cmd, progress_cb) and dest.exists()
     except Exception:
         return False
 
@@ -61,8 +111,7 @@ def decompress_7z(
         return True
 
     try:
-        run_cmd(cmd, check=True)
-        return True
+        return _run_7z(cmd, progress_cb)
     except Exception:
         return False
 
