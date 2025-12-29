@@ -5,6 +5,7 @@ from pathlib import Path
 from ..common.execution import find_tool, run_cmd
 
 logger = logging.getLogger(__name__)
+MSG_TOOL_NOT_FOUND = "dolphin-tool not found"
 
 
 class DolphinConverter:
@@ -80,7 +81,7 @@ class DolphinConverter:
             level: Compression level (1-22 for zstd)
         """
         if not self.check_tool():
-            self.logger.error("dolphin-tool not found")
+            self.logger.error(MSG_TOOL_NOT_FOUND)
             return False
 
         # dolphin-tool convert -i <input> -o <output> -f rvz -b <block> -c <comp>
@@ -127,7 +128,7 @@ class DolphinConverter:
             output_file: Path to destination .iso file
         """
         if not self.check_tool():
-            self.logger.error("dolphin-tool not found")
+            self.logger.error(MSG_TOOL_NOT_FOUND)
             return False
 
         # dolphin-tool convert -i <input> -o <output> -f iso
@@ -163,7 +164,7 @@ class DolphinConverter:
         Verifies the integrity of an RVZ/ISO file using dolphin-tool verify.
         """
         if not self.check_tool():
-            self.logger.error("dolphin-tool not found")
+            self.logger.error(MSG_TOOL_NOT_FOUND)
             return False
 
         cmd = self._get_base_cmd([file_path.parent]) + ["verify", "-i", str(file_path)]
