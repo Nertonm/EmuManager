@@ -18,6 +18,7 @@ from emumanager.controllers.gallery import GalleryController
 from emumanager.controllers.tools import ToolsController
 from emumanager.logging_cfg import get_logger, setup_gui_logging
 from emumanager.verification.hasher import calculate_hashes
+from emumanager.verification.dat_downloader import DatDownloader
 from emumanager.workers.distributor import worker_distribute_root
 from .architect import get_roms_dir
 
@@ -2093,6 +2094,38 @@ class MainWindowBase:
             self.log_msg(str(res))
             self._qtwidgets.QMessageBox.information(self.window, "Identification Result", str(res))
             
+        self._run_in_background(_work, _done)
+
+    def on_update_dats(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+
+        dats_dir = self._last_base / "dats"
+        if not dats_dir.exists():
+            self.log_msg(f"Creating DATs directory at {dats_dir}")
+            dats_dir.mkdir(parents=True, exist_ok=True)
+
+        def _work():
+            downloader = DatDownloader(dats_dir)
+            
+            def progress_cb(filename, current, total):
+                percent = current / total
+                msg = f"Downloading DATs: {current}/{total} ({filename})"
+                self.progress_hook(percent, msg)
+            
+            self.log_msg("Starting DAT download (No-Intro & Redump)...")
+            count_ni = downloader.download_all("no-intro", progress_callback=progress_cb)
+            count_rd = downloader.download_all("redump", progress_callback=progress_cb)
+            
+            return f"Downloaded {count_ni} No-Intro and {count_rd} Redump DATs."
+
+        def _done(res):
+            self.log_msg(str(res))
+            self._set_ui_enabled(True)
+            self.progress_hook(1.0, "DAT update complete")
+
+        self._set_ui_enabled(False)
         self._run_in_background(_work, _done)
 
 

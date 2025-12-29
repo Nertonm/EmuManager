@@ -18,6 +18,7 @@ from . import architect
 from .config import BASE_DEFAULT, EXT_TO_SYSTEM
 from .logging_cfg import get_logger
 from .switch import cli as switch_cli
+from .verification.dat_downloader import DatDownloader
 
 
 def guess_system_for_file(path: Path) -> Optional[str]:
@@ -188,6 +189,36 @@ def cmd_add_rom(
     return dest
 
 
+def cmd_update_dats(base_dir: Path, source: str | None = None) -> int:
+    """Download DAT files from Libretro database."""
+    logger = get_logger("manager")
+    dats_dir = base_dir / "dats"
+
+    if not dats_dir.exists():
+        logger.error(f"DATs directory not found at {dats_dir}. Run 'init' first.")
+        return 1
+
+    downloader = DatDownloader(dats_dir)
+    sources = [source] if source else ["no-intro", "redump"]
+
+    for src in sources:
+        logger.info(f"Checking available DATs for {src}...")
+        available = downloader.list_available_dats(src)
+
+        if not available:
+            logger.warning(f"No DATs found for {src}")
+            continue
+
+        logger.info(f"Found {len(available)} DATs for {src}. Downloading...")
+        for filename in available:
+            # Check if already exists? For now, overwrite or skip logic could be added.
+            # We'll just download all for now as requested.
+            downloader.download_dat(src, filename)
+
+    logger.info("DAT update complete.")
+    return 0
+
+
 def get_roms_dir(base_dir: Path) -> Path:
     """Resolve the roms directory given a base path.
 
@@ -240,6 +271,10 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         help="Arguments passed to switch organizer",
     )
 
+    sp = sub.add_parser("update-dats", help="Download/Update DAT files")
+    sp.add_argument("base_dir", nargs="?", default=BASE_DEFAULT)
+    sp.add_argument("--source", choices=["no-intro", "redump"], help="Limit to specific source")
+
     return p.parse_args(argv)
 
 
@@ -265,6 +300,8 @@ def main(argv: List[str] | None = None) -> int:
         except Exception as e:
             print(f"Error: {e}")
             return 1
+    elif args.cmd == "update-dats":
+        return cmd_update_dats(Path(args.base_dir), args.source)
     elif args.cmd == "switch":
         # Delegate to switch module
         # We need to reconstruct argv for switch_cli

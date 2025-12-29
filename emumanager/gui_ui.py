@@ -854,6 +854,11 @@ class Ui_MainWindow:
 
         dat_layout.addLayout(dat_file_layout)
 
+        # Update DATs Button
+        self.btn_update_dats = qt.QPushButton("Download/Update DATs (No-Intro/Redump)")
+        self.btn_update_dats.setToolTip("Download latest DAT files from Libretro database")
+        dat_layout.addWidget(self.btn_update_dats)
+
         self.btn_verify_dat = qt.QPushButton("Verify Library against DAT")
         self.btn_verify_dat.setToolTip(
             "Hashes all files in the current library and checks against the "

@@ -240,6 +240,15 @@ Arcade:
 
     logger.info("BIOS folder :: Configured.")
 
+    # DATs folder
+    dats_dir = base_dir / "dats"
+    if not dry_run:
+        dats_dir.mkdir(parents=True, exist_ok=True)
+        (dats_dir / "no-intro").mkdir(exist_ok=True)
+        (dats_dir / "redump").mkdir(exist_ok=True)
+
+    logger.info("DATs folder :: Configured.")
+
     # --- NINTENDO ---
     setup_retro(
         base_dir,

@@ -20,6 +20,9 @@ def test_build_creates_structure(tmp_path):
 
     # Basic checks
     assert (target / "bios").is_dir()
+    assert (target / "dats").is_dir()
+    assert (target / "dats" / "no-intro").is_dir()
+    assert (target / "dats" / "redump").is_dir()
     assert (target / "roms").is_dir()
     # Check a known system folder and one of its subfolders
     assert (target / "roms" / "nes" / "# Favoritos").is_dir()
