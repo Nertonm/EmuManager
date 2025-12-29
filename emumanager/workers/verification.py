@@ -7,8 +7,7 @@ from emumanager.common.models import VerifyReport, VerifyResult
 from emumanager.library import LibraryDB, LibraryEntry
 from emumanager.verification import dat_parser, hasher
 from emumanager.verification.dat_manager import find_dat_for_system
-from emumanager.workers.common import (MSG_CANCELLED, GuiLogger,
-                                       create_file_progress_cb)
+from emumanager.workers.common import MSG_CANCELLED, GuiLogger, create_file_progress_cb
 
 
 def worker_hash_verify(

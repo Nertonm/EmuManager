@@ -7,8 +7,12 @@ from typing import Any, Callable, Optional
 
 from emumanager.common.execution import run_cmd
 from emumanager.switch import compression, metadata
-from emumanager.switch.cli import (get_metadata, safe_move, scan_for_virus,
-                                   verify_integrity)
+from emumanager.switch.cli import (
+    get_metadata,
+    safe_move,
+    scan_for_virus,
+    verify_integrity,
+)
 from emumanager.switch.main_helpers import process_files, run_health_check
 from emumanager.workers.common import MSG_CANCELLED, GuiLogger
 
