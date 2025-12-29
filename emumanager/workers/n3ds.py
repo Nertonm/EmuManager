@@ -509,3 +509,63 @@ def worker_n3ds_decrypt(
         progress_cb(1.0, "3DS Decryption complete")
 
     return f"Decryption complete. Decrypted: {decrypted}, Failed: {failed}, Skipped: {skipped}"
+
+
+def worker_n3ds_compress_single(
+    filepath: Path, args: Any, log_cb: Callable[[str], None]
+) -> Optional[Path]:
+    """Worker function for compressing a single 3DS file."""
+    logger = GuiLogger(log_cb)
+    
+    if filepath.suffix.lower() not in (".3ds", ".cia", ".3dz", ".cci"):
+        logger.warning(f"Skipping {filepath.name}: Not a valid 3DS file.")
+        return None
+
+    dest = filepath.with_suffix(filepath.suffix + ".7z")
+    if dest.exists():
+        logger.info(f"Skipping {filepath.name}: {dest.name} already exists.")
+        return None
+
+    logger.info(f"Compressing {filepath.name} -> {dest.name}...")
+    if compress_to_7z(filepath, dest):
+        if getattr(args, "rm_originals", False):
+            try:
+                filepath.unlink()
+                logger.info(f"Deleted original: {filepath.name}")
+            except Exception as e:
+                logger.error(f"Failed to delete original: {e}")
+        return dest
+    else:
+        logger.error(f"Compression failed for {filepath.name}")
+        return None
+
+
+def worker_n3ds_decompress_single(
+    filepath: Path, args: Any, log_cb: Callable[[str], None]
+) -> Optional[Path]:
+    """Worker function for decompressing a single 3DS file."""
+    logger = GuiLogger(log_cb)
+    
+    if filepath.suffix.lower() != ".7z":
+        logger.warning(f"Skipping {filepath.name}: Not a 7z file.")
+        return None
+
+    # We don't know the inner filename easily without listing, 
+    # but decompress_7z handles extraction to the same dir.
+    logger.info(f"Decompressing {filepath.name}...")
+    
+    # decompress_7z returns list of extracted files or None
+    extracted = decompress_7z(filepath, filepath.parent)
+    
+    if extracted:
+        logger.info(f"Decompressed {len(extracted)} files.")
+        if getattr(args, "rm_originals", False):
+            try:
+                filepath.unlink()
+                logger.info(f"Deleted archive: {filepath.name}")
+            except Exception as e:
+                logger.error(f"Failed to delete archive: {e}")
+        return extracted[0] if extracted else None
+    else:
+        logger.error(f"Decompression failed for {filepath.name}")
+        return None

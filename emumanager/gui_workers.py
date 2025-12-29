@@ -16,8 +16,10 @@ from emumanager.workers.dolphin import (
 )
 from emumanager.workers.n3ds import (
     worker_n3ds_compress,
+    worker_n3ds_compress_single,
     worker_n3ds_convert_cia,
     worker_n3ds_decompress,
+    worker_n3ds_decompress_single,
     worker_n3ds_decrypt,
     worker_n3ds_organize,
     worker_n3ds_verify,
@@ -78,7 +80,9 @@ __all__ = [
     "worker_n3ds_verify",
     "worker_n3ds_organize",
     "worker_n3ds_compress",
+    "worker_n3ds_compress_single",
     "worker_n3ds_decompress",
+    "worker_n3ds_decompress_single",
     "worker_n3ds_convert_cia",
     "worker_n3ds_decrypt",
     "worker_dolphin_convert",

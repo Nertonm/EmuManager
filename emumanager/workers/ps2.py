@@ -9,6 +9,7 @@ from emumanager.common.execution import find_tool
 from emumanager.converters import ps2_converter
 from emumanager.ps2 import database as ps2_db
 from emumanager.ps2 import metadata as ps2_meta
+from emumanager.library import LibraryDB, LibraryEntry
 from emumanager.workers.common import (
     MSG_CANCELLED,
     GuiLogger,
@@ -87,12 +88,16 @@ def _process_ps2_file(
     if suffix not in {".iso", ".bin", ".cso", ".chd", ".gz"}:
         return "skip"
 
+    # Initialize LibraryDB
+    lib_db = LibraryDB()
+
     if suffix == ".cso":
         logger.warning(f"[SKIP] Cannot extract serial from compressed file: {f.name}")
         return "unknown"
 
     serial = ps2_meta.get_ps2_serial(f)
     info_str = ""
+    title = None
 
     if serial:
         title = ps2_db.db.get_title(serial)
@@ -103,22 +108,60 @@ def _process_ps2_file(
     else:
         info_str = "[NO SERIAL] Could not identify"
 
-    md5: Optional[str] = None
-    sha1: Optional[str] = None
+    # Check Cache for hashes
+    cached_md5 = None
+    cached_sha1 = None
+    
+    try:
+        entry = lib_db.get_entry(str(f.resolve()))
+        if entry:
+            st = f.stat()
+            if st.st_size == entry.size and abs(st.st_mtime - entry.mtime) < 1.0:
+                cached_md5 = entry.md5
+                cached_sha1 = entry.sha1
+    except (OSError, ValueError):
+        pass
+
+    md5: Optional[str] = cached_md5
+    sha1: Optional[str] = cached_sha1
+
     if deep_verify:
-        logger.info(f"Hashing {f.name}...")
-        md5 = calculate_file_hash(f, "md5", progress_cb=progress_cb)
-        sha1 = calculate_file_hash(f, "sha1", progress_cb=progress_cb)
+        if not md5 or not sha1:
+            logger.info(f"Hashing {f.name}...")
+            md5 = calculate_file_hash(f, "md5", progress_cb=progress_cb)
+            sha1 = calculate_file_hash(f, "sha1", progress_cb=progress_cb)
         info_str += f" | MD5: {md5} | SHA1: {sha1}"
 
     logger.info(f"{info_str} -> {f.name}")
 
+    status = "VERIFIED" if serial else "UNKNOWN"
+
+    # Update Cache
+    try:
+        st = f.stat()
+        new_entry = LibraryEntry(
+            path=str(f.resolve()),
+            system="ps2",
+            size=st.st_size,
+            mtime=st.st_mtime,
+            crc32=None,
+            md5=md5,
+            sha1=sha1,
+            sha256=None,
+            status=status,
+            match_name=title,
+            dat_name=serial # Storing serial in dat_name for now
+        )
+        lib_db.update_entry(new_entry)
+    except OSError:
+        pass
+
     emit_verification_result(
         per_file_cb,
         f,
-        status="VERIFIED" if serial else "UNKNOWN",
+        status=status,
         serial=serial,
-        title=ps2_db.db.get_title(serial) if serial else None,
+        title=title,
         md5=md5,
         sha1=sha1,
     )

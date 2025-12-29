@@ -11,6 +11,7 @@ from emumanager.gamecube import database as gc_db
 from emumanager.gamecube import metadata as gc_meta
 from emumanager.wii import database as wii_db
 from emumanager.wii import metadata as wii_meta
+from emumanager.library import LibraryDB, LibraryEntry
 from emumanager.workers.common import (
     MSG_CANCELLED,
     GuiLogger,
@@ -117,6 +118,9 @@ def _verify_dolphin_file(
     if f.suffix.lower() not in DOLPHIN_ALL_EXTENSIONS:
         return False
 
+    # Initialize LibraryDB
+    lib_db = LibraryDB()
+
     # Identify first
     meta = {}
     system = "UNKNOWN"
@@ -134,25 +138,70 @@ def _verify_dolphin_file(
     if title:
         info_str += f"{title} "
 
-    md5_val = None
-    sha1_val = None
+    # Check Cache
+    cached_valid = None
+    cached_md5 = None
+    cached_sha1 = None
+    
+    try:
+        entry = lib_db.get_entry(str(f.resolve()))
+        if entry:
+            st = f.stat()
+            if st.st_size == entry.size and abs(st.st_mtime - entry.mtime) < 1.0:
+                if entry.status == "VERIFIED":
+                    cached_valid = True
+                elif entry.status == "BAD_DUMP":
+                    cached_valid = False
+                
+                cached_md5 = entry.md5
+                cached_sha1 = entry.sha1
+    except (OSError, ValueError):
+        pass
+
+    md5_val = cached_md5
+    sha1_val = cached_sha1
 
     if deep_verify:
-        logger.info(f"Hashing {f.name}...")
-        md5_val = calculate_file_hash(f, "md5", progress_cb=progress_cb)
-        sha1_val = calculate_file_hash(f, "sha1", progress_cb=None)
+        if not md5_val or not sha1_val:
+            logger.info(f"Hashing {f.name}...")
+            md5_val = calculate_file_hash(f, "md5", progress_cb=progress_cb)
+            sha1_val = calculate_file_hash(f, "sha1", progress_cb=None)
         info_str += f"| MD5: {md5_val} "
 
-    logger.info(f"{info_str}Verifying {f.name}...")
-
-    # Dolphin tool verification
-    is_valid = converter.verify_rvz(f)
+    is_valid = False
+    if cached_valid is not None:
+        logger.info(f"{info_str}Using cached verification for {f.name}")
+        is_valid = cached_valid
+    else:
+        logger.info(f"{info_str}Verifying {f.name}...")
+        # Dolphin tool verification
+        is_valid = converter.verify_rvz(f)
 
     status = "VERIFIED" if is_valid else "BAD_DUMP"
     if is_valid:
         logger.info(f"✅ OK: {f.name}")
     else:
         logger.error(f"❌ FAIL: {f.name}")
+
+    # Update Cache
+    try:
+        st = f.stat()
+        new_entry = LibraryEntry(
+            path=str(f.resolve()),
+            system=system.lower(),
+            size=st.st_size,
+            mtime=st.st_mtime,
+            crc32=None,
+            md5=md5_val,
+            sha1=sha1_val,
+            sha256=None,
+            status=status,
+            match_name=title,
+            dat_name=None
+        )
+        lib_db.update_entry(new_entry)
+    except OSError:
+        pass
 
     emit_verification_result(
         per_file_cb=per_file_cb,

@@ -1,6 +1,6 @@
 # Project Revision Report
 
-**Date:** 2025-12-23
+**Date:** 2025-12-29
 **Status:** Stable / Release Candidate
 
 ## Summary
@@ -12,10 +12,11 @@ A definitive revision of the `EmuManager` project has been performed. The projec
     - Removed unused imports across multiple files.
     - Fixed code style issues (multiple statements on one line, lambda assignments).
     - Restored `emumanager/gui_workers.py` which was aggressively pruned by the linter, ensuring proper re-exports.
+    - Updated `.gitignore` to include `library.db`.
 
 2.  **Test Verification**:
     - Ran the full test suite (`pytest`).
-    - **Result**: 130/130 tests passed.
+    - **Result**: 167/167 tests passed.
 
 3.  **Structure Review**:
     - Verified the organization of modules (`converters`, `workers`, `metadata`, etc.).

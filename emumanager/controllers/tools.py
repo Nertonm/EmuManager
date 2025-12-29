@@ -16,7 +16,9 @@ from emumanager.gui_workers import (
     worker_n3ds_organize,
     worker_n3ds_verify,
     worker_n3ds_compress,
+    worker_n3ds_compress_single,
     worker_n3ds_decompress,
+    worker_n3ds_decompress_single,
     worker_n3ds_convert_cia,
     worker_n3ds_decrypt,
     worker_organize,
@@ -116,28 +118,82 @@ class ToolsController:
             self.ui.btn_nint_organize.clicked.connect(self.on_generic_organize_click)
 
     def on_compress_selected(self):
-        self._run_single_file_task(worker_compress_single, "Compress")
+        def dispatcher(path, env, args, log_cb):
+            ext = path.suffix.lower()
+            # Switch
+            if ext in (".nsp", ".xci"):
+                return worker_compress_single(path, env, args, log_cb)
+            # 3DS
+            elif ext in (".3ds", ".cia", ".cci"):
+                return worker_n3ds_compress_single(path, args, log_cb)
+            # PSP
+            elif ext == ".iso":
+                # Check if it's PSP by path or magic? 
+                # For now, if it's in a PSP folder, use PSP compressor (cso)
+                # Otherwise, generic zip/7z?
+                if "psp" in str(path).lower():
+                    # PSP worker expects base_path, not single file. 
+                    # We need a single file worker for PSP or adapt.
+                    # For now, let's just log not implemented for single file PSP
+                    logging.warning("Single file compression for PSP not yet implemented via context menu.")
+                    return None
+            
+            logging.warning(f"No compression handler for {ext}")
+            return None
+
+        self._run_single_file_task(dispatcher, "Compress", needs_env=True)
 
     def on_recompress_selected(self):
-        self._run_single_file_task(worker_recompress_single, "Recompress")
+        def dispatcher(path, env, args, log_cb):
+            ext = path.suffix.lower()
+            if ext == ".rvz":
+                return worker_dolphin_recompress_single(path, args, log_cb)
+            elif ext in (".nsz", ".xcz"):
+                return worker_recompress_single(path, env, args, log_cb)
+            
+            logging.warning(f"No recompression handler for {ext}")
+            return None
+
+        self._run_single_file_task(dispatcher, "Recompress", needs_env=True)
 
     def on_decompress_selected(self):
-        self._run_single_file_task(worker_decompress_single, "Decompress")
+        def dispatcher(path, env, args, log_cb):
+            ext = path.suffix.lower()
+            # Dolphin
+            if ext in (".rvz", ".gcz", ".wia"):
+                return worker_dolphin_decompress_single(path, args, log_cb)
+            # Switch
+            elif ext in (".nsz", ".xcz"):
+                return worker_decompress_single(path, env, args, log_cb)
+            # 3DS
+            elif ext == ".7z":
+                 # Check if it's a 3DS 7z?
+                 if "3ds" in str(path).lower() or "n3ds" in str(path).lower():
+                     return worker_n3ds_decompress_single(path, args, log_cb)
+            
+            logging.warning(f"No decompression handler for {ext}")
+            return None
 
-    def _run_single_file_task(self, worker_func, label):
+        self._run_single_file_task(dispatcher, "Decompress", needs_env=True)
+
+    def _run_single_file_task(self, worker_func, label, needs_env=False):
         if not self.mw.rom_list:
+            logging.error("ROM list not found")
             return
         item = self.mw.rom_list.currentItem()
         if not item:
+            logging.error("No ROM selected")
             return
         
         # We need to resolve the full path. 
         # MW has logic for this in _on_rom_selection_changed but we can reconstruct it.
         if not self.mw._last_base:
+            logging.error("No base directory selected")
             return
             
         sys_item = self.mw.sys_list.currentItem()
         if not sys_item:
+            logging.error("No system selected")
             return
         system = sys_item.text()
         
@@ -156,8 +212,14 @@ class ToolsController:
 
         logging.info(f"{label}ing {full_path.name}...")
         
+        args = self.mw._get_common_args()
+        env = self.mw._env
+
         def _work():
-            return worker_func(full_path, self.mw.log_msg) # Workers expect a log callback
+            if needs_env:
+                return worker_func(full_path, env, args, self.mw.log_msg)
+            else:
+                return worker_func(full_path, self.mw.log_msg)
             
         def _done(res):
             logging.info(str(res))
@@ -166,16 +228,16 @@ class ToolsController:
         self.mw._run_in_background(_work, _done)
 
     def on_organize(self):
-        self._run_tool_task(worker_organize, "Organize Switch")
+        self._run_tool_task(worker_organize, "Organize Switch", needs_env=True)
 
     def on_health_check(self):
-        self._run_tool_task(worker_health_check, "Health Check")
+        self._run_tool_task(worker_health_check, "Health Check", needs_env=True)
 
     def on_switch_compress(self):
-        self._run_tool_task(worker_switch_compress, "Compress Switch Library")
+        self._run_tool_task(worker_switch_compress, "Compress Switch Library", needs_env=True)
 
     def on_switch_decompress(self):
-        self._run_tool_task(worker_switch_decompress, "Decompress Switch Library")
+        self._run_tool_task(worker_switch_decompress, "Decompress Switch Library", needs_env=True)
 
     def on_psx_convert(self):
         self._run_tool_task(worker_psx_convert, "Convert PS1 to CHD")
@@ -254,19 +316,46 @@ class ToolsController:
         self._run_tool_task(worker_n3ds_convert_cia, "Convert 3DS to CIA")
 
     def on_clean_junk(self):
-        self._run_tool_task(worker_clean_junk, "Clean Junk")
-
-    def _run_tool_task(self, worker_func, label):
         if not self.mw._last_base:
             logging.warning(MSG_SELECT_BASE)
             return
 
         args = self.mw._get_common_args()
+        
+        # Define list_dirs_fn
+        def list_dirs(path):
+            return [p for p in path.rglob("*") if p.is_dir()]
 
         def _work():
-            return worker_func(
-                self.mw._last_base, args, self.mw.log_msg, self.mw._get_list_files_fn()
+            return worker_clean_junk(
+                self.mw._last_base, args, self.mw.log_msg, self.mw._get_list_files_fn(), list_dirs
             )
+
+        def _done(res):
+            logging.info(str(res))
+            self.mw._set_ui_enabled(True)
+            self.mw._update_dashboard_stats()
+
+        self.mw._set_ui_enabled(False)
+        self.mw._run_in_background(_work, _done)
+
+    def _run_tool_task(self, worker_func, label, needs_env=False):
+        if not self.mw._last_base:
+            logging.warning(MSG_SELECT_BASE)
+            return
+
+        args = self.mw._get_common_args()
+        env = self.mw._env
+
+        def _work():
+            if needs_env:
+                return worker_func(
+                    self.mw._last_base, env, args, self.mw.log_msg, self.mw._get_list_files_fn()
+                )
+            else:
+                return worker_func(
+                    self.mw._last_base, args, self.mw.log_msg, self.mw._get_list_files_fn()
+                )
 
         def _done(res):
             logging.info(str(res))

@@ -6,6 +6,7 @@ from typing import Any, Callable, Optional
 from emumanager.common.models import VerifyReport, VerifyResult
 from emumanager.verification import dat_parser, hasher
 from emumanager.verification.dat_manager import find_dat_for_system
+from emumanager.library import LibraryDB, LibraryEntry
 from emumanager.workers.common import (
     MSG_CANCELLED,
     GuiLogger,
@@ -133,6 +134,9 @@ def _run_verification(base_path, db, args, logger, list_files_fn) -> VerifyRepor
 
     logger.info(f"Verifying {len(files)} files against DB...")
 
+    # Initialize Library DB
+    lib_db = LibraryDB()
+
     verified = 0
     unknown = 0
     mismatch = 0
@@ -151,7 +155,7 @@ def _run_verification(base_path, db, args, logger, list_files_fn) -> VerifyRepor
         start_prog = i / total
         file_weight = 1.0 / total
 
-        res = _verify_single_file(f, db, args, progress_cb, start_prog, file_weight)
+        res = _verify_single_file(f, db, args, progress_cb, start_prog, file_weight, lib_db)
 
         if res.status == "VERIFIED":
             verified += 1
@@ -210,9 +214,36 @@ def _check_mismatch(db, crc, md5, sha1) -> Optional[str]:
 
 
 def _verify_single_file(
-    f: Path, db, args, progress_cb, start_prog, file_weight
+    f: Path, db, args, progress_cb, start_prog, file_weight, lib_db: Optional[LibraryDB] = None
 ) -> VerifyResult:
     file_prog_cb = create_file_progress_cb(progress_cb, start_prog, file_weight, f.name)
+
+    # Check Library DB first
+    if lib_db:
+        try:
+            abs_path = str(f.resolve())
+            entry = lib_db.get_entry(abs_path)
+            if entry:
+                st = f.stat()
+                # Check if file hasn't changed (size and mtime)
+                if st.st_size == entry.size and abs(st.st_mtime - entry.mtime) < 1.0:
+                    if progress_cb:
+                        progress_cb(start_prog + file_weight, f"Using cached result for {f.name}")
+                    
+                    return VerifyResult(
+                        filename=f.name,
+                        status=entry.status,
+                        match_name=entry.match_name,
+                        crc=entry.crc32,
+                        sha1=entry.sha1,
+                        md5=entry.md5,
+                        sha256=entry.sha256,
+                        full_path=str(f),
+                        dat_name=entry.dat_name
+                    )
+        except (OSError, ValueError):
+            # File might have been deleted or path issue
+            pass
 
     if progress_cb:
         progress_cb(start_prog, f"Hashing {f.name}...")
@@ -247,19 +278,35 @@ def _verify_single_file(
         res.status = "VERIFIED"
         res.match_name = match.game_name
         res.dat_name = getattr(match, "dat_name", None)
-        return res
+    else:
+        mismatch_reason = _check_mismatch(db, crc, md5, sha1)
+        if mismatch_reason:
+            res.status = "MISMATCH"
+            res.match_name = mismatch_reason
+        elif f.suffix.lower() in (".rvz", ".cso", ".chd", ".nkit.iso", ".wbfs", ".gcZ"):
+            res.status = "COMPRESSED"
+            res.match_name = "Compressed File"
 
-    mismatch_reason = _check_mismatch(db, crc, md5, sha1)
-    if mismatch_reason:
-        res.status = "MISMATCH"
-        res.match_name = mismatch_reason
-        return res
-
-    # Check for known compressed formats
-    if f.suffix.lower() in (".rvz", ".cso", ".chd", ".nkit.iso", ".wbfs", ".gcZ"):
-        res.status = "COMPRESSED"
-        res.match_name = "Compressed File"
-        return res
+    # Update Library DB
+    if lib_db:
+        try:
+            st = f.stat()
+            new_entry = LibraryEntry(
+                path=str(f.resolve()),
+                system=getattr(args, "system_name", "unknown"),
+                size=st.st_size,
+                mtime=st.st_mtime,
+                crc32=res.crc,
+                md5=res.md5,
+                sha1=res.sha1,
+                sha256=res.sha256,
+                status=res.status,
+                match_name=res.match_name,
+                dat_name=res.dat_name
+            )
+            lib_db.update_entry(new_entry)
+        except OSError:
+            pass
 
     return res
 
@@ -272,6 +319,9 @@ def worker_identify_single_file(
 ) -> str:
     """Identify a single file against a DAT database."""
     logger = GuiLogger(log_cb)
+    
+    # Initialize LibraryDB
+    lib_db = LibraryDB()
 
     if not dat_path.exists():
         return "Error: DAT file not found."
@@ -282,18 +332,59 @@ def worker_identify_single_file(
     except Exception as e:
         return f"Error parsing DAT: {e}"
 
-    logger.info(f"Calculating hashes for {file_path.name}...")
-    hashes = hasher.calculate_hashes(
-        file_path, algorithms=("crc32", "md5", "sha1"), progress_cb=progress_cb
-    )
+    # Check DB
+    cached_hashes = {}
+    try:
+        entry = lib_db.get_entry(str(file_path.resolve()))
+        if entry:
+            st = file_path.stat()
+            if st.st_size == entry.size and abs(st.st_mtime - entry.mtime) < 1.0:
+                logger.info(f"Using cached hashes for {file_path.name}")
+                cached_hashes = {
+                    "crc32": entry.crc32,
+                    "md5": entry.md5,
+                    "sha1": entry.sha1
+                }
+    except (OSError, ValueError):
+        pass
 
-    crc = hashes.get("crc32")
-    md5 = hashes.get("md5")
-    sha1 = hashes.get("sha1")
+    if not cached_hashes:
+        logger.info(f"Calculating hashes for {file_path.name}...")
+        cached_hashes = hasher.calculate_hashes(
+            file_path, algorithms=("crc32", "md5", "sha1"), progress_cb=progress_cb
+        )
+
+    crc = cached_hashes.get("crc32")
+    md5 = cached_hashes.get("md5")
+    sha1 = cached_hashes.get("sha1")
 
     logger.info(f"Hashes: CRC={crc}, MD5={md5}, SHA1={sha1}")
 
-    match = db.lookup(crc=crc, md5=md5, sha1=sha1)
+    matches = db.lookup(crc=crc, md5=md5, sha1=sha1)
+    match = matches[0] if matches else None
+    
+    # Update DB with result
+    try:
+        st = file_path.stat()
+        status = "VERIFIED" if match else "UNKNOWN"
+        match_name = match.game_name if match else None
+        
+        new_entry = LibraryEntry(
+            path=str(file_path.resolve()),
+            system="unknown",
+            size=st.st_size,
+            mtime=st.st_mtime,
+            crc32=crc,
+            md5=md5,
+            sha1=sha1,
+            sha256=None,
+            status=status,
+            match_name=match_name,
+            dat_name=getattr(match, "dat_name", None)
+        )
+        lib_db.update_entry(new_entry)
+    except OSError:
+        pass
 
     if match:
         return (

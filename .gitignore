@@ -50,6 +50,7 @@ coverage.xml
 verification_results.csv
 _INSTALL_LOG.txt
 mock_library/
+library.db
 
 # User content
 roms/
