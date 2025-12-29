@@ -227,6 +227,22 @@ class Ui_MainWindow:
         layout = qt.QVBoxLayout(parent)
 
         # Top buttons
+        top_layout = self._setup_library_top_buttons(qt)
+        layout.addLayout(top_layout)
+
+        # Splitter for lists and cover
+        self.splitter = self._setup_library_lists(qt)
+        layout.addWidget(self.splitter)
+
+        # Switch Actions Group
+        self.grp_switch_actions = self._setup_library_switch_actions(qt)
+        layout.addWidget(self.grp_switch_actions)
+
+        # Global Cancel
+        self.btn_cancel = self._setup_library_cancel_button(qt)
+        layout.addWidget(self.btn_cancel)
+
+    def _setup_library_top_buttons(self, qt):
         top_layout = qt.QHBoxLayout()
         self.btn_init = qt.QPushButton("Init Structure")
         self.btn_list = qt.QPushButton("Refresh List")
@@ -261,10 +277,10 @@ class Ui_MainWindow:
         top_layout.addStretch()
         top_layout.addWidget(self.edit_filter)
         top_layout.addWidget(self.btn_clear_filter)
-        layout.addLayout(top_layout)
+        return top_layout
 
-        # Splitter for lists
-        self.splitter = qt.QSplitter()
+    def _setup_library_lists(self, qt):
+        splitter = qt.QSplitter()
         self.sys_list = qt.QListWidget()
         self.rom_list = qt.QListWidget()
         self.sys_list.setMinimumWidth(180)
@@ -274,8 +290,8 @@ class Ui_MainWindow:
             )
         except AttributeError:
             self.rom_list.setSelectionMode(qt.QAbstractItemView.ExtendedSelection)
-        self.splitter.addWidget(self.sys_list)
-        self.splitter.addWidget(self.rom_list)
+        splitter.addWidget(self.sys_list)
+        splitter.addWidget(self.rom_list)
 
         # Cover Image
         self.cover_label = qt.QLabel("No Cover")
@@ -285,9 +301,11 @@ class Ui_MainWindow:
             except AttributeError:
                 self.cover_label.setAlignment(self._Qt_enum.AlignCenter)
         self.cover_label.setMinimumWidth(200)
-        self.cover_label.setStyleSheet("background-color: #222; color: #888; border: 1px solid #444;")
+        self.cover_label.setStyleSheet(
+            "background-color: #222; color: #888; border: 1px solid #444;"
+        )
         self.cover_label.setScaledContents(True)
-        
+
         # Ensure label expands/shrinks to fill space
         try:
             self.cover_label.setSizePolicy(
@@ -297,18 +315,14 @@ class Ui_MainWindow:
             self.cover_label.setSizePolicy(
                 qt.QSizePolicy.Ignored, qt.QSizePolicy.Ignored
             )
-            
-        self.splitter.addWidget(self.cover_label)
+        splitter.addWidget(self.cover_label)
 
         # Set initial splitter sizes (approximate ratio)
-        self.splitter.setSizes([200, 500, 300])
+        splitter.setSizes([200, 500, 300])
+        return splitter
 
-        layout.addWidget(self.splitter)
-
-        # Switch Actions Group
-        self.grp_switch_actions = qt.QGroupBox(
-            "Switch Compression Tools (Selected File)"
-        )
+    def _setup_library_switch_actions(self, qt):
+        grp = qt.QGroupBox("Switch Compression Tools (Selected File)")
         action_layout = qt.QHBoxLayout()
         self.btn_compress = qt.QPushButton("Compress")
         self.btn_recompress = qt.QPushButton("Recompress")
@@ -328,21 +342,21 @@ class Ui_MainWindow:
         action_layout.addWidget(self.btn_compress)
         action_layout.addWidget(self.btn_recompress)
         action_layout.addWidget(self.btn_decompress)
-        self.grp_switch_actions.setLayout(action_layout)
-        self.grp_switch_actions.setVisible(False)
-        layout.addWidget(self.grp_switch_actions)
+        grp.setLayout(action_layout)
+        grp.setVisible(False)
+        return grp
 
-        # Global Cancel
-        self.btn_cancel = qt.QPushButton("Cancel Current Task")
+    def _setup_library_cancel_button(self, qt):
+        btn = qt.QPushButton("Cancel Current Task")
         # Set icon for cancel after creation to avoid attribute errors
         ic = self._get_icon(qt, "SP_DialogCancelButton")
         if ic:
             try:
-                self.btn_cancel.setIcon(ic)
+                btn.setIcon(ic)
             except Exception:
                 pass
-        self.btn_cancel.setStyleSheet("background-color: #5a2a2a;")
-        layout.addWidget(self.btn_cancel)
+        btn.setStyleSheet("background-color: #5a2a2a;")
+        return btn
 
     def setupToolsTab(self, qt, parent):
         layout = qt.QVBoxLayout(parent)
