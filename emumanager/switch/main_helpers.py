@@ -110,7 +110,8 @@ def _scan_files(
                         cached_av = None
                         used_cache = True
                     elif entry.status == "INFECTED":
-                        cached_ok = True  # Might be valid file but infected? Usually corrupt too.
+                        # Might be valid file but infected? Usually corrupt too.
+                        cached_ok = True
                         cached_av = True
                         used_cache = True
         except (OSError, ValueError):

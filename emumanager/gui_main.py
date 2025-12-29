@@ -2210,7 +2210,7 @@ class MainWindowBase:
         """Identify the selected ROM using a DAT file."""
         if not self.rom_list:
             return
-        
+
         sel = self.rom_list.currentItem()
         if not sel:
             self.log_msg(MSG_NO_ROM)
@@ -2220,8 +2220,12 @@ class MainWindowBase:
         if not self._last_base:
             self.log_msg(MSG_SELECT_BASE)
             return
-            
-        system = self.sys_list.currentItem().text() if self.sys_list.currentItem() else ""
+
+        system = (
+            self.sys_list.currentItem().text()
+            if self.sys_list.currentItem()
+            else ""
+        )
         if not system:
             self.log_msg(MSG_NO_SYSTEM)
             return
@@ -2229,23 +2233,23 @@ class MainWindowBase:
         base_roms_dir = get_roms_dir(Path(self._last_base))
         rom_rel_path = sel.text()
         full_path = base_roms_dir / system / rom_rel_path
-        
+
         if not full_path.exists():
             self.log_msg(f"File not found: {full_path}")
             return
 
         # Try to auto-discover DAT first
         from emumanager.verification.dat_manager import find_dat_for_system
-        
+
         dat_path = None
-        
+
         # Look in dats folder
         dats_dir = self._last_base / "dats"
         if dats_dir.exists():
             found = find_dat_for_system(dats_dir, system)
             if found:
                 dat_path = str(found)
-        
+
         # If not found, ask user
         if not dat_path:
             dat_path, _ = self._qtwidgets.QFileDialog.getOpenFileName(
@@ -2391,7 +2395,10 @@ class MainWindowBase:
                     except Exception:
                         pass
 
-                    msg = f"Downloading: {completed}/{total_files} ({(percent*100):.1f}%)"
+                    msg = (
+                        f"Downloading: {completed}/{total_files} "
+                        f"({(percent*100):.1f}%)"
+                    )
                     self.progress_hook(percent, msg)
 
             return f"Update complete. Downloaded {success}/{total_files} DATs."
@@ -2402,6 +2409,3 @@ class MainWindowBase:
             self.progress_hook(1.0, "DAT update complete")
 
         self._run_in_background(_work, _done)
-
-
-

@@ -91,8 +91,10 @@ class CoverDownloader(QRunnable):
                 return
 
             # Construct URL
-            # GameTDB URL structure: https://art.gametdb.com/{system}/cover/{region}/{game_id}.{ext}
-            # Region mapping might be needed. For now, try passed region or default to US/EN
+            # GameTDB URL structure:
+            # https://art.gametdb.com/{system}/cover/{region}/{game_id}.{ext}
+            # Region mapping might be needed.
+            # For now, try passed region or default to US/EN
 
             regions_to_try = [self.region, "US", "EN", "JA", "Other"]
             # Filter out None or empty regions
@@ -179,7 +181,9 @@ class CoverDownloader(QRunnable):
             )
 
             if os.path.exists(file_path):
-                self.signals.log.emit(f"Cover found in cache (Libretro): {file_path}")
+                self.signals.log.emit(
+                    f"Cover found in cache (Libretro): {file_path}"
+                )
                 self.signals.finished.emit(file_path)
                 return
 
@@ -201,7 +205,9 @@ class CoverDownloader(QRunnable):
                     f.write(response.content)
                 return True
             else:
-                # self.signals.log.emit(f"Failed to download {url}: Status {response.status_code}")
+                # self.signals.log.emit(
+                #     f"Failed to download {url}: Status {response.status_code}"
+                # )
                 pass
         except Exception:
             # self.signals.log.emit(f"Exception downloading {url}: {e}")

@@ -25,10 +25,12 @@ class CoverDownloader(QRunnable):
         # GameTDB uses: wii, switch, ps2, ps3, ds, 3ds, etc.
         gametdb_system = self.system.lower()
         if gametdb_system == "gamecube":
-            gametdb_system = "wii"  # GameTDB hosts GC covers under Wii usually, or has a specific section?
+            gametdb_system = "wii"
+            # GameTDB hosts GC covers under Wii usually, or has a specific section?
             # Checking GameTDB: they have a section for Wii, WiiU, PS3, Switch, DS, 3DS.
             # GameCube covers are often found under Wii section with ID.
-            # Let's verify this assumption later, but for now 'wii' is a safe bet for Nintendo consoles on GameTDB often.
+            # Let's verify this assumption later, but for now 'wii' is a safe bet
+            # for Nintendo consoles on GameTDB often.
             # Actually, GameTDB has 'wii' and 'ds'.
             # For PS2, GameTDB has 'ps2'.
             pass
@@ -44,7 +46,8 @@ class CoverDownloader(QRunnable):
             return
 
         # Construct URL
-        # GameTDB URL format: https://art.gametdb.com/{system}/cover/{region}/{game_id}.png (or .jpg)
+        # GameTDB URL format:
+        # https://art.gametdb.com/{system}/cover/{region}/{game_id}.png (or .jpg)
         # We try a few common extensions and regions if not specified
 
         regions_to_try = (
@@ -56,7 +59,8 @@ class CoverDownloader(QRunnable):
         system_map = {
             "switch": "switch",
             "wii": "wii",
-            "gamecube": "wii",  # GameTDB mixes them often, or uses 'wii' for both in some contexts?
+            "gamecube": "wii",
+            # GameTDB mixes them often, or uses 'wii' for both in some contexts?
             # Actually GameTDB has 'wii' covers.
             # Let's try 'wii' for GC for now.
             "ps2": "ps2",
@@ -75,7 +79,10 @@ class CoverDownloader(QRunnable):
             if not reg:
                 continue
             for ext in extensions:
-                url = f"https://art.gametdb.com/{target_system}/cover/{reg}/{self.game_id}{ext}"
+                url = (
+                    f"https://art.gametdb.com/{target_system}/cover/{reg}/"
+                    f"{self.game_id}{ext}"
+                )
                 try:
                     response = requests.get(url, timeout=5)
                     if response.status_code == 200:

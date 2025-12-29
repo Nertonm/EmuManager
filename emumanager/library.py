@@ -55,8 +55,9 @@ class LibraryDB:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO library 
-                (path, system, size, mtime, crc32, md5, sha1, sha256, status, match_name, dat_name)
+                INSERT OR REPLACE INTO library
+                (path, system, size, mtime, crc32, md5, sha1, sha256, status,
+                 match_name, dat_name)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (

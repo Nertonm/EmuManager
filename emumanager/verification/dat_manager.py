@@ -57,6 +57,7 @@ def find_dat_for_system(dats_root: Path, system_name: str) -> Optional[Path]:
     if not candidates:
         return None
 
-    # Sort by name descending (usually puts newer dates first if format is Name (YYYYMMDD))
+    # Sort by name descending (usually puts newer dates first if format is Name
+    # (YYYYMMDD))
     candidates.sort(key=lambda p: p.name, reverse=True)
     return candidates[0]

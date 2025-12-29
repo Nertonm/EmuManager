@@ -381,7 +381,7 @@ class Ui_MainWindow:
         layout = qt.QVBoxLayout(self.tab_sega)
         grp = qt.QGroupBox("Sega Systems (Dreamcast, Saturn, MegaDrive, etc)")
         grp_layout = qt.QVBoxLayout()
-        
+
         self.btn_sega_convert = qt.QPushButton("Convert CD-based to CHD")
         self.btn_sega_convert.setToolTip(
             "Converts GDI/CUE/ISO to CHD (Dreamcast, Saturn, SegaCD)"
@@ -1237,20 +1237,20 @@ class Ui_MainWindow:
 
     def setupGalleryTab(self, qt, parent):
         layout = qt.QVBoxLayout(parent)
-        
+
         # System Selector
         top_layout = qt.QHBoxLayout()
         top_layout.addWidget(qt.QLabel("System:"))
         self.combo_gallery_system = qt.QComboBox()
         self.combo_gallery_system.setMinimumWidth(200)
         top_layout.addWidget(self.combo_gallery_system)
-        
+
         self.btn_gallery_refresh = qt.QPushButton("Refresh Gallery")
         ic = self._get_icon(qt, "SP_BrowserReload")
         if ic:
             self.btn_gallery_refresh.setIcon(ic)
         top_layout.addWidget(self.btn_gallery_refresh)
-        
+
         top_layout.addStretch()
         layout.addLayout(top_layout)
 
