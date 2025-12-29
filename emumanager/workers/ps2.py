@@ -10,11 +10,16 @@ from emumanager.converters import ps2_converter
 from emumanager.library import LibraryDB, LibraryEntry
 from emumanager.ps2 import database as ps2_db
 from emumanager.ps2 import metadata as ps2_meta
-from emumanager.workers.common import (MSG_CANCELLED, GuiLogger, GuiLogHandler,
-                                       calculate_file_hash,
-                                       create_file_progress_cb,
-                                       emit_verification_result,
-                                       find_target_dir, make_result_collector)
+from emumanager.workers.common import (
+    MSG_CANCELLED,
+    GuiLogger,
+    GuiLogHandler,
+    calculate_file_hash,
+    create_file_progress_cb,
+    emit_verification_result,
+    find_target_dir,
+    make_result_collector,
+)
 
 MSG_PS2_DIR_NOT_FOUND = "PS2 ROMs directory not found."
 PS2_SUBDIRS = ["roms/ps2", "ps2"]

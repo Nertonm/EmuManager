@@ -2,9 +2,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from emumanager.gui_workers import (worker_dolphin_convert,
-                                    worker_dolphin_organize,
-                                    worker_dolphin_verify, worker_ps2_organize)
+from emumanager.gui_workers import (
+    worker_dolphin_convert,
+    worker_dolphin_organize,
+    worker_dolphin_verify,
+    worker_ps2_organize,
+)
 
 
 @pytest.fixture

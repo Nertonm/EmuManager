@@ -3,9 +3,12 @@ from unittest.mock import patch
 
 import pytest
 
-from emumanager.converters.n3ds_converter import (compress_to_7z,
-                                                  convert_to_cia,
-                                                  decompress_7z, decrypt_3ds)
+from emumanager.converters.n3ds_converter import (
+    compress_to_7z,
+    convert_to_cia,
+    decompress_7z,
+    decrypt_3ds,
+)
 
 
 @pytest.fixture

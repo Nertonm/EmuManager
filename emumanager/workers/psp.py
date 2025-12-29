@@ -7,11 +7,15 @@ from typing import Any, Callable, Optional
 from emumanager.converters import psp_converter
 from emumanager.psp import database as psp_db
 from emumanager.psp import metadata as psp_meta
-from emumanager.workers.common import (MSG_CANCELLED, GuiLogger, VerifyResult,
-                                       calculate_file_hash,
-                                       create_file_progress_cb,
-                                       emit_verification_result,
-                                       make_result_collector)
+from emumanager.workers.common import (
+    MSG_CANCELLED,
+    GuiLogger,
+    VerifyResult,
+    calculate_file_hash,
+    create_file_progress_cb,
+    emit_verification_result,
+    make_result_collector,
+)
 
 MSG_PSP_DIR_NOT_FOUND = "PSP ROMs directory not found."
 

@@ -1,6 +1,12 @@
-from emumanager.switch.cli import (determine_region, determine_type,
-                                   get_base_id, get_file_hash, get_metadata,
-                                   parse_languages, sanitize_name)
+from emumanager.switch.cli import (
+    determine_region,
+    determine_type,
+    get_base_id,
+    get_file_hash,
+    get_metadata,
+    parse_languages,
+    sanitize_name,
+)
 
 
 def test_sanitize_name_basic():
