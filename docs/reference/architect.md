@@ -1,0 +1,3 @@
+# Architect API
+
+::: emumanager.architect

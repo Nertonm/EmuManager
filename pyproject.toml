@@ -19,6 +19,11 @@ emumanager-gui = "emumanager.gui:main"
 
 [project.optional-dependencies]
 gui = ["pyqt6"]
+docs = [
+    "mkdocs",
+    "mkdocs-material",
+    "mkdocstrings[python]",
+]
 
 # Helpful extras for contributors (use with: pip install ".[dev]" or ".[test]")
 test = ["pytest", "pytest-cov"]
@@ -30,6 +35,9 @@ dev = [
 	"build",
 	"mypy",
 	"types-requests",
+    "mkdocs",
+    "mkdocs-material",
+    "mkdocstrings[python]",
 ]
 
 [tool.mypy]

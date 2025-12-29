@@ -72,7 +72,10 @@ def calculate_file_hash(
 
 
 def create_file_progress_cb(
-    main_progress_cb, start_prog: float, file_weight: float, filename: str
+    main_progress_cb: Optional[Callable[[float, str], None]],
+    start_prog: float,
+    file_weight: float,
+    filename: str,
 ):
     """
     Creates a callback for file operations that updates the main progress bar.
