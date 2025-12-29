@@ -27,7 +27,44 @@ dev = [
 	"pytest",
 	"pytest-cov",
 	"build",
+	"mypy",
+	"types-requests",
 ]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+check_untyped_defs = false
+exclude = ["scripts/", "tests/"]
+
+[[tool.mypy.overrides]]
+module = [
+    "emumanager.gui_main",
+    "emumanager.converters.dolphin_converter",
+    "emumanager.switch.main_helpers",
+    "emumanager.workers.verification",
+    "emumanager.workers.ps3",
+    "emumanager.workers.n3ds",
+    "emumanager.gui_covers",
+    "emumanager.gui_ui",
+    "emumanager.verification.dat_parser",
+    "emumanager.verification.hasher",
+    "emumanager.common.sfo",
+    "emumanager.n3ds.metadata",
+    "emumanager.psx.metadata",
+    "emumanager.ps2.metadata",
+    "emumanager.converters.n3ds_converter",
+    "emumanager.switch.cli",
+    "emumanager.common.execution",
+    "emumanager.manager",
+    "emumanager.controllers.gallery",
+    "emumanager.psp.database",
+    "emumanager.ps3.database",
+    "emumanager.n3ds.database"
+]
+ignore_errors = true
 
 [tool.ruff]
 # Opinionated but permissive defaults for repository linting
