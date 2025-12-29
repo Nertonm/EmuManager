@@ -7,13 +7,16 @@ from the binding they prefer and pass them when constructing the window.
 
 from __future__ import annotations
 
+import logging
 import threading
 from datetime import datetime
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from emumanager.logging_cfg import get_logger
+from emumanager.controllers.gallery import GalleryController
+from emumanager.controllers.tools import ToolsController
+from emumanager.logging_cfg import get_logger, setup_gui_logging
 from emumanager.verification.hasher import calculate_hashes
 from emumanager.workers.distributor import worker_distribute_root
 from .architect import get_roms_dir
@@ -21,38 +24,10 @@ from .architect import get_roms_dir
 from .gui_ui import Ui_MainWindow
 from .gui_covers import CoverDownloader
 from .gui_workers import (
-    worker_clean_junk,
-    worker_compress_single,
-    worker_decompress_single,
-    worker_dolphin_convert,
-    worker_dolphin_decompress_single,
-    worker_dolphin_organize,
-    worker_dolphin_recompress_single,
-    worker_dolphin_verify,
+    worker_distribute_root,
     worker_hash_verify,
     worker_identify_single_file,
-    worker_health_check,
-    worker_n3ds_organize,
-    worker_n3ds_verify,
-    worker_n3ds_compress,
-    worker_n3ds_decompress,
-    worker_n3ds_convert_cia,
-    worker_n3ds_decrypt,
     worker_organize,
-    worker_ps2_convert,
-    worker_ps2_organize,
-    worker_ps2_verify,
-    worker_ps3_organize,
-    worker_ps3_verify,
-    worker_psp_compress,
-    worker_psp_organize,
-    worker_psp_verify,
-    worker_psx_convert,
-    worker_psx_organize,
-    worker_psx_verify,
-    worker_recompress_single,
-    worker_switch_compress,
-    worker_switch_decompress,
 )
 
 # Constants
@@ -155,15 +130,27 @@ class MainWindowBase:
                 else:
                     log_signal = self._qtcore.Signal(str)
                     progress_signal = self._qtcore.Signal(float, str)
+                
+                def emit_log(self, msg, level):
+                    # We can optionally use level to colorize, but for now just emit msg
+                    self.log_signal.emit(msg)
 
             self._signaler = LogSignaler()
             self._signaler.log_signal.connect(self._log_msg_slot)
             self._signaler.progress_signal.connect(self._progress_slot)
+            
+            # Configure standard logging to use this signaler
+            setup_gui_logging(self._signaler)
+
         else:
             self._signaler = None
 
         # Initialize logger
         self.logger = get_logger("gui")
+
+        # Initialize Controllers
+        self.gallery_controller = GalleryController(self)
+        self.tools_controller = ToolsController(self)
 
         # Connect Signals
         self._connect_signals()
@@ -196,47 +183,8 @@ class MainWindowBase:
             self.ui.btn_quick_organize.clicked.connect(self.on_organize_all)
         if hasattr(self.ui, "btn_quick_verify"):
             self.ui.btn_quick_verify.clicked.connect(self.on_verify_all)
-        if hasattr(self.ui, "btn_quick_clean"):
-            self.ui.btn_quick_clean.clicked.connect(self.on_clean_junk)
         if hasattr(self.ui, "btn_quick_update"):
             self.ui.btn_quick_update.clicked.connect(self.on_list)
-
-        # Gallery Tab
-        if hasattr(self.ui, "combo_gallery_system"):
-            self.ui.combo_gallery_system.currentIndexChanged.connect(self._on_gallery_system_changed)
-        if hasattr(self.ui, "btn_gallery_refresh"):
-            self.ui.btn_gallery_refresh.clicked.connect(self._populate_gallery)
-        if hasattr(self.ui, "list_gallery"):
-            # Enable context menu
-            policy = None
-            # Try Qt6 Enum
-            try:
-                if self._Qt_enum and hasattr(self._Qt_enum, "ContextMenuPolicy"):
-                    policy = self._Qt_enum.ContextMenuPolicy.CustomContextMenu
-            except AttributeError:
-                pass
-            
-            # Try Qt5/Legacy Enum
-            if policy is None:
-                try:
-                    if self._Qt_enum and hasattr(self._Qt_enum, "CustomContextMenu"):
-                        policy = self._Qt_enum.CustomContextMenu
-                except AttributeError:
-                    pass
-
-            # Try via qtcore directly
-            if policy is None and self._qtcore:
-                try:
-                    policy = self._qtcore.Qt.ContextMenuPolicy.CustomContextMenu
-                except AttributeError:
-                    try:
-                        policy = self._qtcore.Qt.CustomContextMenu
-                    except AttributeError:
-                        pass
-            
-            if policy is not None:
-                self.ui.list_gallery.setContextMenuPolicy(policy)
-                self.ui.list_gallery.customContextMenuRequested.connect(self._on_gallery_context_menu)
 
         # Library Tab
         self.ui.btn_open_lib.clicked.connect(self.on_open_library)
@@ -256,39 +204,9 @@ class MainWindowBase:
         self.ui.sys_list.itemClicked.connect(self._on_system_selected)
         self.ui.rom_list.itemDoubleClicked.connect(self._on_rom_double_clicked)
 
-        # Switch Actions
-        self.ui.btn_compress.clicked.connect(self.on_compress_selected)
-        self.ui.btn_recompress.clicked.connect(self.on_recompress_selected)
-        self.ui.btn_decompress.clicked.connect(self.on_decompress_selected)
+        # Cancel button
         self.ui.btn_cancel.clicked.connect(self.on_cancel_requested)
 
-        # Tools Tab - Switch
-        self.ui.btn_organize.clicked.connect(self.on_organize)
-        self.ui.btn_health.clicked.connect(self.on_health_check)
-        self.ui.btn_switch_compress.clicked.connect(self.on_switch_compress)
-        self.ui.btn_switch_decompress.clicked.connect(self.on_switch_decompress)
-
-        # Tools Tab - PS1
-        self.ui.btn_psx_convert.clicked.connect(self.on_psx_convert)
-        self.ui.btn_psx_verify.clicked.connect(self.on_psx_verify)
-        self.ui.btn_psx_organize.clicked.connect(self.on_psx_organize)
-
-        # Tools Tab - PS2
-        self.ui.btn_ps2_convert.clicked.connect(self.on_ps2_convert)
-        self.ui.btn_ps2_verify.clicked.connect(self.on_ps2_verify)
-        self.ui.btn_ps2_organize.clicked.connect(self.on_ps2_organize)
-
-        # Tools Tab - PS3
-        self.ui.btn_ps3_verify.clicked.connect(self.on_ps3_verify)
-        self.ui.btn_ps3_organize.clicked.connect(self.on_ps3_organize)
-
-        # Tools Tab - PSP
-        self.ui.btn_psp_verify.clicked.connect(self.on_psp_verify)
-        self.ui.btn_psp_organize.clicked.connect(self.on_psp_organize)
-        self.ui.btn_psp_compress.clicked.connect(self.on_psp_compress)
-
-        # Tools Tab - Dolphin
-        self.ui.btn_dolphin_organize.clicked.connect(self.on_dolphin_organize)
         self.ui.btn_dolphin_convert.clicked.connect(self.on_dolphin_convert)
         self.ui.btn_dolphin_verify.clicked.connect(self.on_dolphin_verify)
 
@@ -353,14 +271,9 @@ class MainWindowBase:
         self.window.show()
 
     def _log_msg_slot(self, text: str):
-        # Log to terminal/file via logger
-        if hasattr(self, "logger"):
-            self.logger.info(text)
-
-        # Prefix with timestamp for better traceability
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        line = f"[{now}] {text}"
-        self.log.append(line)
+        # Just append to the log window. 
+        # The text is already formatted by the logging handler if it came from there.
+        self.log.append(text)
         # Show brief status in the status bar
         try:
             self.status.showMessage(text, 5000)
@@ -390,11 +303,10 @@ class MainWindowBase:
             pass
 
     def log_msg(self, text: str):
-        """Thread-safe logging method."""
-        if self._signaler:
-            self._signaler.log_signal.emit(text)
-        else:
-            self._log_msg_slot(text)
+        """Thread-safe logging method.
+        Now redirects to standard logging.
+        """
+        logging.info(text)
 
     def on_clear_log(self):
         try:
@@ -701,11 +613,11 @@ class MainWindowBase:
                     if act == a_del:
                         self.on_delete_selected()
                     elif act == a_comp:
-                        self.on_compress_selected()
+                        self.tools_controller.on_compress_selected()
                     elif act == a_recomp:
-                        self.on_recompress_selected()
+                        self.tools_controller.on_recompress_selected()
                     elif act == a_decomp:
-                        self.on_decompress_selected()
+                        self.tools_controller.on_decompress_selected()
                     elif act == a_verify:
                         self.on_verify_selected()
                     elif act == a_identify:
@@ -1298,12 +1210,12 @@ class MainWindowBase:
                     # Count files recursively
                     total_files += sum(1 for _ in p.rglob("*") if _.is_file())
                 except Exception:
-                    pass
+                    logging.warning(f"Failed to count files for {sys_name}", exc_info=True)
 
             if hasattr(self.ui, "lbl_total_roms"):
                 self.ui.lbl_total_roms.setText(f"Total Files: {total_files}")
         except Exception:
-            pass
+            logging.error("Failed to update dashboard stats", exc_info=True)
 
     def _refresh_system_list_ui(self, systems):
         try:
@@ -1317,8 +1229,6 @@ class MainWindowBase:
             if hasattr(self.ui, "combo_gallery_system"):
                 self.ui.combo_gallery_system.clear()
                 self.ui.combo_gallery_system.addItems(systems)
-        except Exception:
-            pass
         except Exception:
             pass
 
@@ -1576,194 +1486,6 @@ class MainWindowBase:
         except Exception:
             pass
 
-    def on_compress_selected(self):
-        # Compress the selected ROM using compression.compress_file in background
-        if not self.rom_list:
-            return
-        try:
-            sel = self.rom_list.currentItem()
-            if sel is None:
-                self.log_msg(MSG_NO_ROM)
-                return
-            rom_name = sel.text()
-            # find which system is selected to resolve full path
-            sys_item = self.sys_list.currentItem() if self.sys_list else None
-            if not sys_item:
-                self.log_msg(MSG_NO_SYSTEM)
-                return
-            system = sys_item.text()
-            roms_root = self._manager.get_roms_dir(self._last_base)
-            filepath = roms_root / system / rom_name
-
-            # Debug logging for path resolution
-            self.log_msg(
-                f"Action: Compress | Base: {self._last_base} | "
-                f"Root: {roms_root} | File: {filepath}"
-            )
-
-            if not filepath.exists():
-                self.log_msg(f"File not found: {filepath}")
-                return
-
-            # Ensure environment is ready
-            self._ensure_env(self._last_base)
-            args = self._get_common_args()
-
-            # Dispatch based on system
-            if system.lower() in ("gamecube", "wii"):
-                # Dolphin Compression
-                def _work():
-                    return worker_dolphin_convert(
-                        filepath.parent,
-                        args,
-                        self.log_msg,
-                        lambda _: [filepath],
-                    )
-            else:
-                # Default (Switch) Compression
-                if not self._env.get("TOOL_NSZ"):
-                    self.log_msg(MSG_NSZ_MISSING)
-                    return
-
-                def _work():
-                    return worker_compress_single(
-                        filepath, self._env, args, self.log_msg
-                    )
-
-            def _done(res):
-                if isinstance(res, Exception):
-                    self.log_msg(f"Compress error: {res}")
-                elif res is None:
-                    self.log_msg("Compression did not produce a candidate")
-                else:
-                    self.log_msg(f"Compression candidate: {res}")
-                self._set_ui_enabled(True)
-
-            self._set_ui_enabled(False)
-            self._run_in_background(_work, _done)
-        except Exception as e:
-            self.log_msg(f"Compress action failed: {e}")
-
-    def on_recompress_selected(self):
-        # Recompress the selected ROM using the recompression helper
-        if not self.rom_list:
-            return
-        try:
-            sel = self.rom_list.currentItem()
-            if sel is None:
-                self.log_msg(MSG_NO_ROM)
-                return
-            rom_name = sel.text()
-            sys_item = self.sys_list.currentItem() if self.sys_list else None
-            if not sys_item:
-                self.log_msg(MSG_NO_SYSTEM)
-                return
-            system = sys_item.text()
-            roms_root = self._manager.get_roms_dir(self._last_base)
-            filepath = roms_root / system / rom_name
-
-            self.log_msg(f"Action: Recompress | File: {filepath}")
-
-            if not filepath.exists():
-                self.log_msg(f"File not found: {filepath}")
-                return
-
-            # Ensure environment is ready
-            self._ensure_env(self._last_base)
-            args = self._get_common_args()
-
-            # Dispatch based on system
-            if system.lower() in ("gamecube", "wii"):
-                # Dolphin Recompression
-                def _work():
-                    return worker_dolphin_recompress_single(
-                        filepath, args, self.log_msg
-                    )
-            else:
-                # Default (Switch) Recompression
-                if not self._env.get("TOOL_NSZ"):
-                    self.log_msg(MSG_NSZ_MISSING)
-                    return
-
-                def _work():
-                    return worker_recompress_single(
-                        filepath, self._env, args, self.log_msg
-                    )
-
-            def _done(res):
-                if isinstance(res, Exception):
-                    self.log_msg(f"Recompress error: {res}")
-                elif res is None:
-                    self.log_msg("Recompression did not produce a candidate")
-                else:
-                    self.log_msg(f"Recompression result: {res}")
-                self._set_ui_enabled(True)
-
-            self._set_ui_enabled(False)
-            self._run_in_background(_work, _done)
-        except Exception as e:
-            self.log_msg(f"Recompress action failed: {e}")
-
-    def on_decompress_selected(self):
-        # Decompress the selected archive and show candidate
-        if not self.rom_list:
-            return
-        try:
-            sel = self.rom_list.currentItem()
-            if sel is None:
-                self.log_msg(MSG_NO_ROM)
-                return
-            rom_name = sel.text()
-            sys_item = self.sys_list.currentItem() if self.sys_list else None
-            if not sys_item:
-                self.log_msg(MSG_NO_SYSTEM)
-                return
-            system = sys_item.text()
-            roms_root = self._manager.get_roms_dir(self._last_base)
-            filepath = roms_root / system / rom_name
-
-            self.log_msg(f"Action: Decompress | File: {filepath}")
-
-            if not filepath.exists():
-                self.log_msg(f"File not found: {filepath}")
-                return
-
-            # Ensure environment is ready
-            self._ensure_env(self._last_base)
-            args = self._get_common_args()
-
-            # Dispatch based on system
-            if system.lower() in ("gamecube", "wii"):
-                # Dolphin Decompression
-                def _work():
-                    return worker_dolphin_decompress_single(
-                        filepath, args, self.log_msg
-                    )
-            else:
-                # Default (Switch) Decompression
-                if not self._env.get("TOOL_NSZ"):
-                    self.log_msg(MSG_NSZ_MISSING)
-                    return
-
-                def _work():
-                    return worker_decompress_single(
-                        filepath, self._env, args, self.log_msg
-                    )
-
-            def _done(res):
-                if isinstance(res, Exception):
-                    self.log_msg(f"Decompress error: {res}")
-                elif res is None:
-                    self.log_msg("Decompress did not produce a candidate")
-                else:
-                    self.log_msg(f"Decompress candidate: {res}")
-                self._set_ui_enabled(True)
-
-            self._set_ui_enabled(False)
-            self._run_in_background(_work, _done)
-        except Exception as e:
-            self.log_msg(f"Decompress action failed: {e}")
-
     def on_cancel_requested(self):
         try:
             self._cancel_event.set()
@@ -1853,416 +1575,7 @@ class MainWindowBase:
         args.standardize_names = self.chk_standardize_names.isChecked()
         return args
 
-    def on_organize(self):
-        if not self._last_base:
-            self.log_msg(MSG_SELECT_BASE)
-            return
 
-        self._ensure_env(self._last_base)
-
-        args = self._get_common_args()
-        args.organize = True
-
-        def _work():
-            return worker_organize(
-                self._last_base,
-                self._env,
-                args,
-                self.log_msg,
-                self._get_list_files_fn(),
-                progress_cb=getattr(self, "progress_hook", None),
-            )
-
-        def _done(res):
-            if isinstance(res, Exception):
-                self.log_msg(f"Organize error: {res}")
-            else:
-                self.log_msg(str(res))
-            self._set_ui_enabled(True)
-
-        self._set_ui_enabled(False)
-        self._run_in_background(_work, _done)
-
-    def on_health_check(self):
-        if not self._last_base:
-            self.log_msg(MSG_SELECT_BASE)
-            return
-
-        self._ensure_env(self._last_base)
-
-        args = self._get_common_args()
-
-        def _work():
-            return worker_health_check(
-                self._last_base,
-                self._env,
-                args,
-                self.log_msg,
-                self._get_list_files_fn(),
-            )
-
-        def _done(res):
-            if isinstance(res, Exception):
-                self.log_msg(f"Health Check error: {res}")
-            else:
-                self.log_msg(str(res))
-            self._set_ui_enabled(True)
-
-        self._set_ui_enabled(False)
-        self._run_in_background(_work, _done)
-
-    def on_clean_junk(self):
-        if not self._last_base:
-            self.log_msg(MSG_SELECT_BASE)
-            return
-
-        args = self._get_common_args()
-
-        def _work():
-            return worker_clean_junk(
-                self._last_base,
-                args,
-                self.log_msg,
-                self._get_list_files_fn(),
-                self._list_dirs_recursive,
-            )
-
-        def _done(res):
-            self.log_msg(str(res))
-            self._set_ui_enabled(True)
-
-        self._set_ui_enabled(False)
-        self._run_in_background(_work, _done)
-
-    def on_ps2_convert(self):
-        if not self._last_base:
-            self.log_msg(MSG_SELECT_BASE)
-            return
-
-        args = self._get_common_args()
-
-        def _work():
-            return worker_ps2_convert(self._last_base, args, self.log_msg)
-
-        def _done(res):
-            self.log_msg(str(res))
-            self._set_ui_enabled(True)
-
-        self._set_ui_enabled(False)
-        self._run_in_background(_work, _done)
-
-    def on_psx_convert(self):
-        if not self._last_base:
-            self.log_msg(MSG_SELECT_BASE)
-            return
-        args = self._get_common_args()
-
-        def _work():
-            return worker_psx_convert(self._last_base, args, self.log_msg)
-
-        def _done(res):
-            self.log_msg(str(res))
-            self._set_ui_enabled(True)
-
-        self._set_ui_enabled(False)
-        self._run_in_background(_work, _done)
-
-    def on_ps2_verify(self):
-        if not self._last_base:
-            self.log_msg(MSG_SELECT_BASE)
-            return
-
-        args = self._get_common_args()
-        results_holder: list = []
-        args.results = results_holder
-
-        def _work():
-            return worker_ps2_verify(
-                self._last_base, args, self.log_msg, self._get_list_files_fn()
-            )
-
-        def _done(res):
-            try:
-                self._last_verify_results = results_holder
-                self.on_verification_filter_changed()
-            except Exception:
-                pass
-            self.log_msg(str(res))
-            self._set_ui_enabled(True)
-
-        self._set_ui_enabled(False)
-        self._run_in_background(_work, _done)
-
-    def on_psx_verify(self):
-        if not self._last_base:
-            self.log_msg(MSG_SELECT_BASE)
-            return
-        args = self._get_common_args()
-        # Collect per-file results for GUI table
-        results_holder: list = []
-        args.results = results_holder
-
-        def _work():
-            return worker_psx_verify(
-                self._last_base, args, self.log_msg, self._get_list_files_fn()
-            )
-
-        def _done(res):
-            # res is a summary string; populate table from collected per-file results
-            try:
-                self._last_verify_results = results_holder
-                self.on_verification_filter_changed()
-            except Exception:
-                pass
-            self.log_msg(str(res))
-            self._set_ui_enabled(True)
-
-        self._set_ui_enabled(False)
-        self._run_in_background(_work, _done)
-
-    def on_ps3_verify(self):
-        if not self._last_base:
-            self.log_msg(MSG_SELECT_BASE)
-            return
-
-        args = self._get_common_args()
-        results_holder: list = []
-        args.results = results_holder
-
-        def _work():
-            return worker_ps3_verify(
-                self._last_base,
-                args,
-                self.log_msg,
-                self._get_list_files_fn(),
-                self._list_dirs_recursive,
-            )
-
-        def _done(res):
-            try:
-                self._last_verify_results = results_holder
-                self.on_verification_filter_changed()
-            except Exception:
-                pass
-            self.log_msg(str(res))
-            self._set_ui_enabled(True)
-
-        self._set_ui_enabled(False)
-        self._run_in_background(_work, _done)
-
-    def on_ps3_organize(self):
-        if not self._last_base:
-            self.log_msg(MSG_SELECT_BASE)
-            return
-
-        args = self._get_common_args()
-
-        def _work():
-            return worker_ps3_organize(
-                self._last_base,
-                args,
-                self.log_msg,
-                self._get_list_files_fn(),
-                self._list_dirs_recursive,
-            )
-
-        def _done(res):
-            self.log_msg(str(res))
-            self._set_ui_enabled(True)
-
-        self._set_ui_enabled(False)
-        self._run_in_background(_work, _done)
-
-    def on_psp_verify(self):
-        if not self._last_base:
-            self.log_msg(MSG_SELECT_BASE)
-            return
-
-        args = self._get_common_args()
-        results_holder: list = []
-        args.results = results_holder
-
-        def _work():
-            return worker_psp_verify(
-                self._last_base, args, self.log_msg, self._get_list_files_fn()
-            )
-
-        def _done(res):
-            try:
-                self._last_verify_results = results_holder
-                self.on_verification_filter_changed()
-            except Exception:
-                pass
-            self.log_msg(str(res))
-            self._set_ui_enabled(True)
-
-        self._set_ui_enabled(False)
-        self._run_in_background(_work, _done)
-
-    def on_psp_organize(self):
-        if not self._last_base:
-            self.log_msg(MSG_SELECT_BASE)
-            return
-
-        args = self._get_common_args()
-
-        def _work():
-            return worker_psp_organize(
-                self._last_base, args, self.log_msg, self._get_list_files_fn()
-            )
-
-        def _done(res):
-            self.log_msg(str(res))
-            self._set_ui_enabled(True)
-
-        self._set_ui_enabled(False)
-        self._run_in_background(_work, _done)
-
-    def on_n3ds_verify(self):
-        if not self._last_base:
-            self.log_msg(MSG_SELECT_BASE)
-            return
-
-        args = self._get_common_args()
-        results_holder: list = []
-        args.results = results_holder
-
-        def _work():
-            return worker_n3ds_verify(
-                self._last_base, args, self.log_msg, self._get_list_files_fn()
-            )
-
-        def _done(res):
-            try:
-                self._last_verify_results = results_holder
-                self.on_verification_filter_changed()
-            except Exception:
-                pass
-            self.log_msg(str(res))
-            self._set_ui_enabled(True)
-
-        self._set_ui_enabled(False)
-        self._run_in_background(_work, _done)
-
-    def on_n3ds_organize(self):
-        if not self._last_base:
-            self.log_msg(MSG_SELECT_BASE)
-            return
-
-        args = self._get_common_args()
-
-        def _work():
-            return worker_n3ds_organize(
-                self._last_base, args, self.log_msg, self._get_list_files_fn()
-            )
-
-        def _done(res):
-            self.log_msg(str(res))
-            self._set_ui_enabled(True)
-
-        self._set_ui_enabled(False)
-        self._run_in_background(_work, _done)
-
-    def on_dolphin_convert(self):
-        if not self._last_base:
-            self.log_msg(MSG_SELECT_BASE)
-            return
-
-        args = self._get_common_args()
-
-        def _work():
-            return worker_dolphin_convert(
-                self._last_base, args, self.log_msg, self._get_list_files_fn()
-            )
-
-        def _done(res):
-            self.log_msg(str(res))
-            self._set_ui_enabled(True)
-
-        self._set_ui_enabled(False)
-        self._run_in_background(_work, _done)
-
-    def on_dolphin_verify(self):
-        if not self._last_base:
-            self.log_msg(MSG_SELECT_BASE)
-            return
-
-        args = self._get_common_args()
-        results_holder: list = []
-        args.results = results_holder
-
-        def _work():
-            return worker_dolphin_verify(
-                self._last_base, args, self.log_msg, self._get_list_files_fn()
-            )
-
-        def _done(res):
-            try:
-                self._last_verify_results = results_holder
-                self.on_verification_filter_changed()
-            except Exception:
-                pass
-            self.log_msg(str(res))
-            self._set_ui_enabled(True)
-
-        self._set_ui_enabled(False)
-        self._run_in_background(_work, _done)
-
-    def on_dolphin_organize(self):
-        if not self._last_base:
-            self.log_msg(MSG_SELECT_BASE)
-            return
-
-        args = self._get_common_args()
-
-        def _work():
-            return worker_dolphin_organize(
-                self._last_base, args, self.log_msg, self._get_list_files_fn()
-            )
-
-        def _done(res):
-            self.log_msg(str(res))
-            self._set_ui_enabled(True)
-
-        self._set_ui_enabled(False)
-        self._run_in_background(_work, _done)
-
-    def on_ps2_organize(self):
-        if not self._last_base:
-            self.log_msg(MSG_SELECT_BASE)
-            return
-
-        args = self._get_common_args()
-
-        def _work():
-            return worker_ps2_organize(
-                self._last_base, args, self.log_msg, self._get_list_files_fn()
-            )
-
-        def _done(res):
-            self.log_msg(str(res))
-            self._set_ui_enabled(True)
-
-        self._set_ui_enabled(False)
-        self._run_in_background(_work, _done)
-
-    def on_psx_organize(self):
-        if not self._last_base:
-            self.log_msg(MSG_SELECT_BASE)
-            return
-        args = self._get_common_args()
-
-        def _work():
-            return worker_psx_organize(
-                self._last_base, args, self.log_msg, self._get_list_files_fn()
-            )
-
-        def _done(res):
-            self.log_msg(str(res))
-            self._set_ui_enabled(True)
-
-        self._set_ui_enabled(False)
-        self._run_in_background(_work, _done)
 
     def on_open_library(self):
         qt = self._qtwidgets
@@ -2291,61 +1604,6 @@ class MainWindowBase:
             except Exception:
                 pass
 
-    def on_switch_compress(self):
-        if not self._last_base:
-            self.log_msg(MSG_SELECT_BASE)
-            return
-
-        self._ensure_env(self._last_base)
-
-        args = self._get_common_args()
-
-        def _work():
-            return worker_switch_compress(
-                self._last_base,
-                self._env,
-                args,
-                self.log_msg,
-                self._get_list_files_fn(),
-            )
-
-        def _done(res):
-            if isinstance(res, Exception):
-                self.log_msg(f"Compression error: {res}")
-            else:
-                self.log_msg(str(res))
-            self._set_ui_enabled(True)
-
-        self._set_ui_enabled(False)
-        self._run_in_background(_work, _done)
-
-    def on_switch_decompress(self):
-        if not self._last_base:
-            self.log_msg(MSG_SELECT_BASE)
-            return
-
-        self._ensure_env(self._last_base)
-
-        args = self._get_common_args()
-
-        def _work():
-            return worker_switch_decompress(
-                self._last_base,
-                self._env,
-                args,
-                self.log_msg,
-                self._get_list_files_fn(),
-            )
-
-        def _done(res):
-            if isinstance(res, Exception):
-                self.log_msg(f"Decompression error: {res}")
-            else:
-                self.log_msg(str(res))
-            self._set_ui_enabled(True)
-
-        self._set_ui_enabled(False)
-        self._run_in_background(_work, _done)
 
     def on_select_dat(self):
         qt = self._qtwidgets
@@ -2550,25 +1808,6 @@ class MainWindowBase:
         except Exception as e:
             self.log_msg(f"Export CSV error: {e}")
 
-    def on_psp_compress(self):
-        if not self._last_base:
-            self.log_msg(MSG_SELECT_BASE)
-            return
-
-        args = self._get_common_args()
-        # Add specific args if needed, e.g. compression level
-        args.level = 9
-        args.rm_originals = self.ui.chk_rm_originals.isChecked()
-
-        def _work():
-            return worker_psp_compress(
-                self._last_base, args, self.log_msg, self._get_list_files_fn()
-            )
-
-        def _done(res):
-            self.log_msg(str(res))
-
-        self._run_background_task(_work, _done)
 
     def _list_files_selected(self, root: Path) -> list[Path]:
         """Return only selected files from the UI, resolved to absolute paths."""
@@ -2676,7 +1915,7 @@ class MainWindowBase:
             "Starting batch verification (Not implemented yet for all systems)"
         )
         # Placeholder
-        self.on_health_check()
+        self.tools_controller.on_health_check()
 
     def on_delete_selected(self):
         if not self.rom_list:
@@ -2764,81 +2003,6 @@ class MainWindowBase:
         except Exception as e:
             self.log_msg(f"Error verifying file: {e}")
 
-    def on_n3ds_compress(self):
-        if not self._last_base:
-            self.log_msg(MSG_SELECT_BASE)
-            return
-
-        args = self._get_common_args()
-
-        def _work():
-            return worker_n3ds_compress(
-                self._last_base, args, self.log_msg, self._get_list_files_fn()
-            )
-
-        def _done(res):
-            self.log_msg(str(res))
-            self._set_ui_enabled(True)
-
-        self._set_ui_enabled(False)
-        self._run_in_background(_work, _done)
-
-    def on_n3ds_decompress(self):
-        if not self._last_base:
-            self.log_msg(MSG_SELECT_BASE)
-            return
-
-        args = self._get_common_args()
-
-        def _work():
-            return worker_n3ds_decompress(
-                self._last_base, args, self.log_msg, self._get_list_files_fn()
-            )
-
-        def _done(res):
-            self.log_msg(str(res))
-            self._set_ui_enabled(True)
-
-        self._set_ui_enabled(False)
-        self._run_in_background(_work, _done)
-
-    def on_n3ds_convert_cia(self):
-        if not self._last_base:
-            self.log_msg(MSG_SELECT_BASE)
-            return
-
-        args = self._get_common_args()
-
-        def _work():
-            return worker_n3ds_convert_cia(
-                self._last_base, args, self.log_msg, self._get_list_files_fn()
-            )
-
-        def _done(res):
-            self.log_msg(str(res))
-            self._set_ui_enabled(True)
-
-        self._set_ui_enabled(False)
-        self._run_in_background(_work, _done)
-
-    def on_n3ds_decrypt(self):
-        if not self._last_base:
-            self.log_msg(MSG_SELECT_BASE)
-            return
-
-        args = self._get_common_args()
-
-        def _work():
-            return worker_n3ds_decrypt(
-                self._last_base, args, self.log_msg, self._get_list_files_fn()
-            )
-
-        def _done(res):
-            self.log_msg(str(res))
-            self._set_ui_enabled(True)
-
-        self._set_ui_enabled(False)
-        self._run_in_background(_work, _done)
 
     def _on_rom_selection_changed(self, current, previous):
         if not current:
@@ -2967,196 +2131,4 @@ class MainWindowBase:
             
         self._run_in_background(_work, _done)
 
-    def _on_gallery_system_changed(self, index):
-        self._populate_gallery()
 
-    def _populate_gallery(self):
-        if not self._last_base:
-            return
-            
-        system = self.ui.combo_gallery_system.currentText()
-        if not system:
-            return
-            
-        self.ui.list_gallery.clear()
-        self.log_msg(f"Populating gallery for {system}...")
-        
-        roms_dir = get_roms_dir(Path(self._last_base)) / system
-        if not roms_dir.exists():
-            return
-            
-        files = self._list_files_recursive(roms_dir)
-        
-        # Cache dir root
-        cache_dir_root = Path(self._last_base) / ".covers"
-        cache_dir_root.mkdir(exist_ok=True)
-        
-        # Default icon
-        default_icon = self.ui._get_icon(self._qtwidgets, "SP_FileIcon")
-        
-        # Connection type for thread safety
-        conn_type = self._Qt_enum.ConnectionType.QueuedConnection if self._Qt_enum and hasattr(self._Qt_enum, "ConnectionType") else self._qtcore.Qt.QueuedConnection
-
-        for f in files:
-            try:
-                name = f.name
-                item = self._qtwidgets.QListWidgetItem(name)
-                item.setToolTip(str(f))
-                
-                if default_icon:
-                    item.setIcon(default_icon)
-                
-                self.ui.list_gallery.addItem(item)
-                
-                # Trigger background check/download
-                # Guess region
-                region = None
-                name = f.name
-                if "(USA)" in name or "(US)" in name:
-                    region = "US"
-                elif "(Europe)" in name or "(EU)" in name:
-                    region = "EN"
-                elif "(Japan)" in name or "(JP)" in name:
-                    region = "JA"
-                
-                downloader = CoverDownloader(system, None, region, str(cache_dir_root), str(f))
-                
-                # Use partial to pass the item
-                downloader.signals.finished.connect(partial(self._update_gallery_icon, item), conn_type)
-                
-                self._qtcore.QThreadPool.globalInstance().start(downloader)
-                
-            except Exception as e:
-                self.log_msg(f"Error adding gallery item {f}: {e}")
-                continue
-        
-        self.log_msg(f"Gallery population started for {len(files)} items.")
-
-    def _update_gallery_icon(self, item, image_path):
-        if not image_path or not Path(image_path).exists():
-            return
-            
-        try:
-            # Check if item is still valid (might have been cleared)
-            if item.listWidget() is None:
-                return
-
-            icon = self._qtgui.QIcon(image_path)
-            item.setIcon(icon)
-        except Exception:
-            pass
-
-    def _on_gallery_context_menu(self, position):
-        item = self.ui.list_gallery.itemAt(position)
-        if not item:
-            return
-
-        menu = self._qtwidgets.QMenu()
-        
-        # Actions
-        action_open = menu.addAction("Open File Location")
-        action_verify = menu.addAction("Verify (Hash)")
-        action_identify = menu.addAction("Identify with DAT...")
-        menu.addSeparator()
-        action_refresh_cover = menu.addAction("Redownload Cover")
-        
-        action = menu.exec(self.ui.list_gallery.mapToGlobal(position))
-        
-        if not action:
-            return
-            
-        file_path = Path(item.toolTip())
-        
-        if action == action_open:
-            self._open_file_location(file_path)
-        elif action == action_verify:
-            self._verify_single_file(file_path)
-        elif action == action_identify:
-            self._identify_single_file_dialog(file_path)
-        elif action == action_refresh_cover:
-            self._refresh_gallery_cover(item, file_path)
-
-    def _verify_single_file(self, file_path):
-        self.log_msg(f"Verifying {file_path.name}...")
-        def _work():
-            return calculate_hashes(file_path)
-        
-        def _done(res):
-            if res:
-                msg = f"File: {file_path.name}\n\nCRC32: {res.crc32}\nMD5: {res.md5}\nSHA1: {res.sha1}"
-                self._qtwidgets.QMessageBox.information(self.window, "Verification Result", msg)
-                self.log_msg(f"Verified {file_path.name}: CRC32={res.crc32}")
-            else:
-                self._qtwidgets.QMessageBox.warning(self.window, "Error", "Failed to calculate hashes.")
-        
-        self._run_in_background(_work, _done)
-
-    def _identify_single_file_dialog(self, file_path):
-        dat_path, _ = self._qtwidgets.QFileDialog.getOpenFileName(
-            self.window, "Select DAT File", "", "DAT Files (*.dat *.xml)"
-        )
-        if not dat_path:
-            return
-            
-        self.log_msg(f"Identifying {file_path.name} using {Path(dat_path).name}...")
-        
-        def _work():
-            return worker_identify_single_file(
-                file_path, Path(dat_path), self.log_msg, self._progress_slot
-            )
-            
-        def _done(res):
-            self.log_msg(str(res))
-            self._qtwidgets.QMessageBox.information(self.window, "Identification Result", str(res))
-            
-        self._run_in_background(_work, _done)
-
-    def _refresh_gallery_cover(self, item, file_path):
-        system = self.ui.combo_gallery_system.currentText()
-        cache_dir_root = Path(self._last_base) / ".covers"
-        
-        self.log_msg(f"Refreshing cover for {file_path.name}...")
-        
-        region = None
-        name = file_path.name
-        if "(USA)" in name or "(US)" in name:
-            region = "US"
-        elif "(Europe)" in name or "(EU)" in name:
-            region = "EN"
-        elif "(Japan)" in name or "(JP)" in name:
-            region = "JA"
-            
-        downloader = CoverDownloader(system, None, region, str(cache_dir_root), str(file_path))
-        
-        conn_type = self._Qt_enum.ConnectionType.QueuedConnection if self._Qt_enum and hasattr(self._Qt_enum, "ConnectionType") else self._qtcore.Qt.QueuedConnection
-        downloader.signals.finished.connect(partial(self._update_gallery_icon, item), conn_type)
-        self._qtcore.QThreadPool.globalInstance().start(downloader)
-    
-    def on_generic_verify_click(self):
-        """Redirects to the Verification tab."""
-        self.ui.tabs.setCurrentWidget(self.ui.tab_verification)
-        self.log_msg("Please select a DAT file to verify your games.")
-        self.ui.btn_select_dat.setFocus()
-        
-    def on_generic_organize_click(self):
-        self._qtwidgets.QMessageBox.information(
-            self.window, 
-            "Feature Not Available", 
-            "Automatic organization for this system is not yet implemented.\n"
-            "Please use the 'Organize (Rename)' button in the Dashboard for generic renaming."
-        )
-
-    def on_sega_convert(self):
-        self._qtwidgets.QMessageBox.information(
-            self.window,
-            "Sega Conversion",
-            "CHD conversion for Sega systems (Dreamcast/Saturn) uses the same 'chdman' tool as PS1.\n"
-            "This feature will be fully enabled in the next update."
-        )
-
-    def on_nint_compress(self):
-        self._qtwidgets.QMessageBox.information(
-            self.window,
-            "Compression",
-            "Generic 7z/Zip compression for legacy systems is coming soon."
-        )

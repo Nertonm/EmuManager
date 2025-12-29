@@ -581,17 +581,19 @@ def detect_nsz_level(filepath, *, tool_nsz, roms_dir, cmd_timeout) -> Optional[i
             return None
 
         # Look for typical patterns indicating zstd level
+        # Fix for python:S5852 (slow regex due to overlapping \s* and optional separator)
+        # We replace \s*[:=\-]?\s* with \s*(?:[:=\-]\s*)? to avoid \s*\s* when separator is missing.
         m = re.search(
-            r"zstd(?: compression)? level\s*[:=\-]?\s*(\d+)",
+            r"zstd(?: compression)? level\s*(?:[:=\-]\s*)?(\d+)",
             out,
             re.IGNORECASE,
         )
         if not m:
             m = re.search(
-                r"compression level\s*[:=\-]?\s*(\d+)", out, re.IGNORECASE
+                r"compression level\s*(?:[:=\-]\s*)?(\d+)", out, re.IGNORECASE
             )
         if not m:
-            m = re.search(r"level\s*[:=\-]?\s*(\d+)", out, re.IGNORECASE)
+            m = re.search(r"level\s*(?:[:=\-]\s*)?(\d+)", out, re.IGNORECASE)
         if m:
             try:
                 return int(m.group(1))

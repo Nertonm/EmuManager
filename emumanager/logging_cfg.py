@@ -110,3 +110,47 @@ def get_fileops_logger(
     # Prevent propagation to root to avoid duplicate entries
     logger.propagate = False
     return logger
+
+
+class QtLogHandler(logging.Handler):
+    """
+    A custom logging handler that emits a signal for each log record.
+    This allows the GUI to connect to this signal and display logs
+    in a thread-safe manner.
+    """
+
+    def __init__(self, signal_emitter):
+        super().__init__()
+        self.signal_emitter = signal_emitter
+
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            # Emit signal (thread-safe)
+            # We assume signal_emitter has a 'emit_log' method that triggers a Qt signal
+            if hasattr(self.signal_emitter, "emit_log"):
+                self.signal_emitter.emit_log(msg, record.levelno)
+        except Exception:
+            self.handleError(record)
+
+
+def setup_gui_logging(signal_emitter, level=logging.INFO):
+    """
+    Configures the root logger to send messages to the GUI via a Qt signal.
+    """
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level)
+
+    # Add Qt Handler
+    handler = QtLogHandler(signal_emitter)
+    formatter = logging.Formatter(
+        "%(asctime)s - %(levelname)s - %(message)s", datefmt="%H:%M:%S"
+    )
+    handler.setFormatter(formatter)
+    root_logger.addHandler(handler)
+
+    # Also ensure we have a console handler for debugging
+    if not any(isinstance(h, logging.StreamHandler) for h in root_logger.handlers):
+        ch = logging.StreamHandler()
+        ch.setFormatter(formatter)
+        root_logger.addHandler(ch)
