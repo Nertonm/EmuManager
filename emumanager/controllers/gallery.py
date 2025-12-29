@@ -18,43 +18,48 @@ class GalleryController:
         self.ui = main_window.ui
         self._connect_signals()
 
-    def _connect_signals(self):
-        if hasattr(self.ui, "combo_gallery_system"):
-            self.ui.combo_gallery_system.currentIndexChanged.connect(self._on_gallery_system_changed)
-        if hasattr(self.ui, "btn_gallery_refresh"):
-            self.ui.btn_gallery_refresh.clicked.connect(self.populate_gallery)
-        
-        if hasattr(self.ui, "list_gallery"):
-            # Enable context menu
-            policy = None
-            # Try Qt6 Enum
+    def _get_context_menu_policy(self):
+        """Helper to resolve ContextMenuPolicy across different Qt versions."""
+        # Try Qt6 Enum
+        try:
+            if self.mw._Qt_enum and hasattr(self.mw._Qt_enum, "ContextMenuPolicy"):
+                return self.mw._Qt_enum.ContextMenuPolicy.CustomContextMenu
+        except AttributeError:
+            pass
+
+        # Try Qt5/Legacy Enum
+        try:
+            if self.mw._Qt_enum and hasattr(self.mw._Qt_enum, "CustomContextMenu"):
+                return self.mw._Qt_enum.CustomContextMenu
+        except AttributeError:
+            pass
+
+        # Try via qtcore directly
+        if self.mw._qtcore:
             try:
-                if self.mw._Qt_enum and hasattr(self.mw._Qt_enum, "ContextMenuPolicy"):
-                    policy = self.mw._Qt_enum.ContextMenuPolicy.CustomContextMenu
+                return self.mw._qtcore.Qt.ContextMenuPolicy.CustomContextMenu
             except AttributeError:
-                pass
-            
-            # Try Qt5/Legacy Enum
-            if policy is None:
                 try:
-                    if self.mw._Qt_enum and hasattr(self.mw._Qt_enum, "CustomContextMenu"):
-                        policy = self.mw._Qt_enum.CustomContextMenu
+                    return self.mw._qtcore.Qt.CustomContextMenu
                 except AttributeError:
                     pass
+        return None
 
-            # Try via qtcore directly
-            if policy is None and self.mw._qtcore:
-                try:
-                    policy = self.mw._qtcore.Qt.ContextMenuPolicy.CustomContextMenu
-                except AttributeError:
-                    try:
-                        policy = self.mw._qtcore.Qt.CustomContextMenu
-                    except AttributeError:
-                        pass
-            
+    def _connect_signals(self):
+        if hasattr(self.ui, "combo_gallery_system"):
+            self.ui.combo_gallery_system.currentIndexChanged.connect(
+                self._on_gallery_system_changed
+            )
+        if hasattr(self.ui, "btn_gallery_refresh"):
+            self.ui.btn_gallery_refresh.clicked.connect(self.populate_gallery)
+
+        if hasattr(self.ui, "list_gallery"):
+            policy = self._get_context_menu_policy()
             if policy is not None:
                 self.ui.list_gallery.setContextMenuPolicy(policy)
-                self.ui.list_gallery.customContextMenuRequested.connect(self._on_gallery_context_menu)
+                self.ui.list_gallery.customContextMenuRequested.connect(
+                    self._on_gallery_context_menu
+                )
 
     def _on_gallery_system_changed(self, index):
         self.populate_gallery()
