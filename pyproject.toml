@@ -83,3 +83,7 @@ line-ending = "auto"
 
 [tool.setuptools.packages.find]
 include = ["emumanager*"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
