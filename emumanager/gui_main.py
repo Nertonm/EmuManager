@@ -9,15 +9,28 @@ from __future__ import annotations
 
 import logging
 import threading
+import uuid
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Callable, Optional
 
+from emumanager.controllers.duplicates import DuplicatesController
 from emumanager.controllers.gallery import GalleryController
 from emumanager.controllers.tools import ToolsController
+from emumanager.library import LibraryDB
 from emumanager.logging_cfg import get_logger, setup_gui_logging
 from emumanager.verification.dat_downloader import DatDownloader
 from emumanager.verification.hasher import calculate_hashes
+from emumanager.workers.common import GuiLogger
 from emumanager.workers.distributor import worker_distribute_root
+from emumanager.workers.dolphin import _organize_dolphin_file
+from emumanager.workers.n3ds import _organize_n3ds_item
+from emumanager.workers.ps2 import _organize_ps2_file
+from emumanager.workers.ps3 import _organize_ps3_item
+from emumanager.workers.psp import _organize_psp_item
+
+# Per-system single-file organize helpers (used by context-menu "Rename to Standard")
+from emumanager.workers.psx import _organize_psx_file
 
 from .architect import get_roms_dir
 from .gui_covers import CoverDownloader
@@ -27,6 +40,7 @@ from .gui_workers import (
     worker_identify_all,
     worker_identify_single_file,
     worker_organize,
+    worker_scan_library,
 )
 
 # Constants
@@ -86,10 +100,13 @@ class MainWindowBase:
         # UI state helpers
         self._active_timer = None
         self._active_future = None
+        self._scan_in_progress = False
+        self._skip_list_side_effects = False
         self._cancel_event = threading.Event()
         self._settings = None
         self._last_base = None
         self._env = {}  # Cache for environment tools/paths
+        self.library_db = LibraryDB()
         self.window = qt.QMainWindow()
 
         # Setup UI
@@ -151,6 +168,7 @@ class MainWindowBase:
 
         # Initialize Controllers
         self.gallery_controller = GalleryController(self)
+        self.duplicates_controller = DuplicatesController(self)
         self.tools_controller = ToolsController(self)
 
         # Connect Signals
@@ -181,6 +199,9 @@ class MainWindowBase:
         # Setup smart startup hook
         if self._qtcore:
             self._setup_startup_hook()
+
+        # Setup Log Context Menu
+        self._setup_log_context_menu()
 
     def _setup_startup_hook(self):
         """
@@ -219,7 +240,8 @@ class MainWindowBase:
         """Perform startup checks: load last library or prompt user."""
         if self._last_base and self._last_base.exists():
             self.log_msg(f"Library ready: {self._last_base}")
-            self.on_list()
+            # Avoid starting multiple overlapping scans as the UI auto-selects systems.
+            self.on_list(force_scan=True)
         else:
             self.log_msg("Welcome! Please select a library.")
             self.on_open_library()
@@ -232,6 +254,8 @@ class MainWindowBase:
             self.ui.btn_quick_verify.clicked.connect(self.on_verify_all)
         if hasattr(self.ui, "btn_quick_update"):
             self.ui.btn_quick_update.clicked.connect(self.on_list)
+        if hasattr(self.ui, "btn_quick_clean"):
+            self.ui.btn_quick_clean.clicked.connect(self.tools_controller.on_clean_junk)
 
         # Library Tab
         self.ui.btn_open_lib.clicked.connect(self.on_open_library)
@@ -265,6 +289,8 @@ class MainWindowBase:
             )
         if hasattr(self.ui, "btn_export_csv"):
             self.ui.btn_export_csv.clicked.connect(self.on_export_verification_csv)
+        if hasattr(self.ui, "btn_try_rehash"):
+            self.ui.btn_try_rehash.clicked.connect(self.on_try_rehash)
         # Key handling on ROM list (Enter/Return to Compress)
         try:
             self._install_rom_key_filter()
@@ -290,9 +316,22 @@ class MainWindowBase:
         # Just append to the log window.
         # The text is already formatted by the logging handler if it came from there.
         self.log.append(text)
+
+        # Auto-scroll to bottom
+        try:
+            sb = self.log.verticalScrollBar()
+            if sb:
+                sb.setValue(sb.maximum())
+        except Exception:
+            pass
+
         # Show brief status in the status bar
         try:
-            self.status.showMessage(text, 5000)
+            # Truncate if too long for status bar
+            status_text = text.strip()
+            if len(status_text) > 100:
+                status_text = status_text[:97] + "..."
+            self.status.showMessage(status_text, 5000)
         except Exception:
             pass
 
@@ -501,6 +540,19 @@ class MainWindowBase:
         self.act_export_csv = qt.QAction("Export Verification CSV", self.window)
         self.act_export_csv.triggered.connect(self.on_export_verification_csv)
 
+        # Show Library Actions (audit trail)
+        self.act_show_actions = qt.QAction("Show Library Actions", self.window)
+        # Connect to ToolsController handler if available
+        try:
+            if hasattr(self, "tools_controller") and hasattr(
+                self.tools_controller, "on_show_actions"
+            ):
+                self.act_show_actions.triggered.connect(
+                    self.tools_controller.on_show_actions
+                )
+        except Exception:
+            pass
+
     def _create_misc_actions(self, qt):
         self.act_open_folder = qt.QAction("Open Selected ROM Folder", self.window)
         self.act_open_folder.triggered.connect(self._open_selected_rom_folder)
@@ -621,6 +673,7 @@ class MainWindowBase:
                     a_comp = menu.addAction("Compress")
                     a_recomp = menu.addAction("Recompress")
                     a_decomp = menu.addAction("Decompress")
+                    a_rename = menu.addAction("Rename to Standard")
                     menu.addSeparator()
                     a_verify = menu.addAction("Verify (Calc Hash)")
                     a_identify = menu.addAction("Identify with DAT...")
@@ -645,6 +698,8 @@ class MainWindowBase:
                         self.on_verify_selected()
                     elif act == a_identify:
                         self.on_identify_selected()
+                    elif act == a_rename:
+                        self.on_rename_to_standard_selected()
                     elif act == a_open:
                         self._open_selected_rom_folder()
                     elif act == a_copy:
@@ -750,6 +805,16 @@ class MainWindowBase:
             pass
 
     def _open_file_location(self, path: Path):
+        if not path.exists():
+            self.log_msg(f"Error: Path does not exist: {path}")
+            msg = (
+                "The file or folder does not exist:\n"
+                f"{path}\n\n"
+                "Please try rescanning the library."
+            )
+            self._qtwidgets.QMessageBox.warning(self.window, "Path Not Found", msg)
+            return
+
         try:
             import subprocess
 
@@ -757,8 +822,8 @@ class MainWindowBase:
                 subprocess.run(["xdg-open", str(path)], check=False)
             else:
                 subprocess.run(["xdg-open", str(path.parent)], check=False)
-        except Exception:
-            self.log_msg(f"Failed to open location: {path}")
+        except Exception as e:
+            self.log_msg(f"Failed to open location: {path} ({e})")
 
     # Background/task helpers
     def _run_in_background(
@@ -776,6 +841,21 @@ class MainWindowBase:
 
         self._enable_cancel_button()
         return future
+
+    def _make_op_log_cb(self, op_id: str):
+        """Return a log callback that prefixes messages with operation id."""
+
+        def _log(msg: str):
+            try:
+                self.log_msg(f"[op={op_id}] {msg}")
+            except Exception:
+                try:
+                    # Fallback to direct logging
+                    logging.info("[op=%s] %s", op_id, msg)
+                except Exception:
+                    pass
+
+        return _log
 
     def _submit_task(self, func: Callable[[], object]):
         if self._executor:
@@ -1219,21 +1299,70 @@ class MainWindowBase:
         self._set_ui_enabled(False)
         self._run_in_background(_work, _done)
 
-    def on_list(self):
+    def on_list(self, force_scan: bool = False):
         base = self._last_base
         if not base:
             self.log_msg(MSG_SELECT_BASE)
+            return
+
+        # If a scan is already running, don't start another unless forced.
+        if self._scan_in_progress and not force_scan:
             return
 
         # Ensure UI is enabled before listing
         self._set_ui_enabled(True)
 
         systems = self._manager.cmd_list_systems(base)
-        self._refresh_system_list_ui(systems)
+        # Programmatic selection changes can fire itemClicked/currentIndexChanged.
+        # Guard against re-entrant list/scan storms.
+        self._skip_list_side_effects = True
+        try:
+            self._refresh_system_list_ui(systems)
+        finally:
+            self._skip_list_side_effects = False
         self._log_systems(systems)
+
+        # Start background scan
+        self.log_msg("Scanning library...")
+        self._scan_in_progress = True
+
+        # Use signal emitter for thread safety
+        progress_cb = self._signaler.progress_signal.emit if self._signaler else None
+
+        def _work():
+            op = uuid.uuid4().hex
+            log_cb = self._make_op_log_cb(op)
+            # show op id briefly in status
+            try:
+                self.status.showMessage(f"Operation {op} started", 3000)
+            except Exception:
+                pass
+            return worker_scan_library(
+                Path(base), log_cb, progress_cb, self._cancel_event
+            )
+
+        def _done(result):
+            if isinstance(result, Exception):
+                self.log_msg(f"Scan error: {result}")
+            elif result:
+                self.log_msg(f"Scan complete. Total files: {result.get('count', 0)}")
+                self._update_dashboard_stats(systems, stats=result)
+
+            self._scan_in_progress = False
+            # After a successful scan, auto-select the previous system.
+            self._auto_select_last_system()
+
+            # Reset progress bar
+            if self._signaler:
+                self._signaler.progress_signal.emit(0, "")
+            else:
+                self._progress_slot(0, "")
+
+        self._run_in_background(_work, _done)
+        # Update stats immediately with cached data if available
         self._update_dashboard_stats(systems)
 
-    def _update_dashboard_stats(self, systems=None):
+    def _update_dashboard_stats(self, systems=None, stats=None):
         try:
             if systems is None:
                 if self._last_base:
@@ -1244,21 +1373,44 @@ class MainWindowBase:
             if hasattr(self.ui, "lbl_systems_count"):
                 self.ui.lbl_systems_count.setText(f"Systems Configured: {len(systems)}")
 
-            # Calculate total files (approximate)
             total_files = 0
-            roms_root = self._manager.get_roms_dir(self._last_base)
-            for sys_name in systems:
+            total_size = 0
+
+            if stats:
+                total_files = stats.get("count", 0)
+                total_size = stats.get("size", 0)
+            else:
+                # Try to get from DB
                 try:
-                    p = roms_root / sys_name
-                    # Count files recursively
-                    total_files += sum(1 for _ in p.rglob("*") if _.is_file())
+                    from emumanager.library import LibraryDB
+
+                    db = LibraryDB()
+                    total_files = db.get_total_count()
+                    total_size = db.get_total_size()
                 except Exception:
-                    logging.warning(
-                        f"Failed to count files for {sys_name}", exc_info=True
-                    )
+                    pass
 
             if hasattr(self.ui, "lbl_total_roms"):
                 self.ui.lbl_total_roms.setText(f"Total Files: {total_files}")
+
+            # Format size human-readable
+            try:
+                from emumanager.common.formatting import human_readable_size
+
+                size_str = human_readable_size(total_size)
+            except Exception:
+                size_str = f"{total_size / (1024**3):.2f} GB"
+
+            if hasattr(self.ui, "lbl_library_size"):
+                self.ui.lbl_library_size.setText(f"Library Size: {size_str}")
+
+            # Update Last Scan time
+            if stats and hasattr(self.ui, "lbl_last_scan"):
+                from datetime import datetime
+
+                now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                self.ui.lbl_last_scan.setText(f"Last Scan: {now_str}")
+
         except Exception:
             logging.error("Failed to update dashboard stats", exc_info=True)
 
@@ -1384,6 +1536,8 @@ class MainWindowBase:
     # UI helpers for systems/rom listing
     def _on_system_selected(self, item):
         try:
+            if getattr(self, "_skip_list_side_effects", False):
+                return
             system = item.text()
             self._populate_roms(system)
             # Remember last selected system
@@ -1792,8 +1946,14 @@ class MainWindowBase:
         self.ui.table_results.setRowCount(0)
 
         def _work():
+            op = uuid.uuid4().hex
+            log_cb = self._make_op_log_cb(op)
+            try:
+                self.status.showMessage(f"Operation {op} started", 3000)
+            except Exception:
+                pass
             return worker_hash_verify(
-                target_path, args, self.log_msg, self._get_list_files_fn()
+                target_path, args, log_cb, self._get_list_files_fn()
             )
 
         def _done(res):
@@ -1804,6 +1964,155 @@ class MainWindowBase:
                 self.on_verification_filter_changed()
             else:
                 self.log_msg(str(res))
+            self._set_ui_enabled(True)
+
+        self._set_ui_enabled(False)
+        self._run_in_background(_work, _done)
+
+    def on_try_rehash(self):
+        """Try re-hash selected verification rows or all HASH_FAILED rows.
+
+        If a DAT is selected, re-run identification against that DAT for the files.
+        Otherwise, recalculate hashes and update the LibraryDB entries.
+        """
+        try:
+            table = self.ui.table_results
+        except Exception:
+            self.log_msg("Verification table not available")
+            return
+
+        # Determine filtered list (matches what's shown in the table)
+        filtered = self._get_filtered_verification_results()
+
+        # Determine selected rows
+        sel = set()
+        try:
+            indexes = table.selectedIndexes()
+            for idx in indexes:
+                sel.add(idx.row())
+        except Exception:
+            sel = set()
+
+        targets = []
+        if sel:
+            for r in sorted(sel):
+                if 0 <= r < len(filtered):
+                    targets.append(filtered[r])
+        else:
+            # default: all HASH_FAILED
+            targets = [
+                r for r in filtered if getattr(r, "status", None) == "HASH_FAILED"
+            ]
+
+        if not targets:
+            self.log_msg("No files selected for rehash")
+            return
+
+        dat_path = getattr(self, "_current_dat_path", None)
+
+        def _work():
+            results = []
+            from emumanager.library import LibraryEntry
+            from emumanager.verification.hasher import calculate_hashes
+
+            for r in targets:
+                p = None
+                try:
+                    p = Path(r.full_path) if getattr(r, "full_path", None) else None
+                    if not p or not p.exists():
+                        results.append((str(p), "missing"))
+                        continue
+
+                    if dat_path:
+                        # Use existing worker to identify single file (updates DB)
+                        op = uuid.uuid4().hex
+                        log_cb = self._make_op_log_cb(op)
+                        try:
+                            self.status.showMessage(f"Operation {op} started", 3000)
+                        except Exception:
+                            pass
+                        out = worker_identify_single_file(
+                            p, Path(dat_path), log_cb, None
+                        )
+                        results.append((str(p), out))
+                    else:
+                        algos = ("crc32", "sha1")
+                        if (
+                            getattr(self, "chk_deep_verify", None)
+                            and self.chk_deep_verify.isChecked()
+                        ):
+                            algos = ("crc32", "md5", "sha1", "sha256")
+                        hashes = calculate_hashes(p, algorithms=algos)
+                        try:
+                            st = p.stat()
+                            new_entry = LibraryEntry(
+                                path=str(p.resolve()),
+                                system="unknown",
+                                size=st.st_size,
+                                mtime=st.st_mtime,
+                                crc32=hashes.get("crc32"),
+                                md5=hashes.get("md5"),
+                                sha1=hashes.get("sha1"),
+                                sha256=hashes.get("sha256"),
+                                status="UNKNOWN",
+                                match_name=None,
+                                dat_name=None,
+                            )
+                            self.library_db.update_entry(new_entry)
+                            results.append((str(p), "rehash_ok"))
+                        except Exception as e:
+                            results.append((str(p), f"error:{e}"))
+                except Exception as e:
+                    results.append((str(p) if p else str(r), f"error:{e}"))
+            return results
+
+        def _done(res):
+            if isinstance(res, Exception):
+                self.log_msg(f"Rehash error: {res}")
+                self._set_ui_enabled(True)
+                return
+
+            self.log_msg(f"Rehash complete. Processed: {len(res)} items")
+            # If we had a DAT, refresh full verification to show match attempts
+            if dat_path:
+                try:
+                    self.on_verify_dat()
+                except Exception:
+                    pass
+            else:
+                # Update in-memory results from DB for affected files
+                for p, status in res:
+                    for i, rr in enumerate(
+                        getattr(self, "_last_verify_results", [])[:]
+                    ):
+                        if getattr(rr, "full_path", None) == p:
+                            try:
+                                e = self.library_db.get_entry(p)
+                                if e:
+                                    rr.crc = e.crc32
+                                    rr.sha1 = e.sha1
+                                    rr.md5 = e.md5
+                                    rr.sha256 = e.sha256
+                                    rr.status = e.status
+                                    rr.match_name = e.match_name
+                            except Exception:
+                                pass
+                try:
+                    # Re-populate table with same filter
+                    txt = (
+                        self.ui.combo_verif_filter.currentText()
+                        if hasattr(self.ui, "combo_verif_filter")
+                        else None
+                    )
+                    status = (
+                        txt if txt in ("VERIFIED", "UNKNOWN", "HASH_FAILED") else None
+                    )
+                    self._populate_verification_results(
+                        getattr(self, "_last_verify_results", []), status
+                    )
+                except Exception:
+                    pass
+
             self._set_ui_enabled(True)
 
         self._set_ui_enabled(False)
@@ -1839,7 +2148,7 @@ class MainWindowBase:
         self.ui.table_results.setItem(
             row_idx, 5, qt.QTableWidgetItem(result.sha1 or "")
         )
-        # New columns: MD5 and SHA256 (if deep verify)
+        # New columns: MD5 and SHA256 (if deep verify) + Note column
         try:
             self.ui.table_results.setItem(
                 row_idx,
@@ -1851,6 +2160,14 @@ class MainWindowBase:
                 7,
                 qt.QTableWidgetItem(getattr(result, "sha256", "") or ""),
             )
+            # Note column (diagnostic messages such as HASH_FAILED reason)
+            note = ""
+            if getattr(result, "status", None) == "HASH_FAILED":
+                note = result.match_name or "Hashing failed"
+            elif getattr(result, "status", None) == "MISMATCH":
+                # mismatch reason sometimes lives in match_name
+                note = result.match_name or ""
+            self.ui.table_results.setItem(row_idx, 8, qt.QTableWidgetItem(note))
         except Exception:
             pass
 
@@ -1893,7 +2210,7 @@ class MainWindowBase:
         status = None
         if hasattr(self.ui, "combo_verif_filter"):
             txt = self.ui.combo_verif_filter.currentText()
-            if txt in ("VERIFIED", "UNKNOWN"):
+            if txt in ("VERIFIED", "UNKNOWN", "HASH_FAILED"):
                 status = txt
         results = getattr(self, "_last_verify_results", [])
         self._populate_verification_results(results, status)
@@ -1914,7 +2231,7 @@ class MainWindowBase:
         status = None
         if hasattr(self.ui, "combo_verif_filter"):
             txt = self.ui.combo_verif_filter.currentText()
-            if txt in ("VERIFIED", "UNKNOWN"):
+            if txt in ("VERIFIED", "UNKNOWN", "HASH_FAILED"):
                 status = txt
         return [r for r in all_results if (not status or r.status == status)]
 
@@ -1997,6 +2314,19 @@ class MainWindowBase:
             self.log_msg(MSG_SELECT_BASE)
             return
 
+        # Confirmation
+        reply = self._qtwidgets.QMessageBox.question(
+            self.window,
+            "Confirm Organization",
+            "This will scan and move files to their appropriate system folders.\n"
+            "Are you sure you want to proceed?",
+            self._qtwidgets.QMessageBox.StandardButton.Yes
+            | self._qtwidgets.QMessageBox.StandardButton.No,
+            self._qtwidgets.QMessageBox.StandardButton.No,
+        )
+        if reply != self._qtwidgets.QMessageBox.StandardButton.Yes:
+            return
+
         self._ensure_env(self._last_base)
         args = self._get_common_args()
         args.organize = True
@@ -2016,10 +2346,16 @@ class MainWindowBase:
             if (self._last_base / "roms").exists():
                 target_root = self._last_base / "roms"
 
+            op = uuid.uuid4().hex
+            log_cb = self._make_op_log_cb(op)
+            try:
+                self.status.showMessage(f"Operation {op} started", 3000)
+            except Exception:
+                pass
             self.log_msg(f"Distributing files in {target_root}...")
             dist_stats = worker_distribute_root(
                 target_root,
-                self.log_msg,
+                log_cb,
                 progress_cb=getattr(self, "progress_hook", None),
                 cancel_event=self._cancel_event,
             )
@@ -2041,7 +2377,7 @@ class MainWindowBase:
                     switch_dir,
                     switch_env,
                     args,
-                    self.log_msg,
+                    log_cb,
                     self._list_files_flat,
                     progress_cb=getattr(self, "progress_hook", None),
                 )
@@ -2159,6 +2495,97 @@ class MainWindowBase:
         except Exception as e:
             self.log_msg(f"Error verifying file: {e}")
 
+    def on_rename_to_standard_selected(self):
+        """Rename selected ROM(s) to the project's standard naming for their system.
+
+        This invokes the per-system single-file organize helpers where available.
+        """
+        if not self.rom_list:
+            return
+        try:
+            sel_items = self.rom_list.selectedItems()
+            if not sel_items:
+                self.log_msg(MSG_NO_ROM)
+                return
+
+            sys_item = self.sys_list.currentItem() if self.sys_list else None
+            if not sys_item:
+                self.log_msg(MSG_NO_SYSTEM)
+                return
+            system = sys_item.text()
+            roms_root = self._manager.get_roms_dir(self._last_base)
+
+            renamed = 0
+            for item in sel_items:
+                try:
+                    fp = roms_root / system / item.text()
+                    if not fp.exists():
+                        self.log_msg(f"File not found: {fp}")
+                        continue
+                    ok = self._rename_single_to_standard(system.lower(), roms_root, fp)
+                    if ok:
+                        renamed += 1
+                        # Record GUI-initiated rename for auditability
+                        try:
+                            self.library_db.log_action(
+                                str(fp),
+                                "RENAMED",
+                                f"GUI rename to standard (system={system})",
+                            )
+                        except Exception:
+                            # Don't break UI flow if logging fails
+                            self.log_msg(
+                                f"WARN: Failed to record GUI rename action for {fp}"
+                            )
+                except Exception as e:
+                    self.log_msg(f"Error renaming {item.text()}: {e}")
+
+            if renamed > 0:
+                self._populate_roms(system)
+                self._update_dashboard_stats()
+
+        except Exception as e:
+            self.log_msg(f"Error renaming selected files: {e}")
+
+    def _rename_single_to_standard(
+        self, system: str, roms_root: Path, filepath: Path
+    ) -> bool:
+        """Call the per-system single-file organizer and return True if renamed.
+        """
+        try:
+            logger = GuiLogger(self.log_msg)
+            # Build a minimal args object
+            args = SimpleNamespace()
+            args.dry_run = (
+                getattr(self, "chk_dry_run", False)
+                and getattr(self.chk_dry_run, "isChecked", lambda: False)()
+            )
+
+            if system == "psp":
+                # returns bool
+                return _organize_psp_item(filepath, args, logger)
+            elif system == "psx":
+                ok, _ = _organize_psx_file(filepath, args, logger)
+                return bool(ok)
+            elif system == "ps2":
+                return _organize_ps2_file(filepath, args, logger)
+            elif system in ("gamecube", "wii", "gamecube/wii", "gc", "wiiu"):
+                # Dolphin organizes within a target_dir; pass system folder
+                target_dir = roms_root / system
+                # Dolphin returns 'renamed'|'skipped'|'error'
+                res = _organize_dolphin_file(filepath, target_dir, args.dry_run, logger)
+                return res == "renamed"
+            elif system == "3ds":
+                return _organize_n3ds_item(filepath, args, logger)
+            elif system == "ps3":
+                return _organize_ps3_item(filepath, args, logger)
+            else:
+                self.log_msg(f"Rename not supported for system: {system}")
+                return False
+        except Exception as e:
+            self.log_msg(f"Rename helper error: {e}")
+            return False
+
     def _on_rom_selection_changed(self, current, previous):
         if not current:
             self.cover_label.clear()
@@ -2196,6 +2623,10 @@ class MainWindowBase:
         elif "(Japan)" in rom_rel_path or "(JP)" in rom_rel_path:
             region = "JA"
 
+        # Do not pass the filename as Game ID; allow the downloader to extract
+        # a real game ID from the file (serial/metadata) when possible. Passing
+        # the stem causes GameTDB to attempt lookups by name which frequently
+        # produce 404s for systems like PS2.
         downloader = CoverDownloader(
             system, None, region, str(cache_dir), str(full_path)
         )
@@ -2302,9 +2733,18 @@ class MainWindowBase:
 
         self.log_msg(f"Identifying {full_path.name} using {Path(dat_path).name}...")
 
+        # Use signal emitter for thread safety
+        progress_cb = self._signaler.progress_signal.emit if self._signaler else None
+
         def _work():
+            op = uuid.uuid4().hex
+            log_cb = self._make_op_log_cb(op)
+            try:
+                self.status.showMessage(f"Operation {op} started", 3000)
+            except Exception:
+                pass
             return worker_identify_single_file(
-                full_path, Path(dat_path), self.log_msg, self._progress_slot
+                full_path, Path(dat_path), log_cb, progress_cb
             )
 
         def _done(res):
@@ -2354,8 +2794,14 @@ class MainWindowBase:
         self.log_msg("Starting full identification...")
 
         def _work():
+            op = uuid.uuid4().hex
+            log_cb = self._make_op_log_cb(op)
+            try:
+                self.status.showMessage(f"Operation {op} started", 3000)
+            except Exception:
+                pass
             return worker_identify_all(
-                self._last_base, args, self.log_msg, self._get_list_files_fn()
+                self._last_base, args, log_cb, self._get_list_files_fn()
             )
 
         def _done(res):
@@ -2447,3 +2893,31 @@ class MainWindowBase:
             self.progress_hook(1.0, "DAT update complete")
 
         self._run_in_background(_work, _done)
+
+    def _setup_log_context_menu(self):
+        """Setup context menu for the log widget."""
+        try:
+            self.log.setContextMenuPolicy(
+                self._Qt_enum.ContextMenuPolicy.CustomContextMenu
+            )
+            self.log.customContextMenuRequested.connect(self._on_log_context_menu)
+        except Exception:
+            pass
+
+    def _on_log_context_menu(self, position):
+        menu = self._qtwidgets.QMenu()
+
+        act_clear = menu.addAction("Clear Log")
+        act_copy = menu.addAction("Copy All")
+
+        action = menu.exec(self.log.mapToGlobal(position))
+
+        if action == act_clear:
+            self.log.clear()
+        elif action == act_copy:
+            self.log.selectAll()
+            self.log.copy()
+            # Deselect after copy
+            cursor = self.log.textCursor()
+            cursor.clearSelection()
+            self.log.setTextCursor(cursor)

@@ -2,19 +2,30 @@
 """
 Manager module
 
-O módulo Manager atua como o controlador principal e ponto de entrada para operações de alto nível.
-Ele orquestra as chamadas para outros módulos (Architect, Workers, Switch Tools) e fornece a interface CLI.
+O módulo Manager atua como o controlador principal e ponto de entrada
+para operações de alto nível. Ele orquestra chamadas para outros
+módulos (Architect, Workers, Switch Tools) e fornece a interface CLI.
 
 Funcionalidades principais:
--   **Detecção de Sistema**: Lógica heurística (`guess_system_for_file`) para determinar a qual console um arquivo pertence, baseando-se em extensão, padrões de nome (ex: Serial PS2) e caminhos.
--   **Interface CLI**: Processamento de argumentos de linha de comando para operações como `init`, `add`, `organize`.
--   **Integração**: Conecta a interface do usuário (GUI/CLI) com a lógica de negócios (Architect/Workers).
+-   **Detecção de Sistema**:
+    Implementa lógica heurística (`guess_system_for_file`) para
+    determinar a qual console um arquivo pertence. A detecção usa
+    extensão, padrões de nome (ex: Serial PS2) e estrutura de
+    diretórios.
+-   **Interface CLI**:
+    Processamento de argumentos de linha de comando para operações
+    como `init`, `add` e `organize`.
+-   **Integração**:
+    Conecta a interface do usuário (GUI/CLI) com a lógica de
+    negócios (Architect/Workers).
 """
 
 from __future__ import annotations
 
 import argparse
+import logging
 import shutil
+import uuid
 from pathlib import Path
 from typing import List, Optional
 
@@ -141,7 +152,9 @@ def guess_system_for_file(path: Path) -> Optional[str]:
 
 def cmd_init(base_dir: Path, dry_run: bool) -> int:
     logger = get_logger("manager", base_dir=base_dir)
-    logger.info("Calling init on %s (dry=%s)", base_dir, dry_run)
+    op = uuid.uuid4().hex
+    adapter = logging.LoggerAdapter(logger, {"operation_id": op})
+    adapter.info("[op=%s] Calling init on %s (dry=%s)", op, base_dir, dry_run)
     args: List[str] = [str(base_dir)]
     if dry_run:
         args.append("--dry-run")
@@ -169,8 +182,10 @@ def cmd_add_rom(
     dry_run: bool = False,
 ) -> Path:
     logger = get_logger("manager", base_dir=base_dir)
+    op = uuid.uuid4().hex
+    adapter = logging.LoggerAdapter(logger, {"operation_id": op})
     if not src.exists():
-        logger.error("Source not found: %s", src)
+        adapter.error("Source not found: %s", src)
         raise FileNotFoundError(src)
 
     target_sys = system or guess_system_for_file(src)
@@ -183,7 +198,7 @@ def cmd_add_rom(
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     dest = dest_dir / src.name
-    logger.info("Adding ROM %s -> %s (move=%s dry=%s)", src, dest, move, dry_run)
+    adapter.info("Adding ROM %s -> %s (move=%s dry=%s)", src, dest, move, dry_run)
     if dry_run:
         return dest
 
@@ -198,6 +213,8 @@ def cmd_add_rom(
 def cmd_update_dats(base_dir: Path, source: str | None = None) -> int:
     """Download DAT files from Libretro database."""
     logger = get_logger("manager")
+    op = uuid.uuid4().hex
+    adapter = logging.LoggerAdapter(logger, {"operation_id": op})
     dats_dir = base_dir / "dats"
 
     if not dats_dir.exists():
@@ -208,20 +225,20 @@ def cmd_update_dats(base_dir: Path, source: str | None = None) -> int:
     sources = [source] if source else ["no-intro", "redump"]
 
     for src in sources:
-        logger.info(f"Checking available DATs for {src}...")
+        adapter.info("Checking available DATs for %s...", src)
         available = downloader.list_available_dats(src)
 
         if not available:
-            logger.warning(f"No DATs found for {src}")
+            adapter.warning("No DATs found for %s", src)
             continue
 
-        logger.info(f"Found {len(available)} DATs for {src}. Downloading...")
+        adapter.info("Found %s DATs for %s. Downloading...", len(available), src)
         for filename in available:
             # Check if already exists? For now, overwrite or skip logic could be added.
             # We'll just download all for now as requested.
             downloader.download_dat(src, filename)
 
-    logger.info("DAT update complete.")
+    adapter.info("DAT update complete.")
     return 0
 
 

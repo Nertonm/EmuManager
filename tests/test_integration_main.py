@@ -66,6 +66,7 @@ def test_main_compress_rm_dryrun(tmp_path, monkeypatch):
 def test_health_check_quarantine_report(tmp_path, monkeypatch):
     # Mock LibraryDB to avoid creating real DB file and warnings
     from unittest.mock import MagicMock
+
     monkeypatch.setattr("emumanager.switch.main_helpers.LibraryDB", MagicMock)
 
     # setup two files

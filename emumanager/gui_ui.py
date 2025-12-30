@@ -21,8 +21,8 @@ class Ui_MainWindow:
             self._QSize = _QSize
         except ImportError:
             try:
-                from PySide6.QtCore import QSize as _QSize
-                from PySide6.QtCore import Qt as _Qt
+                from PySide6.QtCore import QSize as _QSize  # type: ignore
+                from PySide6.QtCore import Qt as _Qt  # type: ignore
 
                 self._Qt_enum = _Qt
                 self._QSize = _QSize
@@ -63,37 +63,73 @@ class Ui_MainWindow:
         self.tab_dashboard = qt.QWidget()
         self.tab_dashboard.setObjectName("tab_dashboard")
         self.setupDashboardTab(qt, self.tab_dashboard)
-        self.tabs.addTab(self.tab_dashboard, "Dashboard")
+        ic_dash = self._get_icon(qt, "SP_ComputerIcon")
+        if ic_dash:
+            self.tabs.addTab(self.tab_dashboard, ic_dash, "Dashboard")
+        else:
+            self.tabs.addTab(self.tab_dashboard, "Dashboard")
 
         # --- Tab 1: Library ---
         self.tab_library = qt.QWidget()
         self.tab_library.setObjectName("tab_library")
         self.setupLibraryTab(qt, self.tab_library)
-        self.tabs.addTab(self.tab_library, "Library")
+        ic_lib = self._get_icon(qt, "SP_DirHomeIcon")
+        if ic_lib:
+            self.tabs.addTab(self.tab_library, ic_lib, "Library")
+        else:
+            self.tabs.addTab(self.tab_library, "Library")
 
         # --- Tab 2: Tools ---
         self.tab_tools = qt.QWidget()
         self.tab_tools.setObjectName("tab_tools")
         self.setupToolsTab(qt, self.tab_tools)
-        self.tabs.addTab(self.tab_tools, "Tools")
+        ic_tools = self._get_icon(qt, "SP_FileDialogDetailedView")
+        if ic_tools:
+            self.tabs.addTab(self.tab_tools, ic_tools, "Tools")
+        else:
+            self.tabs.addTab(self.tab_tools, "Tools")
 
         # --- Tab 3: Verification ---
         self.tab_verification = qt.QWidget()
         self.tab_verification.setObjectName("tab_verification")
         self.setup_verification_tab(qt, self.tab_verification)
-        self.tabs.addTab(self.tab_verification, "Verification")
+        ic_verify = self._get_icon(qt, "SP_DialogApplyButton")
+        if ic_verify:
+            self.tabs.addTab(self.tab_verification, ic_verify, "Verification")
+        else:
+            self.tabs.addTab(self.tab_verification, "Verification")
 
         # --- Tab 4: Settings ---
         self.tab_settings = qt.QWidget()
         self.tab_settings.setObjectName("tab_settings")
         self.setup_settings_tab(qt, self.tab_settings)
-        self.tabs.addTab(self.tab_settings, "Settings")
+        ic_settings = self._get_icon(qt, "SP_FileDialogListView")  # Fallback icon
+        # Try to find a better settings icon if available in standard pixmaps
+        # SP_CustomBase is not standard. SP_FileDialogListView is okay.
+        if ic_settings:
+            self.tabs.addTab(self.tab_settings, ic_settings, "Settings")
+        else:
+            self.tabs.addTab(self.tab_settings, "Settings")
 
         # --- Tab 5: Gallery ---
         self.tab_gallery = qt.QWidget()
         self.tab_gallery.setObjectName("tab_gallery")
         self.setupGalleryTab(qt, self.tab_gallery)
-        self.tabs.addTab(self.tab_gallery, "Gallery")
+        ic_gallery = self._get_icon(qt, "SP_FileIcon")
+        if ic_gallery:
+            self.tabs.addTab(self.tab_gallery, ic_gallery, "Gallery")
+        else:
+            self.tabs.addTab(self.tab_gallery, "Gallery")
+
+        # --- Tab 6: Duplicates ---
+        self.tab_duplicates = qt.QWidget()
+        self.tab_duplicates.setObjectName("tab_duplicates")
+        self.setupDuplicatesTab(qt, self.tab_duplicates)
+        ic_dups = self._get_icon(qt, "SP_FileDialogDetailedView")
+        if ic_dups:
+            self.tabs.addTab(self.tab_duplicates, ic_dups, "Duplicates")
+        else:
+            self.tabs.addTab(self.tab_duplicates, "Duplicates")
 
         self.verticalLayout.addWidget(self.tabs)
 
@@ -104,13 +140,14 @@ class Ui_MainWindow:
         self.log_dock = qt.QDockWidget("Log")
         self.log_dock.setObjectName("log_dock")
         self.log_dock.setWidget(self.log)
+
         # Add dock to bottom with robust enum resolution
         _Qt = None
         try:
             from PyQt6.QtCore import Qt as _Qt
         except Exception:
             try:
-                from PySide6.QtCore import Qt as _Qt
+                from PySide6.QtCore import Qt as _Qt  # type: ignore
             except Exception:
                 _Qt = None
         try:
@@ -129,6 +166,26 @@ class Ui_MainWindow:
             try:
                 MainWindow.addDockWidget(self.log_dock)
             except Exception:
+                pass
+
+        # Ensure log dock is visible by default
+        self.log_dock.setVisible(True)
+        try:
+            # Try Qt6 Enum
+            self.log_dock.setFeatures(
+                qt.QDockWidget.DockWidgetFeature.DockWidgetMovable
+                | qt.QDockWidget.DockWidgetFeature.DockWidgetFloatable
+                | qt.QDockWidget.DockWidgetFeature.DockWidgetClosable
+            )
+        except AttributeError:
+            try:
+                # Try Legacy Enum
+                self.log_dock.setFeatures(
+                    qt.QDockWidget.DockWidgetMovable
+                    | qt.QDockWidget.DockWidgetFloatable
+                    | qt.QDockWidget.DockWidgetClosable
+                )
+            except AttributeError:
                 pass
 
         MainWindow.setCentralWidget(self.centralwidget)
@@ -176,9 +233,15 @@ class Ui_MainWindow:
         self.lbl_total_roms.setStyleSheet("font-size: 14px; font-weight: bold;")
         self.lbl_systems_count = qt.QLabel("Systems Configured: 0")
         self.lbl_systems_count.setStyleSheet("font-size: 14px;")
+        self.lbl_library_size = qt.QLabel("Library Size: 0 GB")
+        self.lbl_library_size.setStyleSheet("font-size: 14px;")
+        self.lbl_last_scan = qt.QLabel("Last Scan: Never")
+        self.lbl_last_scan.setStyleSheet("font-size: 14px; color: #888;")
 
         status_layout.addWidget(self.lbl_total_roms, 0, 0)
         status_layout.addWidget(self.lbl_systems_count, 0, 1)
+        status_layout.addWidget(self.lbl_library_size, 0, 2)
+        status_layout.addWidget(self.lbl_last_scan, 1, 0, 1, 3)
 
         self.grp_status.setLayout(status_layout)
         layout.addWidget(self.grp_status)
@@ -326,7 +389,7 @@ class Ui_MainWindow:
         return splitter
 
     def _setup_library_switch_actions(self, qt):
-        grp = qt.QGroupBox("Switch Compression Tools (Selected File)")
+        grp = qt.QGroupBox("Selected Item Actions")
         action_layout = qt.QHBoxLayout()
         self.btn_compress = qt.QPushButton("Compress")
         self.btn_recompress = qt.QPushButton("Recompress")
@@ -892,12 +955,10 @@ class Ui_MainWindow:
 
         dat_layout.addLayout(dat_file_layout)
 
-        # Update DATs Button
         self.btn_update_dats = qt.QPushButton("Download/Update DATs (No-Intro/Redump)")
         self.btn_update_dats.setToolTip(
             "Download latest DAT files from Libretro database"
         )
-        dat_layout.addWidget(self.btn_update_dats)
 
         self.btn_verify_dat = qt.QPushButton("Verify Library against DAT")
         self.btn_verify_dat.setToolTip(
@@ -913,6 +974,7 @@ class Ui_MainWindow:
         )
         self.btn_identify_all.setEnabled(False)
 
+        dat_layout.addWidget(self.btn_update_dats)
         dat_layout.addWidget(self.btn_verify_dat)
         dat_layout.addWidget(self.btn_identify_all)
 
@@ -924,6 +986,12 @@ class Ui_MainWindow:
             self.btn_verify_dat.setIcon(
                 style.standardIcon(qt.QStyle.StandardPixmap.SP_DialogApplyButton)
             )
+            self.btn_update_dats.setIcon(
+                style.standardIcon(qt.QStyle.StandardPixmap.SP_BrowserReload)
+            )
+            self.btn_identify_all.setIcon(
+                style.standardIcon(qt.QStyle.StandardPixmap.SP_FileDialogDetailedView)
+            )
         except Exception:
             try:
                 style = qt.QApplication.style()
@@ -932,6 +1000,12 @@ class Ui_MainWindow:
                 )
                 self.btn_verify_dat.setIcon(
                     style.standardIcon(qt.QStyle.SP_DialogApplyButton)
+                )
+                self.btn_update_dats.setIcon(
+                    style.standardIcon(qt.QStyle.SP_BrowserReload)
+                )
+                self.btn_identify_all.setIcon(
+                    style.standardIcon(qt.QStyle.SP_FileDialogDetailedView)
                 )
             except Exception:
                 pass
@@ -946,14 +1020,18 @@ class Ui_MainWindow:
         # Controls row: filter + export
         controls_layout = qt.QHBoxLayout()
         self.combo_verif_filter = qt.QComboBox()
-        self.combo_verif_filter.addItems(["All", "VERIFIED", "UNKNOWN"])
+        # Include HASH_FAILED so users can filter diagnostic failures
+        self.combo_verif_filter.addItems(["All", "VERIFIED", "UNKNOWN", "HASH_FAILED"])
         self.btn_export_csv = qt.QPushButton("Export CSV")
+        self.btn_try_rehash = qt.QPushButton("Try Rehash Selected")
         controls_layout.addWidget(self.combo_verif_filter)
         controls_layout.addWidget(self.btn_export_csv)
+        controls_layout.addWidget(self.btn_try_rehash)
         controls_layout.addStretch()
         results_layout.addLayout(controls_layout)
         self.table_results = qt.QTableWidget()
-        self.table_results.setColumnCount(8)
+        # Add an extra column for notes / diagnostic messages
+        self.table_results.setColumnCount(9)
         self.table_results.setHorizontalHeaderLabels(
             [
                 "Status",
@@ -964,6 +1042,7 @@ class Ui_MainWindow:
                 "SHA1",
                 "MD5",
                 "SHA256",
+                "Note",
             ]
         )
         try:
@@ -981,6 +1060,7 @@ class Ui_MainWindow:
             header.setSectionResizeMode(4, qt.QHeaderView.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(5, qt.QHeaderView.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(6, qt.QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(8, qt.QHeaderView.ResizeMode.ResizeToContents)
         except AttributeError:
             # PySide6 / PyQt6 might use different enums or just default behavior
             pass
@@ -1284,3 +1364,99 @@ class Ui_MainWindow:
         self.list_gallery.setSpacing(15)
 
         layout.addWidget(self.list_gallery)
+
+    def setupDuplicatesTab(self, qt, parent):
+        layout = qt.QVBoxLayout(parent)
+
+        # Controls
+        controls = qt.QHBoxLayout()
+        self.btn_dups_scan = qt.QPushButton("Scan Duplicates")
+        ic = self._get_icon(qt, "SP_BrowserReload")
+        if ic:
+            self.btn_dups_scan.setIcon(ic)
+
+        self.chk_dups_include_name = qt.QCheckBox("Include name-based duplicates")
+        self.chk_dups_include_name.setChecked(True)
+
+        # Option: filter out non-game files from duplicate results
+        self.chk_dups_filter_non_games = qt.QCheckBox("Filter non-game files")
+        # default behavior: filter non-game files (keeps UI uncluttered)
+        self.chk_dups_filter_non_games.setChecked(True)
+
+        self.lbl_dups_summary = qt.QLabel("No scan yet")
+        self.lbl_dups_summary.setStyleSheet("color: #aaa; font-style: italic;")
+
+        controls.addWidget(self.btn_dups_scan)
+        controls.addWidget(self.chk_dups_include_name)
+        controls.addWidget(self.chk_dups_filter_non_games)
+        controls.addStretch()
+        controls.addWidget(self.lbl_dups_summary)
+        layout.addLayout(controls)
+
+        # Split: groups (left) + entries (right)
+        splitter = qt.QSplitter()
+        self.list_dups_groups = qt.QListWidget()
+        self.list_dups_groups.setMinimumWidth(320)
+
+        right = qt.QWidget()
+        right_layout = qt.QVBoxLayout(right)
+
+        self.table_dups_entries = qt.QTableWidget()
+        self.table_dups_entries.setColumnCount(5)
+        self.table_dups_entries.setHorizontalHeaderLabels(
+            ["Keep?", "System", "File", "Size", "Path"]
+        )
+        try:
+            self.table_dups_entries.setSortingEnabled(True)
+        except Exception:
+            pass
+        try:
+            header = self.table_dups_entries.horizontalHeader()
+            # Make the File column expand, keep Path stretched, and give Size a
+            # reasonable minimum width
+            try:
+                # Prefer explicit enum-based resize modes (Qt5/6)
+                header.setSectionResizeMode(2, qt.QHeaderView.ResizeMode.Stretch)
+                header.setSectionResizeMode(4, qt.QHeaderView.ResizeMode.Stretch)
+                header.setSectionResizeMode(
+                    3, qt.QHeaderView.ResizeMode.ResizeToContents
+                )
+            except Exception:
+                try:
+                    # Fallback older enum locations
+                    header.setSectionResizeMode(2, qt.QHeaderView.Stretch)
+                    header.setSectionResizeMode(4, qt.QHeaderView.Stretch)
+                    header.setSectionResizeMode(3, qt.QHeaderView.ResizeToContents)
+                except Exception:
+                    pass
+            # Set a minimum width for the Size column so it's readable
+            try:
+                self.table_dups_entries.setColumnWidth(3, 120)
+            except Exception:
+                pass
+            try:
+                header.setStretchLastSection(True)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+        actions = qt.QHBoxLayout()
+        self.btn_dups_move_others = qt.QPushButton("Move others to duplicates/")
+        self.btn_dups_keep_largest = qt.QPushButton("Keep largest")
+        self.btn_dups_keep_smallest = qt.QPushButton("Keep smallest")
+        self.btn_dups_open_location = qt.QPushButton("Open location")
+
+        actions.addWidget(self.btn_dups_move_others)
+        actions.addWidget(self.btn_dups_keep_largest)
+        actions.addWidget(self.btn_dups_keep_smallest)
+        actions.addWidget(self.btn_dups_open_location)
+        actions.addStretch()
+
+        right_layout.addWidget(self.table_dups_entries)
+        right_layout.addLayout(actions)
+
+        splitter.addWidget(self.list_dups_groups)
+        splitter.addWidget(right)
+        splitter.setSizes([350, 650])
+        layout.addWidget(splitter)

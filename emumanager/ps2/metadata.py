@@ -1,4 +1,5 @@
 import gzip
+import logging
 import re
 import subprocess
 from pathlib import Path
@@ -18,21 +19,134 @@ def _read_header_chd(file_path: Path, size: int) -> bytes:
     chdman = find_tool("chdman")
     if not chdman:
         return b""
+    logger = logging.getLogger(__name__)
 
     try:
-        # chdman extract -i input.chd -o -
-        # We rely on chdman writing to stdout when -o - is used.
-        # If this fails (chdman version dependent), we might need another way.
-        proc = subprocess.Popen(
-            [str(chdman), "extract", "-i", str(file_path), "-o", "-"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-        )
+        # chdman on some systems does not support writing to stdout ('-o -').
+        # Instead extract a small portion to a temporary file and read it.
+        import tempfile
+
+        # First try a fast, partial extract (only `size` bytes) to a temp file.
+        with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as tf:
+            tmpname = tf.name
+
+        # Try DVD extract first, then CD, then generic extract commands
+        cmds_partial = [
+            [
+                str(chdman),
+                "extractdvd",
+                "-i",
+                str(file_path),
+                "-o",
+                tmpname,
+                "--inputbytes",
+                str(size),
+            ],
+            [
+                str(chdman),
+                "extractcd",
+                "-i",
+                str(file_path),
+                "-o",
+                tmpname,
+                "--inputbytes",
+                str(size),
+            ],
+            [
+                str(chdman),
+                "extract",
+                "-i",
+                str(file_path),
+                "-o",
+                tmpname,
+                "--inputbytes",
+                str(size),
+            ],
+        ]
+
+        rc = 1
+        for cmd in cmds_partial:
+            try:
+                proc = subprocess.run(
+                    cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True
+                )
+                rc = proc.returncode
+                if rc == 0 and Path(tmpname).exists():
+                    break
+                # Log stderr when a partial extract fails to aid debugging
+                if rc != 0:
+                    logger.debug(
+                        "chdman partial extract failed (%s): %s", rc, proc.stderr
+                    )
+            except Exception:
+                rc = 1
+                logger.debug("chdman partial extract raised exception", exc_info=True)
+                continue
+
+        if rc == 0 and Path(tmpname).exists():
+            # Read up to `size` bytes from the temporary file
+            try:
+                with open(tmpname, "rb") as fh:
+                    data = fh.read(size)
+            finally:
+                try:
+                    Path(tmpname).unlink()
+                except Exception:
+                    pass
+            return data
+
+        # If partial extraction failed, remove tmp and try a full extract to disk
         try:
-            data = proc.stdout.read(size)
+            if Path(tmpname).exists():
+                Path(tmpname).unlink()
+        except Exception:
+            pass
+
+        # Fallback: perform a full extract (may produce a large temp ISO) and
+        # read the header
+        with tempfile.NamedTemporaryFile(suffix=".iso", delete=False) as tf_full:
+            fulltmp = tf_full.name
+
+        cmds_full = [
+            [str(chdman), "extractdvd", "-i", str(file_path), "-o", fulltmp],
+            [str(chdman), "extractcd", "-i", str(file_path), "-o", fulltmp],
+            [str(chdman), "extract", "-i", str(file_path), "-o", fulltmp],
+        ]
+
+        rc_full = 1
+        for cmd in cmds_full:
+            try:
+                proc = subprocess.run(
+                    cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True
+                )
+                rc_full = proc.returncode
+                if rc_full == 0 and Path(fulltmp).exists():
+                    break
+                if rc_full != 0:
+                    logger.debug(
+                        "chdman full extract failed (%s): %s", rc_full, proc.stderr
+                    )
+            except Exception:
+                rc_full = 1
+                logger.debug("chdman full extract raised exception", exc_info=True)
+                continue
+
+        if rc_full != 0 or not Path(fulltmp).exists():
+            try:
+                Path(fulltmp).unlink()
+            except Exception:
+                pass
+            return b""
+
+        try:
+            with open(fulltmp, "rb") as fh:
+                data = fh.read(size)
         finally:
-            proc.terminate()
-            proc.wait()
+            try:
+                Path(fulltmp).unlink()
+            except Exception:
+                pass
+
         return data
     except Exception:
         return b""

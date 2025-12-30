@@ -4,7 +4,8 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from emumanager.manager import guess_system_for_file
-from emumanager.workers.common import GuiLogger
+from emumanager.workers.common import skip_if_compressed, get_logger_for_gui
+from emumanager.logging_cfg import set_correlation_id
 
 
 def worker_distribute_root(
@@ -17,7 +18,9 @@ def worker_distribute_root(
     Scans the root of base_path (roms folder) for files and moves them
     to their respective system subfolders based on extension/heuristics.
     """
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.distributor")
     logger.info(f"Scanning root folder for unorganized files: {base_path}")
 
     # Only scan files directly in base_path
@@ -50,6 +53,11 @@ def worker_distribute_root(
                 "keys.txt",
                 "prod.keys",
             ]:
+                stats["skipped"] += 1
+                continue
+
+            # Skip files that scanner has already marked as compressed
+            if skip_if_compressed(file_path, logger):
                 stats["skipped"] += 1
                 continue
 

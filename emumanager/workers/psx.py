@@ -5,7 +5,8 @@ import subprocess
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from emumanager.common.execution import find_tool
+from emumanager.common.execution import find_tool, run_cmd_stream
+from emumanager.library import LibraryDB, LibraryEntry
 from emumanager.psx import database as psx_db
 from emumanager.psx import metadata as psx_meta
 from emumanager.workers.common import (
@@ -14,9 +15,14 @@ from emumanager.workers.common import (
     calculate_file_hash,
     create_file_progress_cb,
     emit_verification_result,
+    ensure_hashes_in_db,
     find_target_dir,
+    identify_game_by_hash,
     make_result_collector,
+    skip_if_compressed,
 )
+from emumanager.workers.common import get_logger_for_gui
+from emumanager.logging_cfg import set_correlation_id
 
 MSG_PSX_DIR_NOT_FOUND = "PS1 ROMs directory not found."
 PSX_SUBDIRS = ["roms/psx", "psx"]
@@ -68,14 +74,11 @@ def _convert_one_with_chdman(
         logger.info(f"[DRY] chdman createcd -i {src.name} -o {out.name}")
         return True, False
     try:
-        proc = _chdman_create(out, src)
-        if proc.stdout:
-            for line in proc.stdout:
-                try:
-                    logger.info(line.decode("utf-8", errors="ignore").rstrip())
-                except Exception:
-                    pass
-        rc = proc.wait()
+        # Use streaming runner so we can surface chdman output if needed
+        chdman_path = find_tool("chdman")
+        cmd = [str(chdman_path), "createcd", "-i", str(src), "-o", str(out)]
+        res = run_cmd_stream(cmd)
+        rc = getattr(res, "returncode", 1)
         if rc == 0:
             return True, False
         logger.error(f"chdman failed ({rc}) for {src.name}")
@@ -86,10 +89,12 @@ def _convert_one_with_chdman(
 
 
 def worker_psx_convert(
-    base_path: Path, args: Any, log_cb: Callable[[str], None]
+    base_path: Path, args: Any, log_cb: Callable[[str], None], **kwargs
 ) -> str:
     """Convert PS1 CUE/BIN/ISO to CHD using chdman."""
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.psx")
     target_dir = find_target_dir(base_path, PSX_SUBDIRS)
     if not target_dir:
         return MSG_PSX_DIR_NOT_FOUND
@@ -114,11 +119,59 @@ def worker_psx_convert(
         if cancel_event and cancel_event.is_set():
             logger.warning(MSG_CANCELLED)
             break
+        # Skip files flagged as compressed by scanner
+        try:
+            if skip_if_compressed(src, logger):
+                skipped += 1
+                continue
+        except Exception:
+            pass
         if progress_cb:
             progress_cb(i / total, f"Converting {src.name}...")
         did_convert, did_skip = _convert_one_with_chdman(src, logger, dry_run)
         if did_convert:
             converted += 1
+            # If the user requested originals removed, preserve hashes from the
+            # original file and attach them to the new .chd entry so verification
+            # info remains available after deletion.
+            if getattr(args, "rm_originals", False):
+                try:
+                    lib_db = LibraryDB()
+                    # Ensure original hashes are recorded (md5, sha1)
+                    md5, sha1 = ensure_hashes_in_db(src, db=lib_db)
+                    # Update the new CHD entry with the preserved hashes and mark
+                    # it as COMPRESSED for downstream skip behavior.
+                    try:
+                        out = src.with_suffix(".chd")
+                        st = out.stat()
+                        new_entry = LibraryEntry(
+                            path=str(out.resolve()),
+                            system="",
+                            size=st.st_size,
+                            mtime=st.st_mtime,
+                            crc32=None,
+                            md5=md5,
+                            sha1=sha1,
+                            sha256=None,
+                            status="COMPRESSED",
+                            match_name=None,
+                            dat_name=None,
+                        )
+                        lib_db.update_entry(new_entry)
+                        lib_db.log_action(
+                            str(out),
+                            "COMPRESSED",
+                            f"Converted from {src.name} and original removed",
+                        )
+                    except Exception:
+                        # Best-effort: don't abort conversion on DB write problems
+                        pass
+                    # Now remove the original file
+                    from emumanager.common.fileops import safe_unlink
+
+                    safe_unlink(src, logger)
+                except Exception as e:
+                    logger.error(f"Failed to delete {src.name}: {e}")
         elif did_skip:
             skipped += 1
 
@@ -201,7 +254,9 @@ def worker_psx_verify(
     log_cb: Callable[[str], None],
     list_files_fn: Callable[[Path], list[Path]],
 ) -> str:
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.psx")
     target_dir = find_target_dir(base_path, PSX_SUBDIRS)
     if not target_dir:
         return MSG_PSX_DIR_NOT_FOUND
@@ -244,6 +299,12 @@ def worker_psx_verify(
         if cancel_event and cancel_event.is_set():
             logger.warning(MSG_CANCELLED)
             break
+        # If scanner flagged this file as compressed, skip and log action
+        try:
+            if skip_if_compressed(f, logger):
+                continue
+        except Exception:
+            pass
         start_prog = i / total
         weight = 1.0 / total
         file_prog_cb = create_file_progress_cb(progress_cb, start_prog, weight, f.name)
@@ -266,6 +327,172 @@ def worker_psx_verify(
     return f"Scan complete. Identified: {found}, Unknown: {unknown}"
 
 
+def worker_chd_decompress_single(
+    path: Path,
+    args: Any,
+    log_cb: Callable[[str], None],
+    **kwargs
+) -> str:
+    """Decompress a single .chd file to an .iso using chdman.
+
+    This is a simple single-file wrapper suitable for the Tools -> Decompress
+    context-menu action. The output will be written next to the original file
+    with a .iso suffix. If chdman is not available or extraction fails, an
+    error string is returned.
+    """
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.psx")
+    chdman = find_tool("chdman")
+    if not chdman:
+        return "Error: 'chdman' not found in PATH."
+
+    if path.suffix.lower() != ".chd":
+        logger.warning(f"No CHD handler for {path.suffix}")
+        return "No-op"
+
+    out = path.with_suffix(".iso")
+    if out.exists():
+        logger.info(f"Skipping extraction, output exists: {out.name}")
+        return f"Skipped (exists): {out.name}"
+
+    logger.info(f"Extracting CHD: {path.name} -> {out.name}...")
+    try:
+        # Try extraction verbs compatible with different chdman versions.
+        cmds = [
+            [str(chdman), "extractdvd", "-i", str(path), "-o", str(out)],
+            [str(chdman), "extractcd", "-i", str(path), "-o", str(out)],
+            [str(chdman), "extract", "-i", str(path), "-o", str(out)],
+        ]
+        progress_cb = getattr(args, "progress_callback", None)
+        rc = 1
+        for cmd in cmds:
+            try:
+                res = run_cmd_stream(cmd, progress_cb=progress_cb)
+                rc = getattr(res, "returncode", 1)
+                if rc == 0:
+                    break
+            except Exception:
+                rc = 1
+                continue
+
+        if rc == 0:
+            logger.info(f"Extraction complete: {out.name}")
+            return f"Extracted: {out.name}"
+        logger.error(f"chdman failed ({rc}) for {path.name}")
+        return f"Error: chdman failed ({rc})"
+    except Exception as e:
+        logger.error(f"Extraction error for {path.name}: {e}")
+        return f"Error: {e}"
+
+
+def worker_chd_recompress_single(
+    path: Path,
+    args: Any,
+    log_cb: Callable[[str], None],
+    **kwargs
+) -> str:
+    """Recompress a single .chd by extracting -> creating a new CHD.
+
+    The operation extracts the CHD to a temporary ISO, creates a new CHD from
+    that ISO (using `createdvd`/`createcd` depending on source), and replaces
+    the original CHD if successful.
+    """
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.psx")
+    chdman = find_tool("chdman")
+    if not chdman:
+        return "Error: 'chdman' not found in PATH."
+
+    if path.suffix.lower() != ".chd":
+        logger.warning(f"No CHD recompress handler for {path.suffix}")
+        return "No-op"
+
+    import tempfile
+
+    logger.info(f"Recompressing {path.name}...")
+
+    tmp_iso = None
+    tmp_chd = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".iso", delete=False) as tf:
+            tmp_iso = Path(tf.name)
+
+        with tempfile.NamedTemporaryFile(suffix=".chd", delete=False) as tf2:
+            tmp_chd = Path(tf2.name)
+
+        # Extract to tmp_iso
+        extract_cmds = [
+            [str(chdman), "extractdvd", "-i", str(path), "-o", str(tmp_iso)],
+            [str(chdman), "extractcd", "-i", str(path), "-o", str(tmp_iso)],
+            [str(chdman), "extract", "-i", str(path), "-o", str(tmp_iso)],
+        ]
+        rc = 1
+        progress_cb = getattr(args, "progress_callback", None)
+        rc = 1
+        for cmd in extract_cmds:
+            try:
+                res = run_cmd_stream(cmd, progress_cb=progress_cb)
+                rc = getattr(res, "returncode", 1)
+                if rc == 0:
+                    break
+            except Exception:
+                rc = 1
+                continue
+
+        if rc != 0:
+            logger.error(f"chdman failed ({rc}) while extracting {path.name}")
+            return f"Error: chdman failed ({rc})"
+
+        # Create CHD from tmp_iso into tmp_chd
+        create_cmds = [
+            [str(chdman), "createdvd", "-i", str(tmp_iso), "-o", str(tmp_chd)],
+            [str(chdman), "createcd", "-i", str(tmp_iso), "-o", str(tmp_chd)],
+        ]
+        rc2 = 1
+        rc2 = 1
+        for cmd in create_cmds:
+            try:
+                res = run_cmd_stream(cmd, progress_cb=progress_cb)
+                rc2 = getattr(res, "returncode", 1)
+                if rc2 == 0:
+                    break
+            except Exception:
+                rc2 = 1
+                continue
+
+        if rc2 != 0:
+            logger.error(f"chdman failed ({rc2}) while creating CHD for {path.name}")
+            return f"Error: chdman failed ({rc2})"
+
+        # Replace original CHD with newly created one
+        try:
+            backup = path.with_suffix(path.suffix + ".bak")
+            if backup.exists():
+                backup.unlink()
+            path.replace(backup)
+            Path(tmp_chd).replace(path)
+            backup.unlink(missing_ok=True)
+            logger.info(f"Recompressed: {path.name}")
+            return f"Recompressed: {path.name}"
+        except Exception as e:
+            logger.error(f"Failed to replace original CHD: {e}")
+            return f"Error: {e}"
+    finally:
+        # Cleanup temp files
+        try:
+            if tmp_iso and tmp_iso.exists():
+                tmp_iso.unlink()
+        except Exception:
+            pass
+        try:
+            if tmp_chd and tmp_chd.exists():
+                tmp_chd.unlink()
+        except Exception:
+            pass
+
+
 def _organize_psx_file(
     f: Path, args: Any, logger: GuiLogger
 ) -> tuple[bool, Optional[str]]:
@@ -278,19 +505,54 @@ def _organize_psx_file(
         if bin_path.exists():
             src_for_serial = bin_path
     serial = psx_meta.get_psx_serial(src_for_serial)
+    title = None
+
+    # If we couldn't extract a serial, try to identify by hash using the
+    # library DB (sha1). This allows renaming when the library already has
+    # a canonical entry for this file.
+    if not serial:
+        try:
+            lib_db = LibraryDB()
+            found = identify_game_by_hash(f, db=lib_db)
+            if found:
+                # dat_name stores serial-like IDs in many systems
+                serial = found.dat_name
+                # match_name may include title and [SERIAL], so take the text
+                if found.match_name:
+                    title = found.match_name.split("[")[0].strip()
+                else:
+                    title = None
+                logger.info(f"Identified by hash: using library match for {f.name}")
+        except Exception:
+            pass
+
     if not serial:
         logger.warning(f"Could not extract serial from {f.name}")
         return False, None
-    title = psx_db.db.get_title(serial) or "Unknown Title"
+
+    # Resolve title from DAT lookup or earlier found match; fall back to a
+    # generic "Unknown Title" when no title is available in the DAT.
+    title = title or psx_db.db.get_title(serial) or "Unknown Title"
     safe_title = re.sub(r'[<>:"/\\|?*]', "", title).strip()
     new_name = f"{safe_title} [{serial}]{f.suffix}"
     new_path = f.parent / new_name
     if f.name == new_name or new_path.exists():
         return False, None
     try:
+        orig_path = str(f.resolve())
+    except Exception:
+        orig_path = str(f)
+
+    try:
         if not args.dry_run:
             f.rename(new_path)
         logger.info(f"Renamed: {f.name} -> {new_name}")
+        # Audit log
+        try:
+            lib_db = LibraryDB()
+            lib_db.log_action(orig_path, "RENAMED", f"{f.name} -> {new_name}")
+        except Exception:
+            logger.warning(f"Failed to write rename action for {f.name}")
         return True, new_name
     except Exception as e:
         logger.error(f"Failed to rename {f.name}: {e}")
@@ -302,8 +564,11 @@ def worker_psx_organize(
     args: Any,
     log_cb: Callable[[str], None],
     list_files_fn: Callable[[Path], list[Path]],
+    **kwargs
 ) -> str:
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.psx")
     target_dir = find_target_dir(base_path, PSX_SUBDIRS)
     if not target_dir:
         return MSG_PSX_DIR_NOT_FOUND
@@ -336,6 +601,12 @@ def worker_psx_organize(
             break
         if progress_cb:
             progress_cb(i / total, f"Organizing {f.name}...")
+        try:
+            if skip_if_compressed(f, logger):
+                skipped += 1
+                continue
+        except Exception:
+            pass
         ok, new_name = _organize_psx_file(f, args, logger)
         if ok:
             renamed += 1

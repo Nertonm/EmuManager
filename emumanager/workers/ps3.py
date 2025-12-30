@@ -15,7 +15,10 @@ from emumanager.workers.common import (
     emit_verification_result,
     find_target_dir,
     make_result_collector,
+    skip_if_compressed,
 )
+from emumanager.workers.common import get_logger_for_gui
+from emumanager.logging_cfg import set_correlation_id
 
 PARAM_SFO = "PARAM.SFO"
 MSG_PS3_DIR_NOT_FOUND = "PS3 ROMs directory not found."
@@ -91,6 +94,11 @@ def _scan_ps3_folders(
 
         # Check if it's a game folder (has PARAM.SFO or PS3_GAME)
         if (d / PARAM_SFO).exists() or (d / "PS3_GAME" / PARAM_SFO).exists():
+            # Respect compressed markers in the library DB
+            if skip_if_compressed(d, logger):
+                unknown += 1
+                continue
+
             res = _process_ps3_item(
                 d, logger, deep_verify=False, per_file_cb=per_file_cb
             )  # Don't hash folders
@@ -131,6 +139,11 @@ def _scan_ps3_files(
             progress_cb(start_prog, f"Verifying {f.name}...")
 
         if f.suffix.lower() in (".iso", ".pkg"):
+            # Skip compressed files previously detected by scanner
+            if skip_if_compressed(f, logger):
+                unknown += 1
+                continue
+
             res = _process_ps3_item(
                 f,
                 logger,
@@ -153,7 +166,9 @@ def worker_ps3_verify(
     list_dirs_fn: Callable[[Path], list[Path]] = None,
 ) -> str:
     """Worker function for PS3 verification."""
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.ps3")
 
     target_dir = find_target_dir(base_path, PS3_SUBDIRS)
     if not target_dir:
@@ -260,7 +275,9 @@ def worker_ps3_organize(
     list_dirs_fn: Callable[[Path], list[Path]] = None,
 ) -> str:
     """Worker function for PS3 organization."""
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.ps3")
 
     target_dir = find_target_dir(base_path, PS3_SUBDIRS)
     if not target_dir:
@@ -290,6 +307,11 @@ def worker_ps3_organize(
             progress_cb(i / total_files, f"Organizing {f.name}...")
 
         if f.suffix.lower() in (".iso", ".pkg"):
+            # Respect compressed markers
+            if skip_if_compressed(f, logger):
+                skipped += 1
+                continue
+
             if _organize_ps3_item(f, args, logger):
                 renamed += 1
             else:
@@ -298,6 +320,10 @@ def worker_ps3_organize(
     # Organize Folders
     if list_dirs_fn and not (cancel_event and cancel_event.is_set()):
         dirs = list_dirs_fn(target_dir)
+        # Check for compressed markers when organizing folders.
+        # The folder-level helper will call _organize_ps3_item after existence
+        # checks; it will increment the skipped count for items it does not
+        # process, so we defer to it for folder-level handling.
         f_renamed, f_skipped = _organize_ps3_folders(dirs, args, logger)
         renamed += f_renamed
         skipped += f_skipped

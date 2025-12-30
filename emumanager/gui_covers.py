@@ -2,7 +2,9 @@ import os
 from pathlib import Path
 
 import requests
-from PyQt6.QtCore import QObject, QRunnable, pyqtSignal
+from PyQt6.QtCore import QCoreApplication, QObject, QRunnable, pyqtSignal
+
+from emumanager.metadata_providers import GameTDBProvider, LibretroProvider
 
 # Import metadata extractors
 try:
@@ -26,71 +28,116 @@ class CoverSignals(QObject):
     log = pyqtSignal(str)  # Returns log messages
 
 
+# Keep strong references to running downloaders to avoid them being
+# garbage-collected while the QRunnable is still queued in QThreadPool.
+_active_downloaders: set[object] = set()
+
+
 class CoverDownloader(QRunnable):
-    def __init__(self, system, game_id, region, cache_dir, file_path=None):
+    def __init__(
+        self,
+        system: str,
+        game_id: str | None,
+        region: str | None,
+        cache_dir: str,
+        file_path: str | None = None,
+    ):
         super().__init__()
         self.system = system
         self.game_id = game_id
         self.region = region  # Ex: 'US', 'EN', 'JA'
         self.cache_dir = cache_dir
         self.file_path = file_path
-        self.signals = CoverSignals()
+        # Create signals with QCoreApplication as parent to ensure the
+        # underlying C++ QObject isn't deleted when this runnable is
+        # moved between threads or if Python GC runs.
+        qa = QCoreApplication.instance()
+        try:
+            if qa is not None:
+                self.signals = CoverSignals(qa)
+            else:
+                self.signals = CoverSignals()
+        except Exception:
+            # Fallback to no-parent signals if something goes wrong
+            self.signals = CoverSignals()
+        # Keep a strong reference until run() completes; removed in run()
+        _active_downloaders.add(self)
 
     def run(self):
-        self.signals.log.emit(
-            f"CoverDownloader started for {self.system}, ID: {self.game_id}"
-        )
+        try:
+            self.signals.log.emit(
+                f"CoverDownloader started for {self.system}, ID: {self.game_id}"
+            )
 
-        # Try to extract game_id if missing
-        if not self.game_id and self.file_path and os.path.exists(self.file_path):
-            self.game_id = self._extract_game_id()
+            # Try to extract game_id if missing
+            if not self.game_id and self.file_path and os.path.exists(self.file_path):
+                self.game_id = self._extract_game_id()
+                if self.game_id:
+                    self.signals.log.emit(f"Extracted Game ID: {self.game_id}")
+
+            # If we still don't have a game_id, try the filename (without ext).
+            # This helps as a fallback for Libretro thumbnails.
+            game_name = None
+            if self.file_path:
+                game_name = Path(self.file_path).stem
+
+            if not self.game_id and not game_name:
+                self.signals.log.emit("No Game ID and no Game Name found. Aborting.")
+                self.signals.finished.emit(None)
+                return
+
+            # Strategy 1: GameTDB (requires Game ID)
             if self.game_id:
-                self.signals.log.emit(f"Extracted Game ID: {self.game_id}")
+                if self._try_gametdb():
+                    return
 
-        # If we still don't have a game_id, try to use the filename (without extension)
-        # This is useful for Libretro thumbnails fallback
-        game_name = None
-        if self.file_path:
-            game_name = Path(self.file_path).stem
+            # Strategy 2: Libretro Thumbnails (Fallback using Game Name)
+            if game_name:
+                if self._try_libretro(game_name):
+                    return
 
-        if not self.game_id and not game_name:
-            self.signals.log.emit("No Game ID and no Game Name found. Aborting.")
+            # Strategy 3: TheGamesDB (fallback search provider). This is
+            # optional and will be attempted only if configured or available.
+            try:
+                from emumanager.metadata_providers import TheGamesDBProvider
+
+                tgdb = TheGamesDBProvider()
+                tg_url = tgdb.get_cover_url(
+                    self.system, self.game_id, game_name, self.region
+                )
+                if tg_url:
+                    # Use TheGamesDB's URL directly
+                    ext = tg_url.split(".")[-1]
+                    tgt_path = os.path.join(
+                        self.cache_dir, "covers", self.system, f"{game_name}.{ext}"
+                    )
+                    self.signals.log.emit(f"Trying TheGamesDB URL: {tg_url}")
+                    if self._download_file(tg_url, tgt_path):
+                        self.signals.log.emit(f"Downloaded from TheGamesDB: {tg_url}")
+                        self.signals.finished.emit(tgt_path)
+                        return
+            except Exception:
+                pass
+
+            self.signals.log.emit("Cover not found.")
             self.signals.finished.emit(None)
-            return
+        finally:
+            # Allow GC after the work is done
+            try:
+                _active_downloaders.discard(self)
+            except Exception:
+                pass
 
-        # Map system names to GameTDB system codes
-        system_map = {
-            "wii": "wii",
-            "gamecube": "wii",  # GameTDB stores GC covers under wii/cover/
-            "switch": "switch",
-            "ps2": "ps2",
-            "ps3": "ps3",
-            "psp": "psp",  # GameTDB might not have PSP, need to check or use fallback
-            "wiiu": "wiiu",
-            "ds": "ds",
-            "3ds": "3ds",
-        }
+    def _try_gametdb(self) -> bool:
+        provider = GameTDBProvider()
+        urls = provider.get_cover_urls(self.system, self.game_id, self.region)
 
-        gametdb_system = system_map.get(self.system.lower())
+        if not urls:
+            return False
 
-        # Strategy 1: GameTDB (requires Game ID)
-        if self.game_id and gametdb_system:
-            if self._try_gametdb(gametdb_system):
-                return
-
-        # Strategy 2: Libretro Thumbnails (Fallback using Game Name)
-        if game_name:
-            if self._try_libretro(game_name):
-                return
-
-        self.signals.log.emit("Cover not found.")
-        self.signals.finished.emit(None)
-
-    def _try_gametdb(self, gametdb_system):
-        # Determine file extension and URL pattern based on system
-        ext = "png"
-        if gametdb_system in ["ps2", "ps3", "switch"]:
-            ext = "jpg"
+        # Determine extension from the first URL. This is a simple heuristic
+        # that assumes all candidate URLs share the same extension.
+        ext = urls[0].split(".")[-1]
 
         # Construct local path
         file_path = os.path.join(
@@ -103,25 +150,7 @@ class CoverDownloader(QRunnable):
             self.signals.finished.emit(file_path)
             return True
 
-        # Construct URL
-        # GameTDB URL structure:
-        # https://art.gametdb.com/{system}/cover/{region}/{game_id}.{ext}
-        # Region mapping might be needed.
-        # For now, try passed region or default to US/EN
-
-        regions_to_try = [self.region, "US", "EN", "JA", "Other"]
-        # Filter out None or empty regions
-        regions_to_try = [r for r in regions_to_try if r]
-
-        # Add a generic fallback if no specific region worked
-        if "US" not in regions_to_try:
-            regions_to_try.append("US")
-
-        for reg in regions_to_try:
-            url = (
-                f"https://art.gametdb.com/{gametdb_system}/cover/{reg}/"
-                f"{self.game_id}.{ext}"
-            )
+        for url in urls:
             self.signals.log.emit(f"Trying GameTDB URL: {url}")
             if self._download_file(url, file_path):
                 self.signals.log.emit(f"Downloaded from GameTDB: {url}")
@@ -129,104 +158,66 @@ class CoverDownloader(QRunnable):
                 return True
         return False
 
-    def _try_libretro(self, game_name):
-        # https://thumbnails.libretro.com/{System}/Named_Boxarts/{Name}.png
-        # We need to map our system names to Libretro system names
-        libretro_map = {
-            "gamecube": "Nintendo - GameCube",
-            "wii": "Nintendo - Wii",
-            "wiiu": "Nintendo - Wii U",
-            "switch": "Nintendo - Switch",
-            "ps2": "Sony - PlayStation 2",
-            "ps3": "Sony - PlayStation 3",
-            "psp": "Sony - PlayStation Portable",
-            "psx": "Sony - PlayStation",
-            "3ds": "Nintendo - Nintendo 3DS",
-            "ds": "Nintendo - Nintendo DS",
-            "n64": "Nintendo - Nintendo 64",
-            "snes": "Nintendo - Super Nintendo Entertainment System",
-            "nes": "Nintendo - Nintendo Entertainment System",
-            "gba": "Nintendo - Game Boy Advance",
-            "gb": "Nintendo - Game Boy",
-            "gbc": "Nintendo - Game Boy Color",
-            "megadrive": "Sega - Mega Drive - Genesis",
-            "mastersystem": "Sega - Master System - Mark III",
-            "saturn": "Sega - Saturn",
-            "dreamcast": "Sega - Dreamcast",
-        }
+    def _try_libretro(self, game_name: str) -> bool:
+        provider = LibretroProvider()
+        # Try multiple candidate names: cleaned base title, and a variant
+        # that includes the serial/game_id (e.g. "Title [SERIAL]"). Libretro
+        # thumbnail names are sensitive to exact names so trying both helps.
+        candidates: list[str] = []
 
-        libretro_system = libretro_map.get(self.system.lower())
-        if not libretro_system:
-            return False
+        # Candidate 1: use the game_name as provided by GUI (may be stem)
+        candidates.append(game_name)
 
-        # Libretro uses specific characters replacement
-        # & -> _
-        # * -> _
-        # / -> _
-        # : -> _
-        # ` -> _
-        # < -> _
-        # > -> _
-        # ? -> _
-        # \ -> _
-        # | -> _
-        safe_name = (
-            game_name.replace("&", "_")
-            .replace("*", "_")
-            .replace("/", "_")
-            .replace(":", "_")
-            .replace("`", "_")
-            .replace("<", "_")
-            .replace(">", "_")
-            .replace("?", "_")
-            .replace("\\", "_")
-            .replace("|", "_")
-        )
+        # Candidate 2: if we have a game_id, append a single bracketed serial
+        if self.game_id:
+            candidates.append(f"{game_name} [{self.game_id}]")
 
-        url = (
-            f"https://thumbnails.libretro.com/{libretro_system}/"
-            f"Named_Boxarts/{safe_name}.png"
-        )
-        # Use URL encoding for spaces etc
-        import urllib.parse
+        for cand in candidates:
+            url = provider.get_cover_url(self.system, self.game_id, cand)
+            if not url:
+                continue
 
-        url = urllib.parse.quote(url, safe=":/")
+            # Libretro is always png
+            file_path = os.path.join(
+                self.cache_dir, "covers", self.system, f"{cand}.png"
+            )
 
-        file_path = os.path.join(
-            self.cache_dir, "covers", self.system, f"{safe_name}.png"
-        )
+            if os.path.exists(file_path):
+                self.signals.log.emit(f"Cover found in cache: {file_path}")
+                self.signals.finished.emit(file_path)
+                return True
 
-        if os.path.exists(file_path):
-            self.signals.log.emit(f"Cover found in cache (Libretro): {file_path}")
-            self.signals.finished.emit(file_path)
-            return True
+            self.signals.log.emit(f"Trying Libretro URL: {url}")
+            if self._download_file(url, file_path):
+                self.signals.log.emit(f"Downloaded from Libretro: {url}")
+                self.signals.finished.emit(file_path)
+                return True
 
-        self.signals.log.emit(f"Trying Libretro URL: {url}")
-        if self._download_file(url, file_path):
-            self.signals.log.emit(f"Downloaded from Libretro: {url}")
-            self.signals.finished.emit(file_path)
-            return True
         return False
 
-    def _download_file(self, url, dest_path):
+    def _download_file(self, url: str, dest_path: str) -> bool:
         try:
-            response = requests.get(url, timeout=5)
+            # Use a session for connection pooling if we were doing multiple requests,
+            # but for a single file, direct get is fine.
+            # Add a User-Agent to avoid being blocked by some servers
+            headers = {"User-Agent": "EmuManager/1.0"}
+            response = requests.get(url, timeout=10, headers=headers)
+
             if response.status_code == 200:
                 os.makedirs(os.path.dirname(dest_path), exist_ok=True)
                 with open(dest_path, "wb") as f:
                     f.write(response.content)
                 return True
             else:
-                # self.signals.log.emit(
-                #     f"Failed to download {url}: Status {response.status_code}"
-                # )
-                pass
-        except Exception:
-            # self.signals.log.emit(f"Exception downloading {url}: {e}")
-            pass
+                self.signals.log.emit(
+                    f"Failed to download {url}: Status {response.status_code}"
+                )
+        except Exception as e:
+            self.signals.log.emit(f"Exception downloading {url}: {str(e)}")
+
         return False
 
-    def _extract_game_id(self):
+    def _extract_game_id(self) -> str | None:
         if not self.file_path:
             return None
 

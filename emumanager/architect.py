@@ -2,18 +2,25 @@
 """
 Architect module (package version)
 
-O módulo Architect é o núcleo de organização e estruturação da biblioteca do EmuManager.
-Ele é responsável por:
+O módulo Architect é o núcleo de organização e estruturação da
+biblioteca do EmuManager. Ele é responsável por várias tarefas
+relacionadas à criação e manutenção da coleção de ROMs, incluindo:
 
-1.  **Inicialização da Biblioteca**: Criação da estrutura de pastas padrão (`roms/`, `bios/`, etc.).
-2.  **Organização de ROMs**:
+1.  **Inicialização da Biblioteca**:
+    Criação da estrutura de pastas padrão (`roms/`, `bios/`, etc.).
+2.  **Organização de ROMS**:
     -   Varredura de diretórios em busca de arquivos de jogos.
-    -   Identificação de arquivos baseada em extensão e conteúdo (headers).
+    -   Identificação de arquivos baseada em extensão e conteúdo
+        (headers).
     -   Renomeação automática baseada em metadados (GameTDB, Serial, etc.).
-    -   Movimentação de arquivos para as pastas corretas (`roms/<sistema>/`).
-3.  **Geração de Metadados**: Criação de arquivos `_INFO_TECNICA.txt` e `README.md` para cada sistema.
+    -   Movimentação de arquivos para as pastas corretas
+        (`roms/<sistema>/`).
+3.  **Geração de Metadados**:
+    Criação de arquivos `_INFO_TECNICA.txt` e `README.md` para cada
+    sistema.
 
-Este módulo mantém a API pública compatível com scripts legados, mas agora reside dentro do pacote `emumanager`.
+Este módulo mantém a API pública compatível com scripts legados, mas
+agora reside dentro do pacote `emumanager`.
 """
 
 from __future__ import annotations

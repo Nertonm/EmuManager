@@ -21,7 +21,10 @@ from emumanager.workers.common import (
     emit_verification_result,
     find_target_dir,
     make_result_collector,
+    skip_if_compressed,
 )
+from emumanager.workers.common import get_logger_for_gui
+from emumanager.logging_cfg import set_correlation_id
 
 MSG_N3DS_DIR_NOT_FOUND = "3DS ROMs directory not found."
 N3DS_SUBDIRS = ["roms/3ds", "3ds", "n3ds", "roms/n3ds"]
@@ -87,7 +90,9 @@ def worker_n3ds_verify(
     list_files_fn: Callable[[Path], list[Path]],
 ) -> str:
     """Worker function for 3DS verification."""
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.n3ds")
 
     target_dir = find_target_dir(base_path, N3DS_SUBDIRS)
     if not target_dir:
@@ -131,6 +136,10 @@ def worker_n3ds_verify(
             progress_cb(start_prog, f"Verifying {f.name}...")
 
         if f.suffix.lower() in (".3ds", ".cia", ".3dz", ".cci"):
+            # Skip files marked compressed by the scanner
+            if skip_if_compressed(f, logger):
+                unknown += 1
+                continue
             res = _process_n3ds_item(
                 f,
                 logger,
@@ -192,7 +201,9 @@ def worker_n3ds_organize(
     list_files_fn: Callable[[Path], list[Path]],
 ) -> str:
     """Worker function for 3DS organization."""
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.n3ds")
 
     target_dir = find_target_dir(base_path, N3DS_SUBDIRS)
     if not target_dir:
@@ -221,6 +232,11 @@ def worker_n3ds_organize(
             progress_cb(i / total, f"Organizing {f.name}...")
 
         if f.suffix.lower() in (".3ds", ".cia", ".3dz", ".cci"):
+            # Skip files marked compressed by the scanner
+            if skip_if_compressed(f, logger):
+                skipped += 1
+                continue
+
             if _organize_n3ds_item(f, args, logger):
                 renamed += 1
             else:
@@ -239,7 +255,9 @@ def worker_n3ds_compress(
     list_files_fn: Callable[[Path], list[Path]],
 ) -> str:
     """Worker function for 3DS compression (to 7z)."""
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.n3ds")
 
     target_dir = find_target_dir(base_path, N3DS_SUBDIRS)
     if not target_dir:
@@ -276,6 +294,10 @@ def worker_n3ds_compress(
         print(f"DEBUG: Processing {f.name}, suffix={f.suffix}")
 
         if f.suffix.lower() in (".3ds", ".cia", ".3dz", ".cci"):
+            # Skip files marked compressed by the scanner
+            if skip_if_compressed(f, logger):
+                skipped += 1
+                continue
             dest = f.with_suffix(f.suffix + ".7z")
             if dest.exists():
                 logger.info(f"Skipping {f.name}, already compressed.")
@@ -311,7 +333,9 @@ def worker_n3ds_decompress(
     list_files_fn: Callable[[Path], list[Path]],
 ) -> str:
     """Worker function for 3DS decompression (from 7z)."""
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.n3ds")
 
     target_dir = find_target_dir(base_path, N3DS_SUBDIRS)
     if not target_dir:
@@ -377,7 +401,9 @@ def worker_n3ds_convert_cia(
     list_files_fn: Callable[[Path], list[Path]],
 ) -> str:
     """Worker function for 3DS -> CIA conversion."""
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.n3ds")
 
     target_dir = find_target_dir(base_path, N3DS_SUBDIRS)
     if not target_dir:
@@ -451,7 +477,9 @@ def worker_n3ds_decrypt(
     list_files_fn: Callable[[Path], list[Path]],
 ) -> str:
     """Worker function for 3DS decryption."""
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.n3ds")
 
     target_dir = find_target_dir(base_path, N3DS_SUBDIRS)
     if not target_dir:
@@ -524,7 +552,9 @@ def worker_n3ds_compress_single(
     filepath: Path, args: Any, log_cb: Callable[[str], None]
 ) -> Optional[Path]:
     """Worker function for compressing a single 3DS file."""
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.n3ds")
 
     if filepath.suffix.lower() not in (".3ds", ".cia", ".3dz", ".cci"):
         logger.warning(f"Skipping {filepath.name}: Not a valid 3DS file.")
@@ -553,7 +583,9 @@ def worker_n3ds_decompress_single(
     filepath: Path, args: Any, log_cb: Callable[[str], None]
 ) -> Optional[Path]:
     """Worker function for decompressing a single 3DS file."""
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.n3ds")
 
     if filepath.suffix.lower() != ".7z":
         logger.warning(f"Skipping {filepath.name}: Not a 7z file.")

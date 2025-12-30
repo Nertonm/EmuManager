@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from emumanager.gui_actions import ActionsDialog
 from emumanager.gui_workers import (
     worker_clean_junk,
     worker_compress_single,
@@ -28,6 +29,7 @@ from emumanager.gui_workers import (
     worker_ps3_organize,
     worker_ps3_verify,
     worker_psp_compress,
+    worker_psp_compress_single,
     worker_psp_organize,
     worker_psp_verify,
     worker_psx_convert,
@@ -96,6 +98,13 @@ class ToolsController:
         # Tools Tab - General
         self.ui.btn_clean_junk.clicked.connect(self.on_clean_junk)
 
+        # Show actions (audit trail)
+        try:
+            if hasattr(self.mw, "act_show_actions"):
+                self.mw.act_show_actions.triggered.connect(self.on_show_actions)
+        except Exception:
+            pass
+
         # Tools Tab - Sega
         if hasattr(self.ui, "btn_sega_convert"):
             self.ui.btn_sega_convert.clicked.connect(self.on_sega_convert)
@@ -129,18 +138,28 @@ class ToolsController:
                 return worker_n3ds_compress_single(path, args, log_cb)
             # PSP
             elif ext == ".iso":
-                # Check if it's PSP by path or magic?
-                # For now, if it's in a PSP folder, use PSP compressor (cso)
-                # Otherwise, generic zip/7z?
-                if "psp" in str(path).lower():
-                    # PSP worker expects base_path, not single file.
-                    # We need a single file worker for PSP or adapt.
-                    # For now, let's just log not implemented for single file PSP
-                    logging.warning(
-                        "Single file compression for PSP not yet implemented "
-                        "via context menu."
+                # Prefer determining system from the UI selection rather than
+                # inferring from the path string. Use the main window's current
+                # system selection when available.
+                try:
+                    sys_item = self.mw.sys_list.currentItem()
+                    system = sys_item.text().lower() if sys_item else None
+                except Exception:
+                    system = None
+
+                if system in ("gamecube", "wii"):
+                    # Use a dedicated single-file dolphin convert worker
+                    from emumanager.workers.dolphin import (
+                        worker_dolphin_convert_single,
                     )
-                    return None
+
+                    return worker_dolphin_convert_single(path, args, log_cb)
+
+                # PSP: if the UI-selected system is PSP, run the PSP compressor
+                # as a single-file operation by wrapping the directory worker.
+                if system == "psp":
+                    # Use a dedicated single-file PSP compress worker
+                    return worker_psp_compress_single(path, args, log_cb)
 
             logging.warning(f"No compression handler for {ext}")
             return None
@@ -152,6 +171,22 @@ class ToolsController:
             ext = path.suffix.lower()
             if ext == ".rvz":
                 return worker_dolphin_recompress_single(path, args, log_cb)
+            # CHD recompress: if current system is PS2, offer CHD->CSO; else do CHD->CHD
+            if ext == ".chd":
+                try:
+                    sys_item = self.mw.sys_list.currentItem()
+                    system = sys_item.text().lower() if sys_item else None
+                except Exception:
+                    system = None
+
+                if system == "ps2":
+                    from emumanager.workers.ps2 import worker_chd_to_cso_single
+
+                    return worker_chd_to_cso_single(path, args, log_cb)
+                else:
+                    from emumanager.workers.psx import worker_chd_recompress_single
+
+                    return worker_chd_recompress_single(path, args, log_cb)
             elif ext in (".nsz", ".xcz"):
                 return worker_recompress_single(path, env, args, log_cb)
 
@@ -174,6 +209,12 @@ class ToolsController:
                 # Check if it's a 3DS 7z?
                 if "3ds" in str(path).lower() or "n3ds" in str(path).lower():
                     return worker_n3ds_decompress_single(path, args, log_cb)
+            # CHD (use chdman)
+            elif ext == ".chd":
+                # Use PSX worker to extract CHD -> ISO
+                from emumanager.workers.psx import worker_chd_decompress_single
+
+                return worker_chd_decompress_single(path, args, log_cb)
 
             logging.warning(f"No decompression handler for {ext}")
             return None
@@ -205,6 +246,9 @@ class ToolsController:
         # Assuming standard structure
         # Check if _last_base already ends with "roms" to avoid duplication
         base = Path(self.mw._last_base)
+
+        # Resolve the full path to the selected ROM. If the base already
+        # points to a 'roms' folder, avoid duplicating the segment.
         if base.name == "roms":
             full_path = base / system / rom_rel_path
         else:
@@ -223,13 +267,30 @@ class ToolsController:
             if needs_env:
                 return worker_func(full_path, env, args, self.mw.log_msg)
             else:
-                return worker_func(full_path, self.mw.log_msg)
+                return worker_func(full_path, args, self.mw.log_msg)
 
         def _done(res):
             logging.info(str(res))
-            self.mw.on_list()  # Refresh list
+            try:
+                self.mw.on_list()  # Refresh list
+            except Exception:
+                pass
 
+        if hasattr(self.mw, "_set_ui_enabled"):
+            try:
+                self.mw._set_ui_enabled(False)
+            except Exception:
+                pass
         self.mw._run_in_background(_work, _done)
+
+    def on_show_actions(self):
+        """Open a dialog showing recent library actions."""
+        try:
+            qt = self.mw._qtwidgets
+            dlg = ActionsDialog(qt, self.mw.window, self.mw.library_db)
+            dlg.show()
+        except Exception as e:
+            logging.exception(f"Failed to open actions dialog: {e}")
 
     def on_organize(self):
         self._run_tool_task(worker_organize, "Organize Switch", needs_env=True)
@@ -326,6 +387,20 @@ class ToolsController:
     def on_clean_junk(self):
         if not self.mw._last_base:
             logging.warning(MSG_SELECT_BASE)
+            return
+
+        # Confirmation Dialog
+        reply = self.mw._qtwidgets.QMessageBox.question(
+            self.mw.window,
+            "Confirm Clean Junk",
+            "This will remove .txt, .url, .nfo files and empty directories.\n"
+            "Are you sure you want to proceed?",
+            self.mw._qtwidgets.QMessageBox.StandardButton.Yes
+            | self.mw._qtwidgets.QMessageBox.StandardButton.No,
+            self.mw._qtwidgets.QMessageBox.StandardButton.No,
+        )
+
+        if reply != self.mw._qtwidgets.QMessageBox.StandardButton.Yes:
             return
 
         args = self.mw._get_common_args()

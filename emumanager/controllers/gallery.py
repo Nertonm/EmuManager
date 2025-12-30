@@ -5,7 +5,6 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from emumanager.architect import get_roms_dir
 from emumanager.gui_covers import CoverDownloader
 from emumanager.verification.hasher import calculate_hashes
 from emumanager.workers.verification import worker_identify_single_file
@@ -19,6 +18,8 @@ class GalleryController:
         self.mw = main_window
         self.ui = main_window.ui
         self._connect_signals()
+        # Prevent re-entrant / high-frequency population runs
+        self._gallery_populating = False
 
     def _get_context_menu_policy(self):
         """Helper to resolve ContextMenuPolicy across different Qt versions."""
@@ -64,9 +65,19 @@ class GalleryController:
                 )
 
     def _on_gallery_system_changed(self, index):
+        # Respect MainWindow's guard to avoid list/scan storms
+        if getattr(self.mw, "_skip_list_side_effects", False):
+            return
         self.populate_gallery()
 
     def populate_gallery(self):
+        # Avoid running multiple concurrent population tasks
+        if getattr(self, "_gallery_populating", False):
+            logging.info(
+                "Gallery population already in progress; skipping duplicate call"
+            )
+            return
+
         if not self.mw._last_base:
             return
 
@@ -77,11 +88,12 @@ class GalleryController:
         self.ui.list_gallery.clear()
         logging.info(f"Populating gallery for {system}...")
 
-        roms_dir = get_roms_dir(Path(self.mw._last_base)) / system
-        if not roms_dir.exists():
-            return
+        # Use LibraryDB instead of recursive scanning
+        entries = self.mw.library_db.get_entries_by_system(system)
 
-        files = self._list_files_recursive(roms_dir)
+        if not entries:
+            logging.info(f"No entries found in library for {system}.")
+            return
 
         # Cache dir root
         cache_dir_root = Path(self.mw._last_base) / ".covers"
@@ -97,20 +109,26 @@ class GalleryController:
             else self.mw._qtcore.Qt.QueuedConnection
         )
 
-        for f in files:
-            self._process_gallery_item(
-                f, system, cache_dir_root, default_icon, conn_type
-            )
+        try:
+            self._gallery_populating = True
+            for entry in entries:
+                self._process_gallery_item(
+                    entry, system, cache_dir_root, default_icon, conn_type
+                )
 
-        logging.info(f"Gallery population started for {len(files)} items.")
+            logging.info(f"Gallery population started for {len(entries)} items.")
+        finally:
+            # allow subsequent populations
+            self._gallery_populating = False
 
     def _process_gallery_item(
-        self, f: Path, system: str, cache_dir_root: Path, default_icon, conn_type
+        self, entry, system: str, cache_dir_root: Path, default_icon, conn_type
     ):
         try:
-            name = f.name
+            f_path = Path(entry.path)
+            name = f_path.name
             item = self.mw._qtwidgets.QListWidgetItem(name)
-            item.setToolTip(str(f))
+            item.setToolTip(str(f_path))
 
             if default_icon:
                 item.setIcon(default_icon)
@@ -127,8 +145,11 @@ class GalleryController:
             elif "(Japan)" in name or "(JP)" in name:
                 region = "JA"
 
+            # Let CoverDownloader try to extract a proper Game ID from the file
+            # (for example PS2 serial from the binary) instead of passing the
+            # filename stem which may cause GameTDB lookups to fail.
             downloader = CoverDownloader(
-                system, None, region, str(cache_dir_root), str(f)
+                system, None, region, str(cache_dir_root), str(f_path)
             )
 
             # Use partial to pass the item
@@ -139,7 +160,7 @@ class GalleryController:
             self.mw._qtcore.QThreadPool.globalInstance().start(downloader)
 
         except Exception as e:
-            logging.error(f"Error adding gallery item {f}: {e}")
+            logging.error(f"Error adding gallery item {entry.path}: {e}")
 
     def _update_gallery_icon(self, item, image_path):
         if not image_path or not Path(image_path).exists():
@@ -217,9 +238,14 @@ class GalleryController:
 
         logging.info(f"Identifying {file_path.name} using {Path(dat_path).name}...")
 
+        # Use signal emitter for thread safety
+        progress_cb = (
+            self.mw._signaler.progress_signal.emit if self.mw._signaler else None
+        )
+
         def _work():
             return worker_identify_single_file(
-                file_path, Path(dat_path), self.mw.log_msg, self.mw._progress_slot
+                file_path, Path(dat_path), self.mw.log_msg, progress_cb
             )
 
         def _done(res):
@@ -246,7 +272,7 @@ class GalleryController:
             region = "JA"
 
         downloader = CoverDownloader(
-            system, None, region, str(cache_dir_root), str(file_path)
+            system, file_path.stem, region, str(cache_dir_root), str(file_path)
         )
 
         conn_type = (
@@ -258,13 +284,3 @@ class GalleryController:
             partial(self._update_gallery_icon, item), conn_type
         )
         self.mw._qtcore.QThreadPool.globalInstance().start(downloader)
-
-    def _list_files_recursive(self, root: Path) -> list[Path]:
-        files = []
-        try:
-            for p in root.rglob("*"):
-                if p.is_file():
-                    files.append(p)
-        except Exception:
-            pass
-        return files

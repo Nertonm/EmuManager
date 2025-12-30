@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from emumanager.common.models import VerifyResult
+from emumanager.logging_cfg import get_correlation_id, set_correlation_id
+from emumanager.library import LibraryDB, LibraryEntry
 
 # Constants for logging
 LOG_WARN = "WARN: "
@@ -15,18 +17,72 @@ MSG_CANCELLED = "Operation cancelled by user."
 
 
 class GuiLogHandler(logging.Handler):
-    """Logging handler that redirects to the GUI callback."""
+    """Logging handler that redirects LogRecords to the GUI callback.
 
-    def __init__(self, log_callback: Callable[[str], None]):
+    The handler is robust: it ensures a formatter is present (defaults to the
+    project's JsonFormatter) and shields the GUI from handler errors.
+    """
+
+    def __init__(
+        self,
+        log_callback: Callable[[str], None],
+        formatter: logging.Formatter | None = None,
+    ):
         super().__init__()
         self.log_callback = log_callback
+        # Import here to avoid circular import at module import time
+        try:
+            from emumanager.logging_cfg import JsonFormatter
 
-    def emit(self, record):
+            default_formatter = JsonFormatter()
+        except Exception:
+            default_formatter = logging.Formatter(
+                "%(asctime)s - %(levelname)s - %(message)s"
+            )
+
+        self.setFormatter(formatter or default_formatter)
+
+    def emit(self, record: logging.LogRecord) -> None:
         try:
             msg = self.format(record)
-            self.log_callback(msg)
+            # Guard the callback in case it raises
+            try:
+                self.log_callback(msg)
+            except Exception:
+                # Best-effort: swallow GUI callback errors to avoid crashing app
+                pass
         except Exception:
             self.handleError(record)
+
+
+def get_logger_for_gui(
+    log_callback: Callable[[str], None],
+    name: str = "emumanager",
+    level: int = logging.INFO,
+) -> logging.Logger:
+    """Create or return a logger wired to a GuiLogHandler.
+
+    This is idempotent: if a handler for the provided callback is already
+    attached it won't be added again.
+    """
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+
+    # Check existing handlers for a GuiLogHandler using the same callback
+    for h in logger.handlers:
+        if (
+            isinstance(h, GuiLogHandler)
+            and getattr(h, "log_callback", None) == log_callback
+        ):
+            return logger
+
+    # Add a new GuiLogHandler
+    handler = GuiLogHandler(log_callback)
+    # Keep structured output by default (JsonFormatter is set inside GuiLogHandler)
+    logger.addHandler(handler)
+    # Prevent propagation to root to avoid duplicate messages in console
+    logger.propagate = False
+    return logger
 
 
 class GuiLogger:
@@ -36,19 +92,27 @@ class GuiLogger:
         self.log_callback = log_callback
 
     def info(self, msg, *args):
-        self.log_callback(msg % args if args else msg)
+        cid = get_correlation_id()
+        prefix = f"[{cid}] " if cid else ""
+        self.log_callback(prefix + (msg % args if args else msg))
 
     def warning(self, msg, *args):
-        self.log_callback(LOG_WARN + (msg % args if args else msg))
+        cid = get_correlation_id()
+        prefix = f"[{cid}] " if cid else ""
+        self.log_callback(prefix + LOG_WARN + (msg % args if args else msg))
 
     def error(self, msg, *args):
-        self.log_callback(LOG_ERROR + (msg % args if args else msg))
+        cid = get_correlation_id()
+        prefix = f"[{cid}] " if cid else ""
+        self.log_callback(prefix + LOG_ERROR + (msg % args if args else msg))
 
     def debug(self, msg, *args):
         pass  # Ignore debug logs in GUI by default
 
     def exception(self, msg, *args):
-        self.log_callback(LOG_EXCEPTION + (msg % args if args else msg))
+        cid = get_correlation_id()
+        prefix = f"[{cid}] " if cid else ""
+        self.log_callback(prefix + LOG_EXCEPTION + (msg % args if args else msg))
 
 
 def calculate_file_hash(
@@ -172,7 +236,9 @@ def worker_clean_junk(
     list_dirs_fn: Callable[[Path], list[Path]],
 ) -> str:
     """Worker function for cleaning junk files."""
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.common")
 
     files = list_files_fn(base_path)
     dirs = list_dirs_fn(base_path)
@@ -189,6 +255,37 @@ def worker_clean_junk(
         f"Cleanup complete. Deleted {deleted_files} files and "
         f"{deleted_dirs} empty directories."
     )
+
+
+def skip_if_compressed(
+    file_path: Path, logger: GuiLogger, db: LibraryDB | None = None
+) -> bool:
+    """Check library DB for this file and, if marked COMPRESSED, log and
+    create an action entry. Returns True if processing should be skipped.
+
+    Accepts an optional `db` parameter so callers (and tests) can inject a
+    specific LibraryDB instance (useful for temporary DBs). If `db` is None,
+    a default LibraryDB() is used (backwards compatible).
+    """
+    try:
+        local_db = db if db is not None else LibraryDB()
+        entry = local_db.get_entry(str(file_path))
+        if entry and entry.status == "COMPRESSED":
+            logger.info(f"Skipping compressed file (logged): {file_path.name}")
+            try:
+                local_db.log_action(
+                    str(file_path),
+                    "SKIPPED_COMPRESSED",
+                    "Scanner detected compressed file",
+                )
+            except Exception:
+                # If logging fails, don't break the worker; just proceed to skip
+                logger.warning(f"Failed to write action log for {file_path.name}")
+            return True
+    except Exception:
+        # If DB unavailable, don't skip — let the worker decide (avoid false skips)
+        logger.debug(f"Could not check library DB for {file_path}")
+    return False
 
 
 def emit_verification_result(
@@ -245,3 +342,85 @@ def make_result_collector(per_file_cb, results_list):
             _lst.append(d)
 
     return _collector
+
+
+def identify_game_by_hash(
+    file_path: Path,
+    db: LibraryDB | None = None,
+    progress_cb: Optional[Callable[[float], None]] = None,
+) -> Optional[LibraryEntry]:
+    """Try to identify a library entry for `file_path` by computing a strong
+    hash (sha1) and looking up the library DB. Returns a LibraryEntry if a
+    matching hash is found, otherwise None.
+
+    This function is intentionally conservative: it computes only the sha1
+    (fast enough for typical ROM sizes) and consults the library DB's
+    `find_entry_by_hash` method. Callers can then prefer the returned
+    entry's `match_name` or `dat_name` when constructing a canonical filename
+    for renaming.
+    """
+    try:
+        local_db = db if db is not None else LibraryDB()
+        # Compute SHA1; use progress callback if provided
+        sha1 = calculate_file_hash(file_path, "sha1", progress_cb=progress_cb)
+        if not sha1:
+            return None
+        found = local_db.find_entry_by_hash(sha1)
+        return found
+    except Exception:
+        return None
+
+
+def ensure_hashes_in_db(
+    file_path: Path,
+    db: LibraryDB | None = None,
+    progress_cb: Optional[Callable[[float], None]] = None,
+):
+    """Ensure MD5 and SHA1 hashes for `file_path` are present in the LibraryDB.
+
+    - If an entry exists and hashes are present, nothing is done.
+    - Otherwise compute MD5 and SHA1 and upsert a LibraryEntry with those values.
+
+    Returns a tuple (md5, sha1).
+    """
+    try:
+        local_db = db if db is not None else LibraryDB()
+        p = Path(file_path)
+        # Try to read existing entry
+        entry = local_db.get_entry(str(p))
+        md5 = entry.md5 if entry and entry.md5 else None
+        sha1 = entry.sha1 if entry and entry.sha1 else None
+
+        if md5 and sha1:
+            return md5, sha1
+
+        # Compute missing hashes
+        if not md5:
+            md5 = calculate_file_hash(p, "md5", progress_cb=progress_cb)
+        if not sha1:
+            sha1 = calculate_file_hash(p, "sha1", progress_cb=progress_cb)
+
+        # Build/update LibraryEntry
+        try:
+            st = p.stat()
+            new_entry = LibraryEntry(
+                path=str(p.resolve()),
+                system=(entry.system if entry else ""),
+                size=st.st_size,
+                mtime=st.st_mtime,
+                crc32=(entry.crc32 if entry else None),
+                md5=md5,
+                sha1=sha1,
+                sha256=(entry.sha256 if entry else None),
+                status=(entry.status if entry else ""),
+                match_name=(entry.match_name if entry else None),
+                dat_name=(entry.dat_name if entry else None),
+            )
+            local_db.update_entry(new_entry)
+        except Exception:
+            # Best-effort: ignore DB write failures
+            pass
+
+        return md5, sha1
+    except Exception:
+        return None, None

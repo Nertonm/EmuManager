@@ -3,8 +3,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # We will import MainWindowBase inside the test/fixture to avoid global side effects
+
 
 class TestMainWindowLogic:
     @pytest.fixture(scope="class", autouse=True)

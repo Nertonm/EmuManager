@@ -218,7 +218,12 @@ def convert_directory(
         )
 
     results: List[ConversionResult] = []
-    files = sorted(directory.glob("*.cso"))
+
+    # Collect both CSO and ISO files. CSO require maxcso; ISO only need chdman.
+    cso_files = sorted(directory.glob("*.cso"))
+    iso_files = sorted(directory.glob("*.iso"))
+
+    files = [*cso_files, *iso_files]
     total = len(files)
 
     for i, p in enumerate(files):
@@ -227,17 +232,76 @@ def convert_directory(
 
         logger.info("--------------------------------------------------")
         logger.info("Processing: %s", p.name)
-        res = convert_file(
-            p,
-            maxcso=maxcso,
-            chdman=chdman,
-            backup_dir=backup_dir,
-            dry_run=dry_run,
-            timeout=timeout,
-            remove_original=remove_original,
-            verbose=verbose,
-        )
-        results.append(res)
+
+        if p.suffix.lower() == ".cso":
+            # CSO -> ISO -> CHD (existing flow)
+            res = convert_file(
+                p,
+                maxcso=maxcso,
+                chdman=chdman,
+                backup_dir=backup_dir,
+                dry_run=dry_run,
+                timeout=timeout,
+                remove_original=remove_original,
+                verbose=verbose,
+            )
+            results.append(res)
+        elif p.suffix.lower() == ".iso":
+            # ISO -> CHD directly
+            chd_path = p.with_suffix(".chd")
+            if chd_path.exists():
+                msg = f"{chd_path.name} already exists, skipping"
+                logger.info(msg)
+                results.append(
+                    ConversionResult(
+                        cso=p, iso=p, chd=chd_path, success=False, message=msg
+                    )
+                )
+                continue
+
+            try:
+                ok = _convert_iso_to_chd(
+                    p, chd_path, chdman, dry_run, timeout, verbose=verbose
+                )
+                if not ok:
+                    msg = "Failed to produce CHD from ISO"
+                    logger.error(msg)
+                    results.append(
+                        ConversionResult(
+                            cso=p, iso=p, chd=None, success=False, message=msg
+                        )
+                    )
+                    continue
+
+                # finalize: move/remove original ISO according to remove_original
+                if not dry_run:
+                    if remove_original:
+                        try:
+                            # move to backup_dir
+                            backup_dir.mkdir(parents=True, exist_ok=True)
+                            p.rename(backup_dir / p.name)
+                        except Exception:
+                            logger.debug(
+                                "Failed to move original ISO to backup", exc_info=True
+                            )
+
+                results.append(
+                    ConversionResult(
+                        cso=p, iso=p, chd=chd_path, success=True, message="OK"
+                    )
+                )
+            except subprocess.CalledProcessError as exc:
+                msg = f"External tool failed: {exc}"
+                logger.error(msg)
+                results.append(
+                    ConversionResult(cso=p, iso=p, chd=None, success=False, message=msg)
+                )
+            except Exception as exc:  # pragma: no cover - unexpected
+                msg = f"Unexpected error: {exc}"
+                logger.exception(msg)
+                results.append(
+                    ConversionResult(cso=p, iso=p, chd=None, success=False, message=msg)
+                )
 
     if progress_callback:
         progress_callback(1.0, "PS2 Conversion complete")

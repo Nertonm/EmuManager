@@ -74,6 +74,22 @@ A documentação completa está disponível na pasta `docs/` e pode ser visualiz
     - Abrir pasta do arquivo
     - Copiar `CRC32`, `SHA1`, `MD5`, `SHA256`
 
+ 
+## Audit and hash preservation
+
+EmuManager registra ações importantes que realiza na sua biblioteca em uma tabela de auditoria (`library_actions`) dentro do banco de dados da biblioteca. Exemplos de ações gravadas:
+
+- `SKIPPED_COMPRESSED` — arquivo marcado como comprimido foi ignorado durante processamento.
+- `RENAMED` — arquivo renomeado para o padrão (por worker ou via GUI).
+- `COMPRESSED` — arquivo comprimido (por exemplo, ISO -> CSO) e a transformação foi registrada.
+
+Quando o aplicativo comprime ou converte arquivos, ele tenta preservar os dados de verificação (MD5 e SHA1) para que você ainda possa verificar o jogo mesmo se o original for removido:
+
+- Antes de transformar/remover um arquivo original o EmuManager calcula MD5 e SHA1 (se ainda não existirem) e os grava no índice da biblioteca.
+- Após conversão/compressão bem-sucedida, a entrada da biblioteca para o arquivo resultante é atualizada com os hashes originais e o `status` é definido como `COMPRESSED`.
+- Todas essas ações são escritas em `library_actions` com uma mensagem de detalhe curta para auditoria.
+
+Observação: esse comportamento é "best-effort" — o cálculo de hashes em arquivos grandes pode ser demorado. Se a gravação no DB falhar, a operação continuará, mas será registrado um aviso no log. No GUI você pode acompanhar o progresso em operações de lote.
 
 ### CLI (Linha de Comando)
 O módulo `emumanager` também pode ser usado via terminal para automação e scripts. O script legado `switch_organizer.py` ainda está disponível para compatibilidade, mas o foco agora é o pacote `emumanager`.

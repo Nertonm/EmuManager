@@ -14,7 +14,8 @@ from emumanager.switch.cli import (
     verify_integrity,
 )
 from emumanager.switch.main_helpers import process_files, run_health_check
-from emumanager.workers.common import MSG_CANCELLED, GuiLogger
+from emumanager.workers.common import MSG_CANCELLED, GuiLogger, skip_if_compressed, get_logger_for_gui
+from emumanager.logging_cfg import set_correlation_id
 
 MSG_NSZ_MISSING = "Error: 'nsz' tool not found."
 
@@ -28,12 +29,26 @@ def worker_organize(
     progress_cb: Optional[Callable[[float, str], None]] = None,
 ) -> str:
     """Worker function for organizing Switch ROMs."""
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.switch")
 
     all_files = list_files_fn(base_path)
     # Filter for Switch extensions only to avoid processing other systems' files
     switch_exts = {".nsp", ".nsz", ".xci", ".xcz"}
     files = [f for f in all_files if f.suffix.lower() in switch_exts]
+
+    # Respect compressed markers in the library DB (skip items marked COMPRESSED)
+    filtered = []
+    skipped_compressed = 0
+    for f in files:
+        if skip_if_compressed(f, logger):
+            skipped_compressed += 1
+            continue
+        filtered.append(f)
+    if skipped_compressed:
+        logger.info(f"Skipped {skipped_compressed} files marked as compressed")
+    files = filtered
 
     if not files:
         return "No Switch files found to organize."
@@ -122,7 +137,9 @@ def worker_health_check(
     list_files_fn: Callable[[Path], list[Path]],
 ) -> str:
     """Worker function for health check."""
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.switch")
     files = list_files_fn(base_path)
 
     def verify_fn(f, deep=False, return_output=False):
@@ -168,7 +185,9 @@ def worker_switch_compress(
     list_files_fn: Callable[[Path], list[Path]],
 ) -> str:
     """Worker function for bulk Switch compression."""
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.switch")
     files = list_files_fn(base_path)
 
     # Filter for compressible files (NSP, XCI)
@@ -269,7 +288,9 @@ def worker_switch_decompress(
     list_files_fn: Callable[[Path], list[Path]],
 ) -> str:
     """Worker function for bulk Switch decompression."""
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.switch")
     files = list_files_fn(base_path)
 
     # Filter for decompressible files (NSZ, XCZ)
@@ -333,7 +354,9 @@ def worker_recompress_single(
     filepath: Path, env: dict, args: Any, log_cb: Callable[[str], None]
 ) -> Optional[Path]:
     """Worker function for recompressing a single Switch file."""
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.switch")
 
     tool_nsz = env.get("TOOL_NSZ")
     if not tool_nsz:
@@ -412,7 +435,9 @@ def worker_decompress_single(
     filepath: Path, env: dict, args: Any, log_cb: Callable[[str], None]
 ) -> Optional[Path]:
     """Worker function for decompressing a single Switch file."""
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.switch")
 
     tool_nsz = env.get("TOOL_NSZ")
     if not tool_nsz:
@@ -447,7 +472,9 @@ def worker_compress_single(
     filepath: Path, env: dict, args: Any, log_cb: Callable[[str], None]
 ) -> Optional[Path]:
     """Worker function for compressing a single Switch file."""
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.switch")
 
     tool_nsz = env.get("TOOL_NSZ")
     if not tool_nsz:

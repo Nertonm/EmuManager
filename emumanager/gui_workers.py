@@ -5,6 +5,7 @@ from emumanager.workers.common import GuiLogger, GuiLogHandler, worker_clean_jun
 from emumanager.workers.dolphin import (
     DOLPHIN_CONVERTIBLE_EXTENSIONS,
     worker_dolphin_convert,
+    worker_dolphin_convert_single,
     worker_dolphin_decompress_single,
     worker_dolphin_organize,
     worker_dolphin_recompress_single,
@@ -28,14 +29,18 @@ from emumanager.workers.ps2 import (
 from emumanager.workers.ps3 import worker_ps3_organize, worker_ps3_verify
 from emumanager.workers.psp import (
     worker_psp_compress,
+    worker_psp_compress_single,
     worker_psp_organize,
     worker_psp_verify,
 )
 from emumanager.workers.psx import (
+    worker_chd_decompress_single,
+    worker_chd_recompress_single,
     worker_psx_convert,
     worker_psx_organize,
     worker_psx_verify,
 )
+from emumanager.workers.scanner import worker_scan_library
 from emumanager.workers.switch import (
     worker_compress_single,
     worker_decompress_single,
@@ -65,14 +70,17 @@ __all__ = [
     "worker_ps2_convert",
     "worker_ps2_verify",
     "worker_ps2_organize",
+    "worker_chd_decompress_single",
     "worker_psx_convert",
     "worker_psx_verify",
     "worker_psx_organize",
     "worker_ps3_verify",
     "worker_ps3_organize",
+    "worker_chd_recompress_single",
     "worker_psp_verify",
     "worker_psp_organize",
     "worker_psp_compress",
+    "worker_psp_compress_single",
     "worker_n3ds_verify",
     "worker_n3ds_organize",
     "worker_n3ds_compress",
@@ -82,6 +90,7 @@ __all__ = [
     "worker_n3ds_convert_cia",
     "worker_n3ds_decrypt",
     "worker_dolphin_convert",
+    "worker_dolphin_convert_single",
     "worker_dolphin_verify",
     "worker_dolphin_organize",
     "worker_dolphin_decompress_single",
@@ -90,4 +99,5 @@ __all__ = [
     "worker_hash_verify",
     "worker_identify_single_file",
     "worker_identify_all",
+    "worker_scan_library",
 ]

@@ -11,6 +11,11 @@ import logging
 import logging.handlers
 from pathlib import Path
 from typing import Optional
+import contextvars
+import functools
+import time
+import uuid
+import json
 
 
 class Col:
@@ -61,6 +66,109 @@ def get_logger(
             logger.debug("Could not create file handler for logger at %s", base_dir)
 
     return logger
+
+
+# Correlation ID support for tracing an execution across modules
+_cid_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "emumanager_correlation_id", default=None
+)
+
+
+def set_correlation_id(cid: str | None = None) -> str:
+    """Set or create and set a correlation id for the current context.
+
+    Returns the correlation id string.
+    """
+    if cid is None:
+        cid = uuid.uuid4().hex
+    _cid_var.set(cid)
+    return cid
+
+
+def get_correlation_id() -> str | None:
+    return _cid_var.get()
+
+
+class JsonFormatter(logging.Formatter):
+    """Minimal JSON formatter that includes correlation id when available."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload = {
+            "time": self.formatTime(record, self.datefmt),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        cid = get_correlation_id()
+        if cid:
+            payload["correlation_id"] = cid
+        # Attach exception info if present
+        if record.exc_info:
+            payload["exc_info"] = self.formatException(record.exc_info)
+        return json.dumps(payload, ensure_ascii=False)
+
+
+def _sanitize_args(args, kwargs, redact_keys=("password", "pwd", "secret")):
+    def sanitize_obj(o):
+        try:
+            if isinstance(o, dict):
+                return {
+                    k: ("***REDACTED***" if k.lower() in redact_keys else sanitize_obj(v))
+                    for k, v in o.items()
+                }
+            if isinstance(o, (list, tuple)):
+                return type(o)(sanitize_obj(x) for x in o)
+            return o
+        except Exception:
+            return None
+
+    return sanitize_obj(args), sanitize_obj(kwargs)
+
+
+def log_call(level: int = logging.INFO, redact_keys: tuple[str, ...] = ("password",)):
+    """Decorator that logs function entry, args (sanitized), duration and exit.
+
+    Usage:
+        @log_call()
+        def foo(...):
+            ...
+    """
+
+    def _decorator(func):
+        @functools.wraps(func)
+        def _wrapper(*args, **kwargs):
+            logger = logging.getLogger(func.__module__)
+            start = time.time()
+            try:
+                s_args, s_kwargs = _sanitize_args(args, kwargs, redact_keys)
+                logger.debug(
+                    "Entering %s; args=%s kwargs=%s",
+                    func.__qualname__,
+                    s_args,
+                    s_kwargs,
+                )
+                result = func(*args, **kwargs)
+                duration = (time.time() - start) * 1000.0
+                logger.log(
+                    level,
+                    "Exited %s; duration_ms=%.2f; return=%s",
+                    func.__qualname__,
+                    duration,
+                    repr(result)[:100],
+                )
+                return result
+            except Exception:
+                duration = (time.time() - start) * 1000.0
+                logger.exception(
+                    "Exception in %s after %.2fms",
+                    func.__qualname__,
+                    duration,
+                )
+                raise
+
+        return _wrapper
+
+    return _decorator
 
 
 def get_fileops_logger(

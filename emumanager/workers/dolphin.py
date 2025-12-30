@@ -19,8 +19,13 @@ from emumanager.workers.common import (
     calculate_file_hash,
     create_file_progress_cb,
     emit_verification_result,
+    ensure_hashes_in_db,
+    identify_game_by_hash,
     make_result_collector,
+    skip_if_compressed,
 )
+from emumanager.workers.common import get_logger_for_gui
+from emumanager.logging_cfg import set_correlation_id
 
 DOLPHIN_CONVERTIBLE_EXTENSIONS = {".iso", ".gcm", ".wbfs"}
 DOLPHIN_ALL_EXTENSIONS = {".iso", ".gcm", ".wbfs", ".rvz", ".gcZ"}
@@ -43,6 +48,39 @@ def _convert_dolphin_file(
 
     if success and getattr(args, "rm_originals", False):
         try:
+            # Preserve original file hashes before removing the original. This
+            # lets verification/identification still work for the new RVZ.
+            lib_db = LibraryDB()
+            try:
+                md5, sha1 = ensure_hashes_in_db(f, db=lib_db)
+            except Exception:
+                md5, sha1 = None, None
+
+            try:
+                st = rvz_file.stat()
+                new_entry = LibraryEntry(
+                    path=str(rvz_file.resolve()),
+                    system="",
+                    size=st.st_size,
+                    mtime=st.st_mtime,
+                    crc32=None,
+                    md5=md5,
+                    sha1=sha1,
+                    sha256=None,
+                    status="COMPRESSED",
+                    match_name=None,
+                    dat_name=None,
+                )
+                lib_db.update_entry(new_entry)
+                lib_db.log_action(
+                    str(rvz_file),
+                    "COMPRESSED",
+                    f"Converted from {f.name} and original removed",
+                )
+            except Exception:
+                # Best-effort; proceed even if DB writes fail
+                pass
+
             from emumanager.common.fileops import safe_unlink
 
             safe_unlink(f, logger)
@@ -57,9 +95,12 @@ def worker_dolphin_convert(
     args: Any,
     log_cb: Callable[[str], None],
     list_files_fn: Callable[[Path], list[Path]],
+    **kwargs
 ) -> str:
     """Worker function for GameCube/Wii RVZ conversion."""
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.dolphin")
 
     targets = _resolve_dolphin_targets(base_path)
     if not targets:
@@ -104,6 +145,46 @@ def worker_dolphin_convert(
         progress_cb(1.0, "Dolphin Conversion complete")
 
     return f"Dolphin Conversion complete. Converted: {total_converted}"
+
+
+def worker_dolphin_convert_single(
+    path: Path, args: Any, log_cb: Callable[[str], None]
+    , **kwargs
+) -> str:
+    """Convert a single GameCube/Wii ISO/GCM/WBFS to RVZ (single-file wrapper).
+
+    This avoids invoking the directory scanner and is useful for context-menu
+    single-file operations.
+    """
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.dolphin")
+
+    if path.suffix.lower() not in DOLPHIN_CONVERTIBLE_EXTENSIONS:
+        logger.warning(f"No convertible handler for {path.suffix}")
+        return "No-op"
+
+    rvz_file = path.with_suffix(".rvz")
+    if rvz_file.exists():
+        logger.info(f"Skipping {path.name}, RVZ already exists.")
+        return f"Skipped: {path.name}"
+
+    converter = DolphinConverter(logger=logger)
+    if not converter.check_tool():
+        return "Error: 'dolphin-tool' not found. Please install Dolphin Emulator."
+
+    logger.info(f"Converting {path.name} -> RVZ...")
+    success = converter.convert_to_rvz(path, rvz_file)
+
+    if success and getattr(args, "rm_originals", False):
+        try:
+            from emumanager.common.fileops import safe_unlink
+
+            safe_unlink(path, logger)
+        except Exception as e:
+            logger.error(f"Failed to delete {path.name}: {e}")
+
+    return f"Dolphin Conversion complete. Converted: {1 if success else 0}"
 
 
 def _verify_dolphin_file(
@@ -227,7 +308,12 @@ def _collect_dolphin_files(
         logger.info(f"Scanning {target_dir}...")
         files = list_files_fn(target_dir)
         # Filter relevant files
-        relevant = [f for f in files if f.suffix.lower() in DOLPHIN_ALL_EXTENSIONS]
+        relevant = [
+            f
+            for f in files
+            if f.suffix.lower() in DOLPHIN_ALL_EXTENSIONS
+            and not skip_if_compressed(f, logger)
+        ]
         all_files.extend([(f, target_dir) for f in relevant])
     return all_files
 
@@ -252,9 +338,12 @@ def worker_dolphin_verify(
     args: Any,
     log_cb: Callable[[str], None],
     list_files_fn: Callable[[Path], list[Path]],
+    **kwargs
 ) -> str:
     """Worker function for GameCube/Wii verification."""
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.dolphin")
 
     targets = _resolve_dolphin_targets(base_path)
     if not targets:
@@ -370,17 +459,41 @@ def _organize_dolphin_file(
 ) -> str:
     """Returns 'renamed', 'skipped', or 'error'."""
     try:
-        # Get metadata
+        # First try to identify by hash in the library DB (prefer strong match)
+        lib_db = LibraryDB()
+        id_entry = identify_game_by_hash(f, db=lib_db)
+
+        # Get metadata from local GC/Wii databases as fallback
         meta, db_title = _get_dolphin_metadata(f, target_dir)
 
         game_id = meta.get("game_id")
         internal_title = meta.get("internal_name")
 
+        # If hash lookup returned a library match, prefer its match_name/dat_name
+        title = None
+        if id_entry:
+            # Prefer a human-friendly match_name, then dat_name
+            full = id_entry.match_name or id_entry.dat_name
+            if full:
+                # Try to extract a trailing [GAMEID] if present
+                m = re.search(r"\[([^\]]+)\]$", full)
+                if m:
+                    game_id = game_id or m.group(1).strip()
+                    title = re.sub(r"\s*\[[^\]]+\]\s*$", "", full).strip()
+                else:
+                    title = full
+
+        if not title:
+            # fall back to dat/db title or internal metadata title
+            if db_title:
+                title = db_title
+            else:
+                title = internal_title
+
+        # If we still don't have a game_id and metadata lacks it, skip
         if not game_id:
             logger.warning(f"Skipping {f.name}: Could not determine Game ID")
             return "skipped"
-
-        title = db_title if db_title else internal_title
 
         # Sanitize title
         clean_title = title if title else "Unknown"
@@ -425,9 +538,12 @@ def worker_dolphin_organize(
     args: Any,
     log_cb: Callable[[str], None],
     list_files_fn: Callable[[Path], list[Path]],
+    **kwargs
 ) -> str:
     """Worker function for GameCube/Wii organization (renaming)."""
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.dolphin")
 
     targets = _resolve_dolphin_targets(base_path)
 
@@ -459,6 +575,11 @@ def worker_dolphin_organize(
                 f"Processing {f.name}...",
             )
 
+        # Skip compressed/archived files (keep library audit trail)
+        if skip_if_compressed(f, logger):
+            skipped += 1
+            continue
+
         status = _organize_dolphin_file(f, target_dir, dry_run, logger)
         if status == "renamed":
             renamed += 1
@@ -478,9 +599,12 @@ def worker_dolphin_organize(
 
 def worker_dolphin_decompress_single(
     filepath: Path, args: Any, log_cb: Callable[[str], None]
+    , **kwargs
 ) -> Optional[Path]:
     """Worker function for decompressing a single GameCube/Wii file (RVZ -> ISO)."""
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.dolphin")
 
     converter = DolphinConverter(logger=logger)
     if not converter.check_tool():
@@ -510,9 +634,12 @@ def worker_dolphin_decompress_single(
 
 def worker_dolphin_recompress_single(
     filepath: Path, args: Any, log_cb: Callable[[str], None]
+    , **kwargs
 ) -> Optional[Path]:
     """Worker function for recompressing a single GameCube/Wii file (RVZ -> RVZ)."""
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.dolphin")
 
     converter = DolphinConverter(logger=logger)
     if not converter.check_tool():
@@ -567,9 +694,12 @@ def worker_dolphin_recompress_single(
 
 def worker_dolphin_compress_single(
     filepath: Path, env: dict, args: Any, log_cb: Callable[[str], None]
+    , **kwargs
 ) -> Optional[Path]:
     """Worker function for compressing a single GameCube/Wii file (ISO -> RVZ)."""
-    logger = GuiLogger(log_cb)
+    # Initialize correlation id and use structured logger wired to GUI
+    set_correlation_id()
+    logger = get_logger_for_gui(log_cb, name="emumanager.workers.dolphin")
 
     converter = DolphinConverter(logger=logger)
     if not converter.check_tool():
