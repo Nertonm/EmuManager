@@ -27,6 +27,12 @@ from emumanager.workers.common import (
 from emumanager.workers.common import get_logger_for_gui
 from emumanager.logging_cfg import set_correlation_id, log_call
 
+# Backwards-compatible aliases so tests that patch module-level helpers
+# (e.g. monkeypatch.setattr(ps2_module, 'find_tool', ...)) continue to work.
+# These resolve to the dynamic wrappers in workers_common at runtime.
+find_tool = workers_common.find_tool
+run_cmd = workers_common.run_cmd
+
 
 def _strip_serial_tokens(name: str) -> str:
     """Remove bracketed serial-like tokens from a filename stem.
