@@ -76,8 +76,10 @@ def worker_ps2_convert(
     logger.info(f"Starting PS2 conversion in: {target_dir}")
 
     # We need to find tools manually or assume they are in path
-    maxcso = workers_common.find_tool("maxcso")
-    chdman = workers_common.find_tool("chdman")
+    # Use the module-level alias `find_tool` so tests can monkeypatch
+    # `emumanager.workers.ps2.find_tool` easily.
+    maxcso = find_tool("maxcso")
+    chdman = find_tool("chdman")
 
     if not maxcso or not chdman:
         return "Error: 'maxcso' or 'chdman' not found in PATH."
@@ -124,8 +126,8 @@ def worker_chd_to_cso_single(
     set_correlation_id()
     logger = get_logger_for_gui(log_cb, name="emumanager.workers.ps2")
 
-    chdman = workers_common.find_tool("chdman")
-    maxcso = workers_common.find_tool("maxcso")
+    chdman = find_tool("chdman")
+    maxcso = find_tool("maxcso")
     if not chdman or not maxcso:
         return "Error: 'chdman' or 'maxcso' not found in PATH."
 
