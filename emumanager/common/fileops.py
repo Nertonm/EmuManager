@@ -20,14 +20,27 @@ from typing import Any, Callable, Optional
 
 def _is_exact_duplicate_fast(s: Path, d: Path) -> bool:
     try:
-        # Use full precision modification time comparison to avoid false
-        # positives introduced by truncating to integer seconds. Two files
-        # written close together may share the same integer-second mtime but
-        # not the exact timestamp.
-        return (
-            os.path.getsize(s) == os.path.getsize(d)
-            and os.path.getmtime(s) == os.path.getmtime(d)
-        )
+        # Use full-precision mtime + size check as a fast hint, but guard
+        # against false positives by performing a cheap byte-prefix compare
+        # when metadata matches. This avoids treating different small files
+        # as duplicates when they were created close together.
+        if os.path.getsize(s) != os.path.getsize(d):
+            return False
+        if os.path.getmtime(s) != os.path.getmtime(d):
+            return False
+
+        # Quick content check: compare up to the first 4 KiB. For small files
+        # this reads the entire file; for large files this gives a fast
+        # heuristic that usually rules out coincidental metadata collisions.
+        try:
+            with open(s, "rb") as fs, open(d, "rb") as fd:
+                a = fs.read(4096)
+                b = fd.read(4096)
+                return a == b
+        except Exception:
+            # If reading fails, fall back to conservative False so we don't
+            # accidentally remove non-duplicates.
+            return False
     except Exception:
         return False
 
