@@ -5,9 +5,10 @@ import logging
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from emumanager.common.execution import find_tool, run_cmd
 from emumanager.common.models import VerifyResult
-from emumanager.logging_cfg import get_correlation_id, set_correlation_id
 from emumanager.library import LibraryDB, LibraryEntry
+from emumanager.logging_cfg import get_correlation_id, set_correlation_id, log_call
 
 # Constants for logging
 LOG_WARN = "WARN: "
@@ -228,6 +229,7 @@ def _clean_empty_dirs(
     return count
 
 
+@log_call(level=logging.INFO)
 def worker_clean_junk(
     base_path: Path,
     args: Any,
@@ -238,6 +240,7 @@ def worker_clean_junk(
     """Worker function for cleaning junk files."""
     # Initialize correlation id and use structured logger wired to GUI
     set_correlation_id()
+
     logger = get_logger_for_gui(log_cb, name="emumanager.workers.common")
 
     files = list_files_fn(base_path)
@@ -424,3 +427,34 @@ def ensure_hashes_in_db(
         return md5, sha1
     except Exception:
         return None, None
+
+
+def verify_chd(
+    file_path: Path,
+    *,
+    tool_chdman: str = "chdman",
+    timeout: int = 30,
+) -> bool:
+    """Verify a .chd file using chdman verify.
+
+    Returns True when chdman reports success (exit code 0). This is a
+    conservative check intended to be used before attempting extraction or
+    further processing of CHD files.
+    """
+    try:
+        chdman = find_tool(tool_chdman)
+        if not chdman:
+            # chdman not available; cannot verify here
+            return False
+        # chdman verify -i <file>
+        res = run_cmd([str(chdman), "verify", "-i", str(file_path)], timeout=timeout)
+        rc = getattr(res, "returncode", None)
+        if isinstance(rc, int) and rc == 0:
+            return True
+        # As a fallback, inspect stdout for common success strings
+        out = getattr(res, "stdout", "") or ""
+        if "verify: OK" in out.lower() or "verify ok" in out.lower():
+            return True
+        return False
+    except Exception:
+        return False

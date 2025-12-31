@@ -8,6 +8,7 @@ application; if PySide6 is not installed a clear RuntimeError is raised.
 from __future__ import annotations
 
 from importlib import import_module
+from .logging_cfg import configure_logging, set_correlation_id
 
 try:
     # Normal package import when used as module: `python -m emumanager.gui`
@@ -72,12 +73,23 @@ def _run_app():
 
 
 def main() -> int:
+    # Configure logging and create a correlation id for this run.
+    # Run early so imported modules and workers see the configured logger.
+    configure_logging()
+    set_correlation_id()
+
     # Check for Qt availability and run
     _ensure_qt()
     try:
         return _run_app() or 0
     except Exception as e:
-        print("GUI error:", e)
+        # Prefer logging the error but fall back to printing if logging not available
+        try:
+            import logging as _logging
+
+            _logging.getLogger(__name__).exception("GUI error: %s", e)
+        except Exception:
+            print("GUI error:", e)
         return 2
 
 

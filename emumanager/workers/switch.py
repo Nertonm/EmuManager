@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import logging
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Callable, Optional
@@ -15,11 +16,12 @@ from emumanager.switch.cli import (
 )
 from emumanager.switch.main_helpers import process_files, run_health_check
 from emumanager.workers.common import MSG_CANCELLED, GuiLogger, skip_if_compressed, get_logger_for_gui
-from emumanager.logging_cfg import set_correlation_id
+from emumanager.logging_cfg import set_correlation_id, log_call
 
 MSG_NSZ_MISSING = "Error: 'nsz' tool not found."
 
 
+@log_call(level=logging.INFO)
 def worker_organize(
     base_path: Path,
     env: dict,
@@ -129,6 +131,7 @@ def worker_organize(
     return f"Organization complete. Stats: {stats}"
 
 
+@log_call(level=logging.INFO)
 def worker_health_check(
     base_path: Path,
     env: dict,
@@ -177,6 +180,7 @@ def worker_health_check(
     )
 
 
+@log_call(level=logging.INFO)
 def worker_switch_compress(
     base_path: Path,
     env: dict,
@@ -280,6 +284,7 @@ def _compress_single_file(
         return "failed"
 
 
+@log_call(level=logging.INFO)
 def worker_switch_decompress(
     base_path: Path,
     env: dict,
@@ -350,6 +355,7 @@ def worker_switch_decompress(
     return f"Decompression complete. Success: {success}, Failed: {failed}"
 
 
+@log_call(level=logging.INFO)
 def worker_recompress_single(
     filepath: Path, env: dict, args: Any, log_cb: Callable[[str], None]
 ) -> Optional[Path]:
@@ -431,6 +437,7 @@ def worker_recompress_single(
     return None
 
 
+@log_call(level=logging.INFO)
 def worker_decompress_single(
     filepath: Path, env: dict, args: Any, log_cb: Callable[[str], None]
 ) -> Optional[Path]:
@@ -468,6 +475,7 @@ def worker_decompress_single(
         return None
 
 
+@log_call(level=logging.INFO)
 def worker_compress_single(
     filepath: Path, env: dict, args: Any, log_cb: Callable[[str], None]
 ) -> Optional[Path]:

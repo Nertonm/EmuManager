@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import shutil
 import tempfile
+import logging
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -25,7 +26,7 @@ from emumanager.workers.common import (
     skip_if_compressed,
 )
 from emumanager.workers.common import get_logger_for_gui
-from emumanager.logging_cfg import set_correlation_id
+from emumanager.logging_cfg import set_correlation_id, log_call
 
 DOLPHIN_CONVERTIBLE_EXTENSIONS = {".iso", ".gcm", ".wbfs"}
 DOLPHIN_ALL_EXTENSIONS = {".iso", ".gcm", ".wbfs", ".rvz", ".gcZ"}
@@ -90,6 +91,7 @@ def _convert_dolphin_file(
     return success
 
 
+@log_call(level=logging.INFO)
 def worker_dolphin_convert(
     base_path: Path,
     args: Any,
@@ -147,9 +149,9 @@ def worker_dolphin_convert(
     return f"Dolphin Conversion complete. Converted: {total_converted}"
 
 
+@log_call(level=logging.INFO)
 def worker_dolphin_convert_single(
-    path: Path, args: Any, log_cb: Callable[[str], None]
-    , **kwargs
+    path: Path, args: Any, log_cb: Callable[[str], None], **kwargs
 ) -> str:
     """Convert a single GameCube/Wii ISO/GCM/WBFS to RVZ (single-file wrapper).
 
@@ -333,6 +335,7 @@ def _resolve_dolphin_targets(base_path: Path) -> list[Path]:
     return targets
 
 
+@log_call(level=logging.INFO)
 def worker_dolphin_verify(
     base_path: Path,
     args: Any,
@@ -597,10 +600,11 @@ def worker_dolphin_organize(
     )
 
 
+@log_call(level=logging.INFO)
 def worker_dolphin_decompress_single(
-    filepath: Path, args: Any, log_cb: Callable[[str], None]
-    , **kwargs
+    filepath: Path, args: Any, log_cb: Callable[[str], None], **kwargs
 ) -> Optional[Path]:
+    """Worker function for decompressing a single GameCube/Wii file (RVZ -> ISO)."""
     """Worker function for decompressing a single GameCube/Wii file (RVZ -> ISO)."""
     # Initialize correlation id and use structured logger wired to GUI
     set_correlation_id()

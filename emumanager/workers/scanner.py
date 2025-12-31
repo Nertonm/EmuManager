@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import os
+import logging
 from pathlib import Path
 from typing import Callable, Optional
 
 from emumanager.library import LibraryDB, LibraryEntry
 from emumanager.workers.common import get_logger_for_gui
-from emumanager.logging_cfg import set_correlation_id
+from emumanager.logging_cfg import set_correlation_id, log_call
 
 # Common archive/compressed extensions we should detect and mark in the DB.
 ARCHIVE_EXTS = {
@@ -34,6 +35,7 @@ def is_compressed_file(p: Path) -> bool:
         return p.suffix.lower() in ARCHIVE_EXTS
 
 
+@log_call(level=logging.INFO)
 def worker_scan_library(
     base_dir: Path,
     log_msg: Callable[[str], None],

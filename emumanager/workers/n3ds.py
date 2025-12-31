@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from typing import Any, Callable, Optional
+import logging
 
 from emumanager.converters.n3ds_converter import (
     compress_to_7z,
@@ -24,7 +25,7 @@ from emumanager.workers.common import (
     skip_if_compressed,
 )
 from emumanager.workers.common import get_logger_for_gui
-from emumanager.logging_cfg import set_correlation_id
+from emumanager.logging_cfg import set_correlation_id, log_call
 
 MSG_N3DS_DIR_NOT_FOUND = "3DS ROMs directory not found."
 N3DS_SUBDIRS = ["roms/3ds", "3ds", "n3ds", "roms/n3ds"]
@@ -83,6 +84,7 @@ def _process_n3ds_item(
     return status
 
 
+@log_call(level=logging.INFO)
 def worker_n3ds_verify(
     base_path: Path,
     args: Any,
@@ -158,6 +160,7 @@ def worker_n3ds_verify(
     return f"Scan complete. Identified: {found}, Unknown: {unknown}"
 
 
+
 def _organize_n3ds_item(item: Path, args: Any, logger: GuiLogger) -> bool:
     meta = n3ds_meta.get_metadata(item)
     serial = meta.get("serial")
@@ -194,6 +197,7 @@ def _organize_n3ds_item(item: Path, args: Any, logger: GuiLogger) -> bool:
         return False
 
 
+@log_call(level=logging.INFO)
 def worker_n3ds_organize(
     base_path: Path,
     args: Any,
@@ -248,6 +252,7 @@ def worker_n3ds_organize(
     return f"Organization complete. Renamed: {renamed}, Skipped: {skipped}"
 
 
+@log_call(level=logging.INFO)
 def worker_n3ds_compress(
     base_path: Path,
     args: Any,
@@ -326,6 +331,7 @@ def worker_n3ds_compress(
     )
 
 
+@log_call(level=logging.INFO)
 def worker_n3ds_decompress(
     base_path: Path,
     args: Any,
@@ -394,6 +400,7 @@ def worker_n3ds_decompress(
     return f"Decompression complete. Decompressed: {decompressed}, Failed: {failed}"
 
 
+@log_call(level=logging.INFO)
 def worker_n3ds_convert_cia(
     base_path: Path,
     args: Any,
@@ -470,6 +477,7 @@ def worker_n3ds_convert_cia(
     )
 
 
+@log_call(level=logging.INFO)
 def worker_n3ds_decrypt(
     base_path: Path,
     args: Any,
@@ -548,6 +556,7 @@ def worker_n3ds_decrypt(
     )
 
 
+@log_call(level=logging.INFO)
 def worker_n3ds_compress_single(
     filepath: Path, args: Any, log_cb: Callable[[str], None]
 ) -> Optional[Path]:
@@ -579,6 +588,7 @@ def worker_n3ds_compress_single(
         return None
 
 
+@log_call(level=logging.INFO)
 def worker_n3ds_decompress_single(
     filepath: Path, args: Any, log_cb: Callable[[str], None]
 ) -> Optional[Path]:

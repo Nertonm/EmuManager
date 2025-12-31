@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import logging
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -17,9 +18,11 @@ from emumanager.workers.common import (
     skip_if_compressed,
 )
 from emumanager.workers.common import get_logger_for_gui
-from emumanager.logging_cfg import set_correlation_id
+from emumanager.logging_cfg import set_correlation_id, log_call
 
 
+
+@log_call(level=logging.INFO)
 def worker_hash_verify(
     base_path: Path,
     args: Any,
@@ -80,6 +83,7 @@ def worker_hash_verify(
     return _run_verification(base_path, db, args, logger, list_files_fn)
 
 
+@log_call(level=logging.INFO)
 def worker_identify_all(
     base_path: Path,
     args: Any,
@@ -539,6 +543,7 @@ def _verify_single_file(
     return res
 
 
+@log_call(level=logging.INFO)
 def worker_identify_single_file(
     file_path: Path,
     dat_path: Path,

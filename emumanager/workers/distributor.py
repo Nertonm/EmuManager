@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Callable, Optional
+import logging
 
 from emumanager.manager import guess_system_for_file
 from emumanager.workers.common import skip_if_compressed, get_logger_for_gui
-from emumanager.logging_cfg import set_correlation_id
+from emumanager.logging_cfg import set_correlation_id, log_call
 
 
+@log_call(level=logging.INFO)
 def worker_distribute_root(
     base_path: Path,
     log_cb: Callable[[str], None],

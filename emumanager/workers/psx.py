@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import logging
 import subprocess
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -22,7 +23,7 @@ from emumanager.workers.common import (
     skip_if_compressed,
 )
 from emumanager.workers.common import get_logger_for_gui
-from emumanager.logging_cfg import set_correlation_id
+from emumanager.logging_cfg import set_correlation_id, log_call
 
 MSG_PSX_DIR_NOT_FOUND = "PS1 ROMs directory not found."
 PSX_SUBDIRS = ["roms/psx", "psx"]
@@ -87,7 +88,7 @@ def _convert_one_with_chdman(
         logger.error(f"Conversion error for {src.name}: {e}")
         return False, False
 
-
+@log_call(level=logging.INFO)
 def worker_psx_convert(
     base_path: Path, args: Any, log_cb: Callable[[str], None], **kwargs
 ) -> str:
@@ -248,6 +249,7 @@ def _process_psx_file(
     return "found" if serial else "unknown"
 
 
+@log_call(level=logging.INFO)
 def worker_psx_verify(
     base_path: Path,
     args: Any,
@@ -327,6 +329,7 @@ def worker_psx_verify(
     return f"Scan complete. Identified: {found}, Unknown: {unknown}"
 
 
+@log_call(level=logging.INFO)
 def worker_chd_decompress_single(
     path: Path,
     args: Any,
@@ -386,6 +389,7 @@ def worker_chd_decompress_single(
         return f"Error: {e}"
 
 
+@log_call(level=logging.INFO)
 def worker_chd_recompress_single(
     path: Path,
     args: Any,
@@ -559,6 +563,7 @@ def _organize_psx_file(
         return False, None
 
 
+@log_call(level=logging.INFO)
 def worker_psx_organize(
     base_path: Path,
     args: Any,

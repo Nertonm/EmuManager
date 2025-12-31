@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import logging
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -18,7 +19,7 @@ from emumanager.workers.common import (
     skip_if_compressed,
 )
 from emumanager.workers.common import get_logger_for_gui
-from emumanager.logging_cfg import set_correlation_id
+from emumanager.logging_cfg import set_correlation_id, log_call
 
 PARAM_SFO = "PARAM.SFO"
 MSG_PS3_DIR_NOT_FOUND = "PS3 ROMs directory not found."
@@ -158,6 +159,7 @@ def _scan_ps3_files(
     return found, unknown
 
 
+@log_call(level=logging.INFO)
 def worker_ps3_verify(
     base_path: Path,
     args: Any,
@@ -267,6 +269,7 @@ def _organize_ps3_folders(
     return renamed, skipped
 
 
+@log_call(level=logging.INFO)
 def worker_ps3_organize(
     base_path: Path,
     args: Any,

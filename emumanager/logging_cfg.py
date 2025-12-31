@@ -16,6 +16,8 @@ import functools
 import time
 import uuid
 import json
+import os
+import sys
 
 
 class Col:
@@ -218,6 +220,52 @@ def get_fileops_logger(
     # Prevent propagation to root to avoid duplicate entries
     logger.propagate = False
     return logger
+
+
+def configure_logging(env: Optional[str] = "auto", level: int = logging.INFO):
+    """Configure the root logger.
+
+    env: 'auto' (default) | 'json' | 'human'
+    - 'auto' chooses human-readable when stdout is a TTY, otherwise JSON.
+    - 'json' forces JSON output.
+    - 'human' forces a readable formatter.
+
+    Returns the root logger.
+    """
+    # Determine mode
+    chosen = env or os.getenv("EMUMANAGER_LOG_FORMAT", "auto")
+    if isinstance(chosen, str):
+        chosen = chosen.lower()
+    mode = "human"
+    if chosen == "json":
+        mode = "json"
+    elif chosen == "human":
+        mode = "human"
+    else:
+        # auto: prefer human when interactive
+        try:
+            mode = "human" if sys.stdout.isatty() else "json"
+        except Exception:
+            mode = "json"
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level)
+
+    # Add one console handler idempotently (mark by name)
+    if not any(getattr(h, "name", None) == "emumanager_console" for h in root_logger.handlers):
+        sh = logging.StreamHandler()
+        sh.name = "emumanager_console"
+        if mode == "json":
+            sh.setFormatter(JsonFormatter())
+        else:
+            fmt = logging.Formatter(
+                "%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
+            sh.setFormatter(fmt)
+        root_logger.addHandler(sh)
+
+    return root_logger
 
 
 class QtLogHandler(logging.Handler):

@@ -73,6 +73,11 @@ A documentação completa está disponível na pasta `docs/` e pode ser visualiz
 - **Atalhos de contexto** na tabela de verificação:
     - Abrir pasta do arquivo
     - Copiar `CRC32`, `SHA1`, `MD5`, `SHA256`
+    
+Nota adicional sobre verificações/formatos específicos:
+
+- **Decompress CSO**: opção de trabalho que permite descomprimir `.cso` temporariamente (usa `maxcso`) para leitura de cabeçalhos ou cálculo de hashes. Pode ser ativada no fluxo de processamento (`args.decompress_cso = True`) ou via GUI quando exposto.
+- **Verify CHD (chdman verify)**: o projeto agora inclui uma verificação integrada para `.chd` usando `chdman verify -i <file>`; por padrão esta checagem é aplicada antes de extrair ou processar CHDs. Se `chdman` não estiver disponível, o comportamento atual é conservador — o arquivo será marcado como `UNKNOWN`/skip. Esta opção pode ser desativada via `args.verify_chd = False` em fluxos programáticos.
 
  
 ## Audit and hash preservation

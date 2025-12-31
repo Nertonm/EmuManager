@@ -20,11 +20,12 @@ from emumanager.workers.common import (
     emit_verification_result,
     find_target_dir,
     identify_game_by_hash,
+        verify_chd,
     make_result_collector,
     skip_if_compressed,
 )
 from emumanager.workers.common import get_logger_for_gui
-from emumanager.logging_cfg import set_correlation_id
+from emumanager.logging_cfg import set_correlation_id, log_call
 
 
 def _strip_serial_tokens(name: str) -> str:
@@ -44,6 +45,7 @@ MSG_PS2_DIR_NOT_FOUND = "PS2 ROMs directory not found."
 PS2_SUBDIRS = ["roms/ps2", "ps2"]
 
 
+@log_call(level=logging.INFO)
 def worker_ps2_convert(
     base_path: Path,
     args: Any,
@@ -103,6 +105,7 @@ def worker_ps2_convert(
         ps2_logger.removeHandler(handler)
 
 
+@log_call(level=logging.INFO)
 def worker_chd_to_cso_single(
     path: Path, args: Any, log_cb: Callable[[str], None]
 ) -> str:
@@ -233,6 +236,28 @@ def _process_ps2_file(
     suffix = f.suffix.lower()
     if suffix not in {".iso", ".bin", ".cso", ".chd", ".gz"}:
         return "skip"
+
+    # For CHD files, prefer using chdman verify to check internal integrity
+    # before attempting header extraction or other processing. Make this
+    # optional via args.verify_chd (default True) so callers can opt-out.
+    if suffix == ".chd":
+        do_verify = True
+        try:
+            if args is not None:
+                do_verify = bool(getattr(args, "verify_chd", True))
+            else:
+                do_verify = True
+        except Exception:
+            do_verify = True
+
+        if do_verify:
+            try:
+                ok = verify_chd(f)
+            except Exception:
+                ok = False
+            if not ok:
+                logger.warning(f"[SKIP] CHD integrity check failed: {f.name}")
+                return "unknown"
 
     # Initialize LibraryDB
     lib_db = LibraryDB()
@@ -371,6 +396,7 @@ def _process_ps2_file(
     return "found" if serial else "unknown"
 
 
+@log_call(level=logging.INFO)
 def worker_ps2_verify(
     base_path: Path,
     args: Any,
@@ -538,6 +564,7 @@ def _organize_ps2_file(f: Path, args: Any, logger: GuiLogger) -> bool:
         return False
 
 
+@log_call(level=logging.INFO)
 def worker_ps2_organize(
     base_path: Path,
     args: Any,

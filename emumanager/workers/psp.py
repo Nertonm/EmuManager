@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import logging
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -20,7 +21,7 @@ from emumanager.workers.common import (
     skip_if_compressed,
     get_logger_for_gui,
 )
-from emumanager.logging_cfg import set_correlation_id
+from emumanager.logging_cfg import set_correlation_id, log_call
 
 MSG_PSP_DIR_NOT_FOUND = "PSP ROMs directory not found."
 
@@ -83,6 +84,7 @@ def _resolve_psp_target(base_path: Path) -> Optional[Path]:
     return next((d for d in candidates if d.exists()), None)
 
 
+@log_call(level=logging.INFO)
 def worker_psp_verify(
     base_path: Path,
     args: Any,
@@ -240,6 +242,7 @@ def _compress_psp_file(f: Path, args: Any, logger: GuiLogger) -> bool:
         return False
 
 
+@log_call(level=logging.INFO)
 def worker_psp_compress(
     base_path: Path,
     args: Any,
@@ -306,6 +309,7 @@ def worker_psp_compress(
     )
 
 
+@log_call(level=logging.INFO)
 def worker_psp_compress_single(
     path: Path, args: Any, log_cb: Callable[[str], None], **kwargs
 ) -> str:
@@ -406,6 +410,7 @@ def _organize_psp_item(item: Path, args: Any, logger: GuiLogger) -> bool:
         return False
 
 
+@log_call(level=logging.INFO)
 def worker_psp_organize(
     base_path: Path,
     args: Any,

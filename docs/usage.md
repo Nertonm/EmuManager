@@ -58,6 +58,12 @@ Para garantir que seus jogos são cópias perfeitas (1:1):
     -   **Verde**: Cópia perfeita (Verified).
     -   **Vermelho**: Arquivo corrompido, alterado ou desconhecido (Bad Dump / No Match).
 
+Nota: nas configurações (Settings) você pode habilitar opções que afetam o comportamento de verificação e leitura de cabeçalhos:
+
+- **Deep Verify**: calcula MD5/SHA256 além de SHA1/CRC32.
+- **Decompress CSO**: quando ativado, arquivos `.cso` serão descomprimidos temporariamente para ler cabeçalhos ou calcular hashes (requer `maxcso` no PATH).
+- **Verify CHD**: quando ativado, arquivos `.chd` serão validados com `chdman verify` antes de qualquer tentativa de extração; se `chdman` não estiver disponível a verificação falhará por segurança.
+
 #### 5. Otimização (Compressão/Conversão)
 Para economizar espaço:
 1.  Selecione os jogos na lista.

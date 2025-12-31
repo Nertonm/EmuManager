@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from typing import Any, Callable, Optional
+import logging
 
+from emumanager.logging_cfg import set_correlation_id, log_call
 from emumanager.library import DuplicateGroup, LibraryDB
 
 
+@log_call(level=logging.INFO)
 def worker_find_duplicates(
     db: LibraryDB,
     log_cb: Optional[Callable[[str], None]] = None,
@@ -25,6 +28,8 @@ def worker_find_duplicates(
     Notes:
       - `groups` are serialized (plain dicts) to make it safe to pass across threads.
     """
+    # Initialize correlation id for tracing
+    set_correlation_id()
 
     def canceled() -> bool:
         return bool(cancel_event and getattr(cancel_event, "is_set", lambda: False)())
