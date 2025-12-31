@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any, Callable, Optional
-import logging
 
+from emumanager.logging_cfg import log_call, set_correlation_id
 from emumanager.manager import guess_system_for_file
-from emumanager.workers.common import skip_if_compressed, get_logger_for_gui
-from emumanager.logging_cfg import set_correlation_id, log_call
+from emumanager.workers.common import get_logger_for_gui, skip_if_compressed
 
 
 @log_call(level=logging.INFO)

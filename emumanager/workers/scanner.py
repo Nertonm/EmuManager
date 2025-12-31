@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import os
 import logging
+import os
 from pathlib import Path
 from typing import Callable, Optional
 
 from emumanager.library import LibraryDB, LibraryEntry
+from emumanager.logging_cfg import log_call, set_correlation_id
 from emumanager.workers.common import get_logger_for_gui
-from emumanager.logging_cfg import set_correlation_id, log_call
 
 # Common archive/compressed extensions we should detect and mark in the DB.
 ARCHIVE_EXTS = {

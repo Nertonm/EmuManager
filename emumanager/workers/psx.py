@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-import re
 import logging
+import re
 import subprocess
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 from emumanager.common.execution import run_cmd_stream
-from emumanager.workers import common as workers_common
 from emumanager.library import LibraryDB, LibraryEntry
+from emumanager.logging_cfg import log_call, set_correlation_id
 from emumanager.psx import database as psx_db
 from emumanager.psx import metadata as psx_meta
+from emumanager.workers import common as workers_common
 from emumanager.workers.common import (
     MSG_CANCELLED,
     GuiLogger,
@@ -19,12 +20,11 @@ from emumanager.workers.common import (
     emit_verification_result,
     ensure_hashes_in_db,
     find_target_dir,
+    get_logger_for_gui,
     identify_game_by_hash,
     make_result_collector,
     skip_if_compressed,
 )
-from emumanager.workers.common import get_logger_for_gui
-from emumanager.logging_cfg import set_correlation_id, log_call
 
 MSG_PSX_DIR_NOT_FOUND = "PS1 ROMs directory not found."
 PSX_SUBDIRS = ["roms/psx", "psx"]

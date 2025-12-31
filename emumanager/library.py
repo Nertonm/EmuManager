@@ -1,6 +1,7 @@
 import re
 import sqlite3
 import unicodedata
+from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Optional
@@ -27,7 +28,11 @@ class LibraryDB:
         self._init_db()
 
     def _init_db(self):
-        with sqlite3.connect(self.db_path) as conn:
+        # Use closing() so the sqlite3.Connection is closed when leaving the
+        # context. sqlite3.Connection.__exit__ commits/rolls back but does not
+        # close the connection object itself, which can lead to ResourceWarning
+        # about unclosed database handles during tests.
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS library (
                     path TEXT PRIMARY KEY,
@@ -58,7 +63,7 @@ class LibraryDB:
             conn.commit()
 
     def get_entry(self, path: str) -> Optional[LibraryEntry]:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute("SELECT * FROM library WHERE path = ?", (path,))
             row = cursor.fetchone()
             if row:
@@ -66,7 +71,7 @@ class LibraryDB:
         return None
 
     def update_entry(self, entry: LibraryEntry):
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO library
@@ -91,12 +96,12 @@ class LibraryDB:
             conn.commit()
 
     def remove_entry(self, path: str):
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute("DELETE FROM library WHERE path = ?", (path,))
             conn.commit()
 
     def get_all_entries(self) -> List[LibraryEntry]:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute("SELECT * FROM library")
             return [LibraryEntry(*row) for row in cursor.fetchall()]
 
@@ -106,7 +111,7 @@ class LibraryDB:
         """
         if not hash_value:
             return None
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cur = conn.execute(
                 (
                     "SELECT * FROM library WHERE sha1 = ? OR md5 = ? "
@@ -120,7 +125,7 @@ class LibraryDB:
         return None
 
     def get_total_count(self) -> int:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute("SELECT COUNT(*) FROM library")
             val = cursor.fetchone()[0]
             try:
@@ -129,19 +134,19 @@ class LibraryDB:
                 return 0
 
     def get_count_by_system(self) -> dict[str, int]:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute(
                 "SELECT system, COUNT(*) FROM library GROUP BY system"
             )
             return dict(cursor.fetchall())
 
     def get_entries_by_system(self, system: str) -> List[LibraryEntry]:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute("SELECT * FROM library WHERE system = ?", (system,))
             return [LibraryEntry(*row) for row in cursor.fetchall()]
 
     def get_total_size(self) -> int:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute("SELECT SUM(size) FROM library")
             result = cursor.fetchone()[0]
             return result if result else 0
@@ -153,7 +158,7 @@ class LibraryDB:
         """
         import time
 
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute(
                 "INSERT INTO library_actions (path, action, detail, ts) "
                 "VALUES (?, ?, ?, ?)",
@@ -165,7 +170,7 @@ class LibraryDB:
         """Return recent library actions as list of tuples
         (path, action, detail, ts).
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cur = conn.execute(
                 (
                     "SELECT path, action, detail, ts "
@@ -186,7 +191,7 @@ class LibraryDB:
         if column not in {"sha1", "md5", "crc32", "sha256"}:
             raise ValueError(f"Unsupported hash column: {column}")
 
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cur = conn.execute(
                 f"""
                 SELECT {column}

@@ -7,17 +7,17 @@ it easier to adjust formatting/verbosity in one place.
 
 from __future__ import annotations
 
-import logging
-import logging.handlers
-from pathlib import Path
-from typing import Optional
 import contextvars
 import functools
-import time
-import uuid
 import json
+import logging
+import logging.handlers
 import os
 import sys
+import time
+import uuid
+from pathlib import Path
+from typing import Optional
 
 
 class Col:
@@ -115,7 +115,11 @@ def _sanitize_args(args, kwargs, redact_keys=("password", "pwd", "secret")):
         try:
             if isinstance(o, dict):
                 return {
-                    k: ("***REDACTED***" if k.lower() in redact_keys else sanitize_obj(v))
+                    k: (
+                        "***REDACTED***"
+                        if k.lower() in redact_keys
+                        else sanitize_obj(v)
+                    )
                     for k, v in o.items()
                 }
             if isinstance(o, (list, tuple)):
@@ -252,7 +256,10 @@ def configure_logging(env: Optional[str] = "auto", level: int = logging.INFO):
     root_logger.setLevel(level)
 
     # Add one console handler idempotently (mark by name)
-    if not any(getattr(h, "name", None) == "emumanager_console" for h in root_logger.handlers):
+    if not any(
+        getattr(h, "name", None) == "emumanager_console"
+        for h in root_logger.handlers
+    ):
         sh = logging.StreamHandler()
         sh.name = "emumanager_console"
         if mode == "json":

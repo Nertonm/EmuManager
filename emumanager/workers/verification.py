@@ -1,26 +1,25 @@
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
-import logging
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 from emumanager.common.execution import run_cmd_stream
-from emumanager.workers import common as workers_common
 from emumanager.common.models import VerifyReport, VerifyResult
 from emumanager.library import LibraryDB, LibraryEntry
+from emumanager.logging_cfg import log_call, set_correlation_id
 from emumanager.verification import dat_parser, hasher
 from emumanager.verification.dat_manager import find_dat_for_system
+from emumanager.workers import common as workers_common
 from emumanager.workers.common import (
     MSG_CANCELLED,
     GuiLogger,
     create_file_progress_cb,
+    get_logger_for_gui,
     skip_if_compressed,
 )
-from emumanager.workers.common import get_logger_for_gui
-from emumanager.logging_cfg import set_correlation_id, log_call
-
 
 
 @log_call(level=logging.INFO)

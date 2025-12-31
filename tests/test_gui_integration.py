@@ -1,9 +1,9 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+from emumanager.gui_main import MainWindowBase
 from emumanager.library import LibraryDB
 from emumanager.workers import common, ps2
-from emumanager.gui_main import MainWindowBase
 
 
 def _fake_ctrl_true():

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import re
 import logging
+import re
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from emumanager.logging_cfg import log_call, set_correlation_id
 from emumanager.ps3 import database as ps3_db
 from emumanager.ps3 import metadata as ps3_meta
 from emumanager.workers.common import (
@@ -15,11 +16,10 @@ from emumanager.workers.common import (
     create_file_progress_cb,
     emit_verification_result,
     find_target_dir,
+    get_logger_for_gui,
     make_result_collector,
     skip_if_compressed,
 )
-from emumanager.workers.common import get_logger_for_gui
-from emumanager.logging_cfg import set_correlation_id, log_call
 
 PARAM_SFO = "PARAM.SFO"
 MSG_PS3_DIR_NOT_FOUND = "PS3 ROMs directory not found."

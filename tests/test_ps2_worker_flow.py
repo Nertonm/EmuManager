@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 from emumanager.library import LibraryDB
 from emumanager.workers import common, ps2
+
 # worker module to patch internal imports
 
 

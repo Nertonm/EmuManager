@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import re
 import logging
+import re
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Callable, Optional
 
 from emumanager.common.execution import run_cmd
+from emumanager.logging_cfg import log_call, set_correlation_id
 from emumanager.switch import compression, metadata
 from emumanager.switch.cli import (
     get_metadata,
@@ -15,8 +16,12 @@ from emumanager.switch.cli import (
     verify_integrity,
 )
 from emumanager.switch.main_helpers import process_files, run_health_check
-from emumanager.workers.common import MSG_CANCELLED, GuiLogger, skip_if_compressed, get_logger_for_gui
-from emumanager.logging_cfg import set_correlation_id, log_call
+from emumanager.workers.common import (
+    MSG_CANCELLED,
+    GuiLogger,
+    get_logger_for_gui,
+    skip_if_compressed,
+)
 
 MSG_NSZ_MISSING = "Error: 'nsz' tool not found."
 

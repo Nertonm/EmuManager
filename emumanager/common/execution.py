@@ -349,4 +349,15 @@ def run_cmd_stream(
                 file_handle.close()
             except Exception:
                 pass
+        # Ensure subprocess stdout wrapper is closed to avoid ResourceWarning
+        try:
+            if proc.stdout:
+                try:
+                    proc.stdout.close()
+                except Exception:
+                    pass
+        except Exception:
+            # proc may not have stdout attribute in some monkeypatched tests
+            pass
+
         _unregister_process(proc)

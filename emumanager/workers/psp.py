@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import re
 import logging
+import re
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 from emumanager.converters import psp_converter
 from emumanager.library import LibraryDB
+from emumanager.logging_cfg import log_call, set_correlation_id
 from emumanager.psp import database as psp_db
 from emumanager.psp import metadata as psp_meta
 from emumanager.workers.common import (
@@ -16,12 +17,11 @@ from emumanager.workers.common import (
     calculate_file_hash,
     create_file_progress_cb,
     emit_verification_result,
+    get_logger_for_gui,
     identify_game_by_hash,
     make_result_collector,
     skip_if_compressed,
-    get_logger_for_gui,
 )
-from emumanager.logging_cfg import set_correlation_id, log_call
 
 MSG_PSP_DIR_NOT_FOUND = "PSP ROMs directory not found."
 

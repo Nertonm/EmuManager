@@ -20,9 +20,14 @@ from typing import Any, Callable, Optional
 
 def _is_exact_duplicate_fast(s: Path, d: Path) -> bool:
     try:
-        return os.path.getsize(s) == os.path.getsize(d) and int(
-            os.path.getmtime(s)
-        ) == int(os.path.getmtime(d))
+        # Use full precision modification time comparison to avoid false
+        # positives introduced by truncating to integer seconds. Two files
+        # written close together may share the same integer-second mtime but
+        # not the exact timestamp.
+        return (
+            os.path.getsize(s) == os.path.getsize(d)
+            and os.path.getmtime(s) == os.path.getmtime(d)
+        )
     except Exception:
         return False
 

@@ -9,6 +9,7 @@ from typing import Any, Callable, Optional
 from emumanager.common.execution import run_cmd_stream
 from emumanager.converters import ps2_converter
 from emumanager.library import LibraryDB, LibraryEntry
+from emumanager.logging_cfg import log_call, set_correlation_id
 from emumanager.ps2 import database as ps2_db
 from emumanager.ps2 import metadata as ps2_meta
 from emumanager.workers import common as workers_common
@@ -20,12 +21,11 @@ from emumanager.workers.common import (
     create_file_progress_cb,
     emit_verification_result,
     find_target_dir,
+    get_logger_for_gui,
     identify_game_by_hash,
     make_result_collector,
     skip_if_compressed,
 )
-from emumanager.workers.common import get_logger_for_gui
-from emumanager.logging_cfg import set_correlation_id, log_call
 
 # Backwards-compatible aliases so tests that patch module-level helpers
 # (e.g. monkeypatch.setattr(ps2_module, 'find_tool', ...)) continue to work.
@@ -193,8 +193,10 @@ def worker_chd_to_cso_single(
                 lib_db = LibraryDB()
                 try:
                     st = out_cso.stat()
+                    # Store path as-written (not forcibly resolved) so tests
+                    # that query by the original string path find the entry.
                     new_entry = LibraryEntry(
-                        path=str(out_cso.resolve()),
+                        path=str(out_cso),
                         system="ps2",
                         size=st.st_size,
                         mtime=st.st_mtime,

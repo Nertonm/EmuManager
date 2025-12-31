@@ -1,29 +1,43 @@
+import logging
 import os
 import time
-import types
 from pathlib import Path
+from types import SimpleNamespace
 
+import emumanager.common.fileops as fileops
 from emumanager.common.fileops import safe_move
 
 
-def touch(p: Path, content: bytes = b"x"):
-    p.write_bytes(content)
-    # normalize mtime
-    now = int(time.time())
-    p.utime((now, now))
+def simple_hash(p: Path) -> str:
+    return p.read_bytes().hex()
+
+
+def test_safe_unlink_nonexistent(tmp_path):
+    p = tmp_path / "nope.txt"
+    # should not raise
+    fileops.safe_unlink(p, logger=logging.getLogger(__name__))
+    assert not p.exists()
+
+
+def test_safe_unlink_existing(tmp_path):
+    p = tmp_path / "file.txt"
+    p.write_text("data")
+    logger = logging.getLogger(__name__)
+    fileops.safe_unlink(p, logger=logger)
+    assert not p.exists()
 
 
 def test_safe_move_dry_run(tmp_path):
     src = tmp_path / "a.nsp"
     dst = tmp_path / "dest" / "a.nsp"
     src.write_text("data")
-    args = types.SimpleNamespace(dry_run=True, dup_check="fast")
+    args = SimpleNamespace(dry_run=True, dup_check="fast")
     result = safe_move(
         src,
         dst,
         args=args,
         get_file_hash=lambda p: "h",
-        logger=types.SimpleNamespace(
+        logger=SimpleNamespace(
             info=print,
             warning=print,
             debug=print,
@@ -35,26 +49,42 @@ def test_safe_move_dry_run(tmp_path):
     assert src.exists()
 
 
+def test_safe_move_atomic(tmp_path):
+    src = tmp_path / "src.txt"
+    src.write_text("atomic")
+    dst = tmp_path / "dst.txt"
+    args = SimpleNamespace(dry_run=False, dup_check="fast")
+    # use a proper logger object
+    logger = logging.getLogger(__name__)
+    res = fileops.safe_move(
+        src, dst, args=args, get_file_hash=simple_hash, logger=logger
+    )
+    assert res is True
+    assert dst.exists()
+    assert not src.exists()
+
+
 def test_safe_move_duplicate_fast(tmp_path):
     src = tmp_path / "a.nsp"
     dst = tmp_path / "existing" / "a.nsp"
     src.write_bytes(b"same")
     dst.parent.mkdir(parents=True, exist_ok=True)
     dst.write_bytes(b"same")
-    # align mtime
+    # align mtime for fast check
     now = int(time.time())
     os.utime(str(src), (now, now))
     os.utime(str(dst), (now, now))
-    args = types.SimpleNamespace(dry_run=False, dup_check="fast")
-    logger = types.SimpleNamespace(
+    args = SimpleNamespace(dry_run=False, dup_check="fast")
+    logger = SimpleNamespace(
         info=lambda *a, **k: None,
         warning=lambda *a, **k: None,
         debug=lambda *a, **k: None,
         error=lambda *a, **k: None,
         exception=lambda *a, **k: None,
     )
-    result = safe_move(src, dst, args=args, get_file_hash=lambda p: "h1", logger=logger)
-    # duplicate fast leads to source removal and False return
+    result = safe_move(
+        src, dst, args=args, get_file_hash=lambda p: "h1", logger=logger
+    )
     assert result is False
     assert not src.exists()
 
@@ -65,15 +95,14 @@ def test_safe_move_duplicate_strict_rename(tmp_path):
     src.write_bytes(b"srcdata")
     dst.parent.mkdir(parents=True, exist_ok=True)
     dst.write_bytes(b"otherdata")
-    args = types.SimpleNamespace(dry_run=False, dup_check="strict")
-    logger = types.SimpleNamespace(
+    args = SimpleNamespace(dry_run=False, dup_check="strict")
+    logger = SimpleNamespace(
         info=lambda *a, **k: None,
         warning=lambda *a, **k: None,
         debug=lambda *a, **k: None,
         error=lambda *a, **k: None,
         exception=lambda *a, **k: None,
     )
-    # get_file_hash returns different values so rename path will be used
     result = safe_move(
         src,
         dst,
@@ -82,7 +111,6 @@ def test_safe_move_duplicate_strict_rename(tmp_path):
         logger=logger,
     )
     assert result is True
-    # file moved to COPY_1
     found = list(tmp_path.rglob("*_COPY_*"))
     assert len(found) == 1
 
@@ -96,8 +124,8 @@ def test_safe_move_duplicate_strict_exact(tmp_path):
     now = int(time.time())
     os.utime(str(src), (now, now))
     os.utime(str(dst), (now, now))
-    args = types.SimpleNamespace(dry_run=False, dup_check="strict")
-    logger = types.SimpleNamespace(
+    args = SimpleNamespace(dry_run=False, dup_check="strict")
+    logger = SimpleNamespace(
         info=lambda *a, **k: None,
         warning=lambda *a, **k: None,
         debug=lambda *a, **k: None,
@@ -105,7 +133,6 @@ def test_safe_move_duplicate_strict_exact(tmp_path):
         exception=lambda *a, **k: None,
     )
     result = safe_move(src, dst, args=args, get_file_hash=lambda p: "h", logger=logger)
-    # strict duplicate: source removed, returns False
     assert result is False
     assert not src.exists()
     assert dst.exists()
@@ -115,8 +142,8 @@ def test_safe_move_normal_move(tmp_path):
     src = tmp_path / "a.nsp"
     dst = tmp_path / "dest" / "a.nsp"
     src.write_bytes(b"content")
-    args = types.SimpleNamespace(dry_run=False, dup_check="fast")
-    logger = types.SimpleNamespace(
+    args = SimpleNamespace(dry_run=False, dup_check="fast")
+    logger = SimpleNamespace(
         info=lambda *a, **k: None,
         warning=lambda *a, **k: None,
         debug=lambda *a, **k: None,

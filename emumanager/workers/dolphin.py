@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import logging
 import re
 import shutil
 import tempfile
-import logging
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -11,6 +11,7 @@ from emumanager.converters.dolphin_converter import DolphinConverter
 from emumanager.gamecube import database as gc_db
 from emumanager.gamecube import metadata as gc_meta
 from emumanager.library import LibraryDB, LibraryEntry
+from emumanager.logging_cfg import log_call, set_correlation_id
 from emumanager.wii import database as wii_db
 from emumanager.wii import metadata as wii_meta
 from emumanager.workers.common import (
@@ -21,12 +22,11 @@ from emumanager.workers.common import (
     create_file_progress_cb,
     emit_verification_result,
     ensure_hashes_in_db,
+    get_logger_for_gui,
     identify_game_by_hash,
     make_result_collector,
     skip_if_compressed,
 )
-from emumanager.workers.common import get_logger_for_gui
-from emumanager.logging_cfg import set_correlation_id, log_call
 
 DOLPHIN_CONVERTIBLE_EXTENSIONS = {".iso", ".gcm", ".wbfs"}
 DOLPHIN_ALL_EXTENSIONS = {".iso", ".gcm", ".wbfs", ".rvz", ".gcZ"}

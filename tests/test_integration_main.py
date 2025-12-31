@@ -44,6 +44,9 @@ def test_main_compress_rm_dryrun(tmp_path, monkeypatch):
     # Ensure find_tool returns something so main doesn't exit
     monkeypatch.setattr(so, "find_tool", lambda name: Path("/bin/true"))
 
+    # Avoid opening real log files during tests
+    monkeypatch.setattr(so, "setup_logging", lambda *a, **k: None)
+
     # Provide args: compress + rm_originals but dry_run=True
     args = make_args(dir=str(tmp_path), compress=True, rm_originals=True, dry_run=True)
 

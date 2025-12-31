@@ -8,7 +8,7 @@ from typing import Any, Callable, Optional
 import emumanager.common.execution as execution
 from emumanager.common.models import VerifyResult
 from emumanager.library import LibraryDB, LibraryEntry
-from emumanager.logging_cfg import get_correlation_id, set_correlation_id, log_call
+from emumanager.logging_cfg import get_correlation_id, log_call, set_correlation_id
 
 # Constants for logging
 LOG_WARN = "WARN: "

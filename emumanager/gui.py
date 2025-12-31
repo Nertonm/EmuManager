@@ -8,6 +8,7 @@ application; if PySide6 is not installed a clear RuntimeError is raised.
 from __future__ import annotations
 
 from importlib import import_module
+
 from .logging_cfg import configure_logging, set_correlation_id
 
 try:

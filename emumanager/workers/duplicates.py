@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict
 from typing import Any, Callable, Optional
-import logging
 
-from emumanager.logging_cfg import set_correlation_id, log_call
 from emumanager.library import DuplicateGroup, LibraryDB
+from emumanager.logging_cfg import log_call, set_correlation_id
 
 
 @log_call(level=logging.INFO)
