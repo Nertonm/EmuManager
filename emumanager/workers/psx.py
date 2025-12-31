@@ -6,7 +6,8 @@ import subprocess
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from emumanager.common.execution import find_tool, run_cmd_stream
+from emumanager.common.execution import run_cmd_stream
+from emumanager.workers import common as workers_common
 from emumanager.library import LibraryDB, LibraryEntry
 from emumanager.psx import database as psx_db
 from emumanager.psx import metadata as psx_meta
@@ -30,7 +31,7 @@ PSX_SUBDIRS = ["roms/psx", "psx"]
 
 
 def _chdman_create(output: Path, input_path: Path) -> subprocess.Popen:
-    chdman = find_tool("chdman")
+    chdman = workers_common.find_tool("chdman")
     if not chdman:
         raise RuntimeError("'chdman' not found in PATH")
     # Use -i input -o output -f to force overwrite if exists? We'll avoid -f for safety.
@@ -76,7 +77,7 @@ def _convert_one_with_chdman(
         return True, False
     try:
         # Use streaming runner so we can surface chdman output if needed
-        chdman_path = find_tool("chdman")
+        chdman_path = workers_common.find_tool("chdman")
         cmd = [str(chdman_path), "createcd", "-i", str(src), "-o", str(out)]
         res = run_cmd_stream(cmd)
         rc = getattr(res, "returncode", 1)
@@ -100,7 +101,7 @@ def worker_psx_convert(
     if not target_dir:
         return MSG_PSX_DIR_NOT_FOUND
 
-    chdman = find_tool("chdman")
+    chdman = workers_common.find_tool("chdman")
     if not chdman:
         return "Error: 'chdman' not found in PATH."
 
@@ -346,7 +347,7 @@ def worker_chd_decompress_single(
     # Initialize correlation id and use structured logger wired to GUI
     set_correlation_id()
     logger = get_logger_for_gui(log_cb, name="emumanager.workers.psx")
-    chdman = find_tool("chdman")
+    chdman = workers_common.find_tool("chdman")
     if not chdman:
         return "Error: 'chdman' not found in PATH."
 
@@ -405,7 +406,7 @@ def worker_chd_recompress_single(
     # Initialize correlation id and use structured logger wired to GUI
     set_correlation_id()
     logger = get_logger_for_gui(log_cb, name="emumanager.workers.psx")
-    chdman = find_tool("chdman")
+    chdman = workers_common.find_tool("chdman")
     if not chdman:
         return "Error: 'chdman' not found in PATH."
 

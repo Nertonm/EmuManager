@@ -6,7 +6,8 @@ import logging
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from emumanager.common.execution import find_tool, run_cmd_stream
+from emumanager.common.execution import run_cmd_stream
+from emumanager.workers import common as workers_common
 from emumanager.common.models import VerifyReport, VerifyResult
 from emumanager.library import LibraryDB, LibraryEntry
 from emumanager.verification import dat_parser, hasher
@@ -285,7 +286,7 @@ def _verify_single_file(
     # extract to a temporary ISO using chdman and verify that instead. This is
     # opt-in via args.decompress_chd to avoid surprises.
     if suffix == ".chd" and getattr(args, "decompress_chd", False):
-        chdman = find_tool("chdman")
+        chdman = workers_common.find_tool("chdman")
         if chdman:
             tmpfile = None
             try:

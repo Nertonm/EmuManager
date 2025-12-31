@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from emumanager.common.execution import find_tool, run_cmd
+import emumanager.common.execution as execution
 from emumanager.common.models import VerifyResult
 from emumanager.library import LibraryDB, LibraryEntry
 from emumanager.logging_cfg import get_correlation_id, set_correlation_id, log_call
@@ -45,15 +45,39 @@ class GuiLogHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            msg = self.format(record)
+            # Use the raw message text for GUI callbacks to keep tests and
+            # consumers simple (they expect plain strings). Include a simple
+            # level-based prefix so callers that assert for WARN/ERROR messages
+            # continue to work (many tests expect the "WARN: "/"ERROR: "
+            # prefixes).
+            msg_text = record.getMessage()
+            prefix = ""
+            try:
+                if record.levelno >= logging.ERROR:
+                    prefix = LOG_ERROR
+                elif record.levelno >= logging.WARNING:
+                    prefix = LOG_WARN
+            except Exception:
+                prefix = ""
+
             # Guard the callback in case it raises
             try:
-                self.log_callback(msg)
+                self.log_callback(prefix + msg_text)
             except Exception:
                 # Best-effort: swallow GUI callback errors to avoid crashing app
                 pass
         except Exception:
             self.handleError(record)
+
+
+# Expose lightweight wrappers around execution helpers so tests can patch
+# emumanager.common.execution.find_tool and have calls routed dynamically.
+def find_tool(name: str):
+    return execution.find_tool(name)
+
+
+def run_cmd(*args, **kwargs):
+    return execution.run_cmd(*args, **kwargs)
 
 
 def get_logger_for_gui(

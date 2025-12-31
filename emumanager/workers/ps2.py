@@ -6,11 +6,12 @@ import tempfile
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from emumanager.common.execution import find_tool, run_cmd_stream
+from emumanager.common.execution import run_cmd_stream
 from emumanager.converters import ps2_converter
 from emumanager.library import LibraryDB, LibraryEntry
 from emumanager.ps2 import database as ps2_db
 from emumanager.ps2 import metadata as ps2_meta
+from emumanager.workers import common as workers_common
 from emumanager.workers.common import (
     MSG_CANCELLED,
     GuiLogger,
@@ -20,7 +21,6 @@ from emumanager.workers.common import (
     emit_verification_result,
     find_target_dir,
     identify_game_by_hash,
-        verify_chd,
     make_result_collector,
     skip_if_compressed,
 )
@@ -70,8 +70,8 @@ def worker_ps2_convert(
     logger.info(f"Starting PS2 conversion in: {target_dir}")
 
     # We need to find tools manually or assume they are in path
-    maxcso = find_tool("maxcso")
-    chdman = find_tool("chdman")
+    maxcso = workers_common.find_tool("maxcso")
+    chdman = workers_common.find_tool("chdman")
 
     if not maxcso or not chdman:
         return "Error: 'maxcso' or 'chdman' not found in PATH."
@@ -118,8 +118,8 @@ def worker_chd_to_cso_single(
     set_correlation_id()
     logger = get_logger_for_gui(log_cb, name="emumanager.workers.ps2")
 
-    chdman = find_tool("chdman")
-    maxcso = find_tool("maxcso")
+    chdman = workers_common.find_tool("chdman")
+    maxcso = workers_common.find_tool("maxcso")
     if not chdman or not maxcso:
         return "Error: 'chdman' or 'maxcso' not found in PATH."
 
@@ -252,7 +252,7 @@ def _process_ps2_file(
 
         if do_verify:
             try:
-                ok = verify_chd(f)
+                ok = workers_common.verify_chd(f)
             except Exception:
                 ok = False
             if not ok:
@@ -279,7 +279,7 @@ def _process_ps2_file(
             )
             return "unknown"
 
-        maxcso = find_tool("maxcso")
+        maxcso = workers_common.find_tool("maxcso")
         if not maxcso:
             logger.warning("maxcso not found; cannot extract from CSO")
             return "unknown"
