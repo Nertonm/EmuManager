@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import tempfile
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -298,6 +299,23 @@ def skip_if_compressed(
         local_db = db if db is not None else LibraryDB()
         entry = local_db.get_entry(str(file_path))
         if entry and entry.status == "COMPRESSED":
+            # If a file is marked COMPRESSED in the DB, most formats should be
+            # skipped to avoid expensive decompression. However, CHD files may
+            # contain a header SHA1 that allows DAT verification without full
+            # extraction. Do not short-circuit .chd files here; let callers
+            # perform CHD-specific verification/fallback logic.
+            suffix = file_path.suffix.lower()
+            if suffix == ".chd":
+                try:
+                    msg = (
+                        "CHD flagged COMPRESSED in DB; will attempt CHD-specific "
+                        f"verification: {file_path.name}"
+                    )
+                    logger.info(msg)
+                except Exception:
+                    pass
+                return False
+
             logger.info(f"Skipping compressed file (logged): {file_path.name}")
             try:
                 local_db.log_action(
@@ -402,6 +420,7 @@ def ensure_hashes_in_db(
     file_path: Path,
     db: LibraryDB | None = None,
     progress_cb: Optional[Callable[[float], None]] = None,
+    logger: GuiLogger | None = None,
 ):
     """Ensure MD5 and SHA1 hashes for `file_path` are present in the LibraryDB.
 
@@ -420,6 +439,171 @@ def ensure_hashes_in_db(
 
         if md5 and sha1:
             return md5, sha1
+
+        # Prepare an effective logger: prefer the provided GUI logger for
+        # messages intended to be shown to the user; otherwise fall back to
+        # the module logger.
+        eff_logger: logging.Logger | GuiLogger
+        if logger:
+            eff_logger = logger
+        else:
+            eff_logger = logging.getLogger("emumanager.workers.common")
+
+        # If the file is a compressed/container format, try to extract to a
+        # temporary ISO using the appropriate tool and compute hashes on the
+        # extracted data. This gives consistent hashes for compressed games
+        # (e.g. .cso, .chd) using the same external tooling the project uses.
+        tmp_iso = None
+        try:
+            suffix = p.suffix.lower()
+            if suffix == ".cso":
+                maxcso = find_tool("maxcso")
+                if maxcso:
+                    try:
+                        with tempfile.NamedTemporaryFile(
+                            suffix=".iso",
+                            delete=False,
+                        ) as tf:
+                            tmp_iso = Path(tf.name)
+                        cmd = [
+                            str(maxcso),
+                            "--decompress",
+                            str(p),
+                            "-o",
+                            str(tmp_iso),
+                        ]
+                        # Inform the user we're attempting an extraction when
+                        # running from the GUI.
+                        try:
+                            eff_logger.info(
+                                f"Attempting to decompress CSO for hashing: {p.name}"
+                            )
+                        except Exception:
+                            pass
+
+                        res = run_cmd(cmd)
+                        rc = getattr(res, "returncode", 1)
+                        if rc == 0 and tmp_iso.exists():
+                            if not md5:
+                                md5 = calculate_file_hash(
+                                    tmp_iso, "md5", progress_cb=progress_cb
+                                )
+                            if not sha1:
+                                sha1 = calculate_file_hash(
+                                    tmp_iso, "sha1", progress_cb=progress_cb
+                                )
+                    except Exception:
+                        # Fall back to hashing original file on failure
+                        try:
+                            eff_logger.warning(
+                                f"WARN: maxcso failed to decompress {p.name}; "
+                                "falling back to hashing compressed file"
+                            )
+                        except Exception:
+                            pass
+                else:
+                    # No maxcso available — log explicitly to help users
+                    try:
+                        eff_logger.info(
+                            "Ferramenta 'maxcso' não encontrada no PATH; não "
+                            "será possível decomprimir .cso para hashing"
+                        )
+                    except Exception:
+                        pass
+            elif suffix == ".chd":
+                chdman = find_tool("chdman")
+                if chdman:
+                    try:
+                        with tempfile.NamedTemporaryFile(
+                            suffix=".iso",
+                            delete=False,
+                        ) as tf:
+                            tmp_iso = Path(tf.name)
+                        verbs = [
+                            [
+                                str(chdman),
+                                "extractdvd",
+                                "-i",
+                                str(p),
+                                "-o",
+                                str(tmp_iso),
+                            ],
+                            [
+                                str(chdman),
+                                "extractcd",
+                                "-i",
+                                str(p),
+                                "-o",
+                                str(tmp_iso),
+                            ],
+                            [
+                                str(chdman),
+                                "extract",
+                                "-i",
+                                str(p),
+                                "-o",
+                                str(tmp_iso),
+                            ],
+                        ]
+
+                        # Inform GUI users we're attempting extraction
+                        try:
+                            eff_logger.info(
+                                f"Attempting to extract CHD for hashing: {p.name}"
+                            )
+                        except Exception:
+                            pass
+
+                        rc = 1
+                        for cmd in verbs:
+                            try:
+                                res = run_cmd(cmd)
+                                rc = getattr(res, "returncode", 1)
+                                if rc == 0 and tmp_iso.exists():
+                                    break
+                            except Exception:
+                                rc = 1
+                                continue
+                        if rc == 0 and tmp_iso.exists():
+                            if not md5:
+                                md5 = calculate_file_hash(
+                                    tmp_iso, "md5", progress_cb=progress_cb
+                                )
+                            if not sha1:
+                                sha1 = calculate_file_hash(
+                                    tmp_iso, "sha1", progress_cb=progress_cb
+                                )
+                        else:
+                            try:
+                                eff_logger.warning(
+                                    f"WARN: chdman failed to extract {p.name}; "
+                                    "falling back to hashing compressed file"
+                                )
+                            except Exception:
+                                pass
+                    except Exception:
+                        try:
+                            eff_logger.warning(
+                                f"WARN: chdman extraction failed for {p.name}; "
+                                "falling back to hashing compressed file"
+                            )
+                        except Exception:
+                            pass
+                else:
+                    # No chdman available — log explicitly to help users
+                    try:
+                        eff_logger.info(
+                            "Ferramenta 'chdman' não encontrada no PATH; não "
+                            "será possível extrair .chd para hashing"
+                        )
+                    except Exception:
+                        pass
+        finally:
+            try:
+                if tmp_iso and tmp_iso.exists():
+                    tmp_iso.unlink()
+            except Exception:
+                pass
 
         # Compute missing hashes
         if not md5:

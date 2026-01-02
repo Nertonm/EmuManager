@@ -3,10 +3,12 @@ from __future__ import annotations
 import logging
 import re
 import subprocess
+import tempfile
+import shutil
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from emumanager.common.execution import run_cmd_stream
+from emumanager.common.execution import run_cmd_stream, run_cmd
 from emumanager.library import LibraryDB, LibraryEntry
 from emumanager.logging_cfg import log_call, set_correlation_id
 from emumanager.psx import database as psx_db
@@ -362,12 +364,48 @@ def worker_chd_decompress_single(
 
     logger.info(f"Extracting CHD: {path.name} -> {out.name}...")
     try:
-        # Try extraction verbs compatible with different chdman versions.
-        cmds = [
-            [str(chdman), "extractdvd", "-i", str(path), "-o", str(out)],
-            [str(chdman), "extractcd", "-i", str(path), "-o", str(out)],
-            [str(chdman), "extract", "-i", str(path), "-o", str(out)],
-        ]
+        # Prefer to run `chdman info` first and pick the most likely extract
+        # verb. Some CHDs are DVD images and extractdvd tends to work better;
+        # others are CD images. If info can't be parsed, fall back to trying
+        # several verbs.
+        cmds = []
+        try:
+            info_res = run_cmd([str(chdman), "info", "-i", str(path)])
+            info_out = getattr(info_res, "stdout", "") or ""
+            tag_m = None
+            # Look for a Metadata Tag line like "Tag='DVD '"
+            import re
+
+            m = re.search(r"Tag='([^']+)'", info_out)
+            if m:
+                tag_m = m.group(1).strip().upper()
+            # If tag suggests DVD, try extractdvd first; if CD, try extractcd.
+            if tag_m and "DVD" in tag_m:
+                cmds = [
+                    [str(chdman), "extractdvd", "-i", str(path), "-o", str(out)],
+                    [str(chdman), "extractraw", "-i", str(path), "-o", str(out)],
+                    [str(chdman), "extracthd", "-i", str(path), "-o", str(out)],
+                    [str(chdman), "extract", "-i", str(path), "-o", str(out)],
+                    [str(chdman), "extractcd", "-i", str(path), "-o", str(out)],
+                ]
+            elif tag_m and "CD" in tag_m:
+                cmds = [
+                    [str(chdman), "extractcd", "-i", str(path), "-o", str(out)],
+                    [str(chdman), "extractraw", "-i", str(path), "-o", str(out)],
+                    [str(chdman), "extracthd", "-i", str(path), "-o", str(out)],
+                    [str(chdman), "extract", "-i", str(path), "-o", str(out)],
+                ]
+        except Exception:
+            cmds = []
+
+        if not cmds:
+            cmds = [
+                [str(chdman), "extractdvd", "-i", str(path), "-o", str(out)],
+                [str(chdman), "extractraw", "-i", str(path), "-o", str(out)],
+                [str(chdman), "extracthd", "-i", str(path), "-o", str(out)],
+                [str(chdman), "extractcd", "-i", str(path), "-o", str(out)],
+                [str(chdman), "extract", "-i", str(path), "-o", str(out)],
+            ]
         progress_cb = getattr(args, "progress_callback", None)
         rc = 1
         for cmd in cmds:
@@ -383,8 +421,166 @@ def worker_chd_decompress_single(
         if rc == 0:
             logger.info(f"Extraction complete: {out.name}")
             return f"Extracted: {out.name}"
-        logger.error(f"chdman failed ({rc}) for {path.name}")
-        return f"Error: chdman failed ({rc})"
+
+        # Extraction failed; gather diagnostics (info + verify) and write a
+        # more explanatory message to the logs so users can diagnose issues.
+        full_log_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".chdman.out", delete=False, mode="w", encoding="utf-8") as outf:
+                full_log_path = Path(outf.name)
+                try:
+                    outf.write("--- chdman last extraction output ---\n")
+                    outf.write((getattr(res, "stdout", "") or "") + "\n")
+                except Exception:
+                    pass
+                try:
+                    info_res = run_cmd([str(chdman), "info", "-i", str(path)])
+                    outf.write("--- chdman info ---\n")
+                    outf.write((getattr(info_res, "stdout", "") or "") + "\n")
+                except Exception:
+                    pass
+                try:
+                    ver_res = run_cmd([str(chdman), "verify", "-i", str(path)])
+                    outf.write("--- chdman verify ---\n")
+                    outf.write((getattr(ver_res, "stdout", "") or "") + "\n")
+                except Exception:
+                    pass
+
+        except Exception:
+            full_log_path = None
+
+        # Detect usage/help output and common runtime errors such as
+        # 'Invalid data' which usually indicate corruption. We reuse the
+        # outputs we collected earlier (info_res/ver_res) when available.
+        last_out = getattr(res, "stdout", "") or ""
+        info_out = ""
+        ver_out = ""
+        try:
+            info_out = getattr(info_res, "stdout", "") or ""
+        except Exception:
+            pass
+        try:
+            ver_out = getattr(ver_res, "stdout", "") or ""
+        except Exception:
+            pass
+
+        usage_detected = (
+            ("Usage:" in last_out) or last_out.strip().startswith("chdman - MAME")
+        )
+        invalid_data_detected = (
+            ("Invalid data" in last_out)
+            or ("Invalid data" in info_out)
+            or ("Invalid data" in ver_out)
+        )
+
+        if full_log_path:
+            if usage_detected:
+                logger.error(
+                    "chdman appears to have printed its usage/help text when trying to "
+                    f"extract {path.name}; this often means the chdman binary lacks "
+                    "codec support (e.g. liblzma/libxz) or is an incomplete build.\n"
+                    f"Full chdman output saved to: {full_log_path}\n"
+                    f"Please run: ldd {str(chdman)} and install xz/liblzma if missing."
+                )
+                return (
+                    "Error: chdman printed usage/help while extracting (likely missing "
+                    f"liblzma/xz). See {full_log_path} "
+                    f"and run 'ldd {str(chdman)}' to check."
+                )
+            if invalid_data_detected:
+                # Attempt to quarantine the corrupted CHD: move it to a
+                # `quarantine` subfolder next to the original file, update
+                # the LibraryDB status to CORRUPT and log the action so the
+                # user can inspect and restore if desired.
+                try:
+                    quarantine_dir = path.parent / "quarantine"
+                    quarantine_dir.mkdir(parents=True, exist_ok=True)
+                    new_path = quarantine_dir / path.name
+                    shutil.move(str(path), str(new_path))
+
+                    # Update DB entry (best-effort)
+                    try:
+                        lib_db = LibraryDB()
+                        old_entry = lib_db.get_entry(str(path))
+                        st = new_path.stat()
+                        if old_entry:
+                            new_entry = LibraryEntry(
+                                path=str(new_path),
+                                system=old_entry.system,
+                                size=st.st_size,
+                                mtime=st.st_mtime,
+                                crc32=old_entry.crc32,
+                                md5=old_entry.md5,
+                                sha1=old_entry.sha1,
+                                sha256=old_entry.sha256,
+                                status="CORRUPT",
+                                match_name=old_entry.match_name,
+                                dat_name=old_entry.dat_name,
+                            )
+                        else:
+                            new_entry = LibraryEntry(
+                                path=str(new_path),
+                                system="",
+                                size=st.st_size,
+                                mtime=st.st_mtime,
+                                crc32=None,
+                                md5=None,
+                                sha1=None,
+                                sha256=None,
+                                status="CORRUPT",
+                                match_name=None,
+                                dat_name=None,
+                            )
+                        lib_db.update_entry(new_entry)
+                        lib_db.log_action(
+                            str(new_path),
+                            "QUARANTINED",
+                            (
+                                "Moved from "
+                                f"{path} due to invalid data; see {full_log_path}"
+                            ),
+                        )
+                    except Exception:
+                        # Best-effort: don't abort if DB update fails
+                        logger.warning("Failed to update LibraryDB for quarantined CHD")
+
+                    logger.error(
+                        "chdman reported 'Invalid data' while reading "
+                        f"{path.name}; the CHD has been moved to quarantine: {new_path}\n"
+                        f"Full chdman output saved to: {full_log_path}\n"
+                        "Action: run 'chdman verify -i <file>' to confirm integrity or restore from backup."
+                    )
+                    return (
+                        f"Error: CHD contains invalid data and was moved to quarantine: {new_path}. See {full_log_path}"
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to quarantine corrupted CHD {path}: {e}")
+                    return (
+                        f"Error: CHD contains invalid data (could not quarantine automatically). See {full_log_path}"
+                    )
+            logger.error(f"chdman failed ({rc}) for {path.name}; see: {full_log_path}")
+            return f"Error: chdman failed ({rc}); see {full_log_path}"
+        else:
+            if usage_detected:
+                logger.error(
+                    "chdman appears to have printed usage/help while extracting "
+                    f"{path.name}; binary may lack codec support (liblzma/xz)."
+                )
+                return (
+                    "Error: chdman printed usage/help while extracting (likely missing "
+                    f"liblzma/xz). Run 'ldd {str(chdman)}' to check."
+                )
+            if invalid_data_detected:
+                logger.error(
+                    "chdman reported 'Invalid data' while reading "
+                    f"{path.name}; the CHD may be corrupted."
+                )
+                return (
+                    "Error: CHD contains invalid data (possible corruption). Run "
+                    f"'chdman verify -i {str(path)}'."
+                )
+            logger.error(f"chdman failed ({rc}) for {path.name}")
+            return f"Error: chdman failed ({rc})"
     except Exception as e:
         logger.error(f"Extraction error for {path.name}: {e}")
         return f"Error: {e}"

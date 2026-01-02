@@ -11,6 +11,7 @@ import logging
 import threading
 import uuid
 from pathlib import Path
+import shutil
 from types import SimpleNamespace
 from typing import Any, Callable, Optional
 
@@ -72,6 +73,23 @@ class MainWindowBase:
         qt = self._qtwidgets
         # Common literals
         self._dlg_select_base_title = "Select base directory"
+        # Quarantine tab actions (if present)
+        try:
+            if hasattr(self.ui, "btn_quar_open"):
+                self.ui.btn_quar_open.clicked.connect(self._quarantine_open_location)
+            if hasattr(self.ui, "btn_quar_restore"):
+                self.ui.btn_quar_restore.clicked.connect(self._quarantine_restore)
+            if hasattr(self.ui, "btn_quar_delete"):
+                self.ui.btn_quar_delete.clicked.connect(self._quarantine_delete)
+            if hasattr(self.ui, "quarantine_table"):
+                try:
+                    self.ui.quarantine_table.itemSelectionChanged.connect(
+                        self._on_quarantine_selection_changed
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
         # Attempt to locate the QtCore module corresponding to the passed
         # QtWidgets binding (works for PyQt6 or PySide6). Also prepare a small
@@ -344,11 +362,40 @@ class MainWindowBase:
             if p > 1.0:
                 p = 1.0
 
-            # Update progress bar
+            # Update progress bar and label
             try:
+                # Show progress bar if hidden
                 if not self.ui.progress_bar.isVisible():
                     self.ui.progress_bar.setVisible(True)
-                self.ui.progress_bar.setValue(int(p * 100))
+
+                    # If percent is None treat as indeterminate/busy; negative
+                    # values are clamped to 0 for determinate reporting.
+                    if percent is None:
+                        try:
+                            self.ui.progress_bar.setRange(0, 0)
+                        except Exception:
+                            pass
+                    else:
+                        try:
+                            # clamp negative/over values into [0,1]
+                            if p < 0.0:
+                                p = 0.0
+                            if p > 1.0:
+                                p = 1.0
+                            self.ui.progress_bar.setRange(0, 100)
+                            self.ui.progress_bar.setValue(int(p * 100))
+                        except Exception:
+                            pass
+
+                # Update small label with message (if any)
+                try:
+                    if message:
+                        self.ui.progress_label.setText(message)
+                        self.ui.progress_label.setVisible(True)
+                    else:
+                        self.ui.progress_label.setVisible(False)
+                except Exception:
+                    pass
             except Exception:
                 pass
 
@@ -542,6 +589,8 @@ class MainWindowBase:
 
         # Show Library Actions (audit trail)
         self.act_show_actions = qt.QAction("Show Library Actions", self.window)
+        # Show Quarantine viewer
+        self.act_show_quarantine = qt.QAction("Show Quarantine", self.window)
         # Connect to ToolsController handler if available
         try:
             if hasattr(self, "tools_controller") and hasattr(
@@ -549,6 +598,12 @@ class MainWindowBase:
             ):
                 self.act_show_actions.triggered.connect(
                     self.tools_controller.on_show_actions
+                )
+            if hasattr(self, "tools_controller") and hasattr(
+                self.tools_controller, "on_show_quarantine"
+            ):
+                self.act_show_quarantine.triggered.connect(
+                    self.tools_controller.on_show_quarantine
                 )
         except Exception:
             pass
@@ -646,6 +701,13 @@ class MainWindowBase:
             m_view.addAction(self.act_focus_filter)
             m_view.addSeparator()
             m_view.addAction(self.act_reset_layout)
+            # Add diagnostic dialogs
+            try:
+                m_view.addSeparator()
+                m_view.addAction(self.act_show_actions)
+                m_view.addAction(self.act_show_quarantine)
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -975,6 +1037,25 @@ class MainWindowBase:
         except Exception:
             pass
 
+    def _update_logger(self, base_dir: Path):
+        """Configure file-based logging under the selected library directory.
+
+        Adds a file handler so logs are persisted to <base_dir>/_INSTALL_LOG.txt
+        and a rotating file logger for fileops under <base_dir>/logs/fileops.log.
+        """
+        try:
+            from emumanager.logging_cfg import get_logger, get_fileops_logger
+
+            # Ensure the main emumanager logger writes to the selected base
+            get_logger("emumanager", base_dir=base_dir)
+            # Add/ensure fileops logger writes to a rotating file under base/logs
+            get_fileops_logger(base_dir=base_dir)
+        except Exception as e:
+            try:
+                self.log_msg(f"Failed to update logger: {e}")
+            except Exception:
+                pass
+
     def _restore_ui_settings(self):
         """Restore checkboxes, toolbar visibility, filters, splitter, and widths."""
         try:
@@ -1238,11 +1319,27 @@ class MainWindowBase:
             # Cancel button logic is inverse
             self.ui.btn_cancel.setEnabled(not enabled)
 
-            # Show/Hide progress bar
-            self.ui.progress_bar.setVisible(not enabled)
+            # Show/Hide progress bar and associated label
+            try:
+                self.ui.progress_bar.setVisible(not enabled)
+            except Exception:
+                pass
+            try:
+                # Hide progress label when UI is enabled
+                self.ui.progress_label.setVisible(False)
+            except Exception:
+                pass
             if enabled:
-                self.ui.progress_bar.setValue(0)
-                self.status.clearMessage()
+                try:
+                    # Reset determinate bar
+                    self.ui.progress_bar.setRange(0, 100)
+                    self.ui.progress_bar.setValue(0)
+                except Exception:
+                    pass
+                try:
+                    self.status.clearMessage()
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -1330,16 +1427,14 @@ class MainWindowBase:
         progress_cb = self._signaler.progress_signal.emit if self._signaler else None
 
         def _work():
-            op = uuid.uuid4().hex
+            op = str(uuid.uuid4())[:8]
             log_cb = self._make_op_log_cb(op)
             # show op id briefly in status
             try:
                 self.status.showMessage(f"Operation {op} started", 3000)
             except Exception:
                 pass
-            return worker_scan_library(
-                Path(base), log_cb, progress_cb, self._cancel_event
-            )
+            return worker_scan_library(Path(base), log_cb, progress_cb, self._cancel_event)
 
         def _done(result):
             if isinstance(result, Exception):
@@ -1357,6 +1452,12 @@ class MainWindowBase:
                 self._signaler.progress_signal.emit(0, "")
             else:
                 self._progress_slot(0, "")
+
+            # Refresh quarantine tab contents after a scan
+            try:
+                self._refresh_quarantine_tab()
+            except Exception:
+                pass
 
         self._run_in_background(_work, _done)
         # Update stats immediately with cached data if available
@@ -1449,6 +1550,190 @@ class MainWindowBase:
         self.log_msg("Sistemas encontrados:")
         for s in systems:
             self.log_msg(f" - {s}")
+
+    # --- Quarantine tab helpers ---
+    def _refresh_quarantine_tab(self):
+        try:
+            if not hasattr(self.ui, "quarantine_table"):
+                return
+            table = self.ui.quarantine_table
+            # Load corrupt entries from DB
+            rows = [
+                e
+                for e in self.library_db.get_all_entries()
+                if getattr(e, "status", "") == "CORRUPT"
+            ]
+            table.setRowCount(len(rows))
+            for i, e in enumerate(rows):
+                try:
+                    table.setItem(i, 0, self._qtwidgets.QTableWidgetItem(str(e.path)))
+                    table.setItem(i, 1, self._qtwidgets.QTableWidgetItem(str(e.size)))
+                    try:
+                        import time
+
+                        m = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(e.mtime))
+                    except Exception:
+                        m = str(e.mtime)
+                    table.setItem(i, 2, self._qtwidgets.QTableWidgetItem(m))
+                    table.setItem(i, 3, self._qtwidgets.QTableWidgetItem(str(e.status)))
+                except Exception:
+                    continue
+            table.resizeColumnsToContents()
+        except Exception:
+            logging.exception("Failed to refresh quarantine tab")
+
+    def _on_quarantine_selection_changed(self):
+        try:
+            if not hasattr(self.ui, "quarantine_table"):
+                return
+            sel = self.ui.quarantine_table.selectedItems()
+            ok = bool(sel)
+            try:
+                self.ui.btn_quar_open.setEnabled(ok)
+                self.ui.btn_quar_restore.setEnabled(ok)
+                self.ui.btn_quar_delete.setEnabled(ok)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _quarantine_open_location(self):
+        try:
+            sel = self.ui.quarantine_table.selectedItems()
+            if not sel:
+                return
+            p = Path(sel[0].text())
+            # Try Qt-native first
+            try:
+                from PyQt6.QtGui import QDesktopServices
+                from PyQt6.QtCore import QUrl
+
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(p.parent)))
+                return
+            except Exception:
+                pass
+            import subprocess
+
+            subprocess.run(["xdg-open", str(p.parent)], check=False)
+        except Exception as e:
+            self.log_msg(f"Failed to open location: {e}")
+
+    def _quarantine_delete(self):
+        try:
+            sel = self.ui.quarantine_table.selectedItems()
+            if not sel:
+                return
+            row = sel[0].row()
+            p = Path(self.ui.quarantine_table.item(row, 0).text())
+            qt = self._qtwidgets
+            try:
+                yes = qt.QMessageBox.question(
+                    self.window,
+                    "Confirm Delete",
+                    f"Delete {p.name} from quarantine?",
+                    qt.QMessageBox.StandardButton.Yes | qt.QMessageBox.StandardButton.No,
+                )
+            except Exception:
+                yes = qt.QMessageBox.Yes
+            if yes != qt.QMessageBox.StandardButton.Yes and yes != qt.QMessageBox.Yes:
+                return
+            try:
+                if p.exists():
+                    p.unlink()
+                try:
+                    self.library_db.remove_entry(str(p))
+                    self.library_db.log_action(str(p), "DELETED", "User deleted quarantined file")
+                except Exception:
+                    pass
+                self.ui.quarantine_table.removeRow(row)
+            except Exception as e:
+                qt.QMessageBox.warning(self.window, "Error", f"Could not delete: {e}")
+        except Exception:
+            logging.exception("Quarantine delete failed")
+
+    def _quarantine_restore(self):
+        try:
+            sel = self.ui.quarantine_table.selectedItems()
+            if not sel:
+                return
+            row = sel[0].row()
+            qpath = self.ui.quarantine_table.item(row, 0).text()
+            p = Path(qpath)
+            if not p.exists():
+                try:
+                    self._qtwidgets.QMessageBox.information(self.window, "Not found", "Quarantined file not found")
+                except Exception:
+                    pass
+                return
+
+            # Try to find original path from actions
+            orig = None
+            try:
+                rows = self.library_db.get_actions(1000)
+                for path, action, detail, ts in rows:
+                    try:
+                        if path == qpath and action == "QUARANTINED" and detail:
+                            import re
+
+                            m = re.search(r"Moved from (.+?) due to", detail)
+                            if m:
+                                orig = m.group(1)
+                                break
+                    except Exception:
+                        continue
+            except Exception:
+                orig = None
+
+            dest_dir = None
+            if orig:
+                try:
+                    od = Path(orig).parent
+                    if od.exists():
+                        dest_dir = od
+                except Exception:
+                    dest_dir = None
+
+            if not dest_dir:
+                try:
+                    dest = self._qtwidgets.QFileDialog.getExistingDirectory(
+                        self.window, "Select destination folder to restore to"
+                    )
+                    if not dest:
+                        return
+                    dest_dir = Path(dest)
+                except Exception:
+                    try:
+                        self._qtwidgets.QMessageBox.warning(self.window, "Error", "Could not get destination")
+                    except Exception:
+                        pass
+                    return
+
+            new_path = dest_dir / p.name
+            try:
+                shutil.move(str(p), str(new_path))
+                # Update DB
+                try:
+                    entry = self.library_db.get_entry(qpath)
+                    if entry:
+                        entry.path = str(new_path)
+                        entry.status = "UNKNOWN"
+                        self.library_db.update_entry(entry)
+                        self.library_db.log_action(str(new_path), "RESTORED", f"Restored from quarantine: {qpath}")
+                        if qpath != str(new_path):
+                            try:
+                                self.library_db.remove_entry(qpath)
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+                self.ui.quarantine_table.removeRow(row)
+            except Exception as e:
+                try:
+                    self._qtwidgets.QMessageBox.warning(self.window, "Error", f"Failed to restore: {e}")
+                except Exception:
+                    pass
+        except Exception:
+            logging.exception("Quarantine restore failed")
 
     def on_add(self):
         base = self._last_base

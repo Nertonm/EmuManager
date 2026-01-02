@@ -11,6 +11,8 @@ O `pyproject.toml` do projeto expõe os seguintes scripts:
 - `emumanager-arch` → `emumanager.architect:main` (inicialização da estrutura da biblioteca)
 - `ps2-convert` → `emumanager.converters.ps2_converter:_main` (conversor CSO → CHD)
 - `emumanager-gui` → `emumanager.gui:main` (abre a interface gráfica)
+- `emumanager-tui` → `emumanager.tui:main` (modo TUI/CLI com as ações da GUI no terminal)
+  - Subcomandos principais: `tui` (menu simples) e `tui-full` (dashboard fullscreen com painéis ao vivo)
 
 Se você instalou o pacote com `pip install .`, esses comandos ficam disponíveis no PATH. Caso contrário, rode-os via `python -m` usando o Python do virtualenv.
 
@@ -46,8 +48,125 @@ Se você instalou o pacote globalmente, os nomes de script também funcionam dir
 ```bash
 emumanager --help
 emumanager-gui
+emumanager-tui --help
+emumanager-tui tui-full --help
 ps2-convert --help
 ```
+
+### Modo fullscreen (Textual)
+
+O subcomando `tui-full` abre um dashboard de terminal com painéis de log e progresso:
+
+```bash
+emumanager-tui tui-full --base /path/para/biblioteca --keys /path/prod.keys --dats-root /path/dats
+```
+
+Navegação:
+- Seta/Tab para escolher ação; Enter executa.
+- `c` cancela a operação em andamento (quando suportado).
+- `q` sai do dashboard.
+
+### Usando o TUI (Terminal User Interface)
+
+O EmuManager fornece duas formas de usar a interface em terminal:
+
+- `tui`: um menu interativo simples baseado em `rich` que executa ações sequenciais.
+- `tui-full`: dashboard fullscreen interativo (recomenda-se terminal com suporte a 256 cores) baseado em `textual`.
+
+1) Executando o menu simples:
+
+```bash
+# a partir do virtualenv do projeto
+source .venv/bin/activate
+python -m emumanager.tui tui --base /path/para/biblioteca
+```
+
+O menu mostrouá opções numeradas. Use o número e pressione Enter para executar. Exemplo: escolha `5` para rodar `Verify (DAT)` no diretório `roms/`.
+
+2) Executando o dashboard fullscreen:
+
+```bash
+python -m emumanager.tui tui-full --base /path/para/biblioteca --keys /path/keys.txt --dats-root /path/para/dats
+```
+
+Comportamento e atalhos do `tui-full`:
+
+- Navegação: use as setas/Tab para navegar na lista de ações à esquerda.
+- Enter: executa a ação selecionada.
+- Painel "Sistemas": lista os sistemas detectados em `roms/` — selecione um sistema ali para defini-lo como alvo de `Verify`.
+- `refresh_systems`: ação no menu que atualiza a lista de sistemas em tempo real (útil após adicionar novas pastas sem reiniciar o dashboard).
+- `verify` (fluxo aprimorado): ao escolher `Verify (DAT)` o dashboard solicita seleção do sistema (caso não esteja definido) — confirme ou cancele.
+- `c`: solicita cancelamento da operação em andamento (quando suportado pelo worker).
+- `q`: sair do dashboard.
+
+3) Exemplos práticos rápidos
+
+- Verificar um sistema usando o dashboard (passos):
+  1. Abra `tui-full` apontando a sua base.
+  2. Na lista "Sistemas", selecione o sistema que deseja verificar (ex: `snes`). A seleção define o alvo da verificação.
+  3. No painel de ações à esquerda selecione `Verify (DAT)` e pressione Enter.
+  4. Acompanhe o progresso no painel principal; quando terminar será exibida uma tabela com os resultados e uma lista com URLs candidatas para capas.
+
+- Atualizar a lista de sistemas sem reiniciar o dashboard:
+  - Se você criou uma nova pasta de sistema em `roms/` externamente, selecione a ação `Refresh systems` no menu (ou pressione Enter nela). A lista de sistemas será atualizada in-place.
+
+4) Requisitos e dicas
+
+- O `tui-full` usa a biblioteca `textual`. Instale dependências recomendadas se não estiverem presentes:
+
+```bash
+pip install textual rich typer
+```
+
+- Terminais com 256 cores proporcionam melhor aparência; algumas features (como renderização avançada) dependem da versão do `textual` instalada. O TUI é defensivo e tentará usar fallbacks quando necessário.
+
+5) Problemas comuns
+
+- Se o dashboard não iniciar, verifique se `textual` está instalado no mesmo ambiente Python que você está usando.
+- Se a lista de sistemas não refletir mudanças, use `Refresh systems` (no menu) ou reinicie o `tui-full`.
+- Logs e saída de verificação aparecem no painel principal — use-os para diagnosticar falhas de parsing de DAT ou ausência de ferramentas (ex: `chdman`, `nsz`).
+
+### Textual: versões e compatibilidade
+
+O `tui-full` depende da biblioteca `textual`, que vem evoluindo rapidamente — APIs (widgets, nomes e
+parâmetros) podem variar entre versões. Se você encontrar erros de importação ou tracebacks relacionados
+a widgets (`TextLog`, `ScrollView`, `ListView`, `ProgressBar`), as seguintes ações ajudam a diagnosticar e
+corrigir:
+
+- Verifique a versão atual instalada:
+
+```bash
+python -c "import textual, sys; print(textual.__version__)"
+```
+
+- Se a versão for muito antiga (antes de 0.20) ou muito recente (mudação de API), tente instalar a versão
+compatível recomendada:
+
+```bash
+pip install 'textual>=0.20,<0.27'
+```
+
+- Mensagens comuns e como agir:
+  - "cannot import name TextLog": sua versão de `textual` pode não ter `TextLog` — o TUI inclui um fallback
+    que usa `ScrollView`/`Static`, mas pode ser necessário atualizar/downgrade para evitar diferenças visuais.
+  - "Can't mount widget(s) before ListView() is mounted": isso indica diferenças na ordem de montagem; atualize
+    `textual` ou reinicie o TUI; a aplicação tenta montar de forma defensiva, mas versões antigas podem falhar.
+
+- Execução segura: em ambientes onde você não tem certeza da versão, crie um venv limpo e instale o conjunto
+  recomendado de dependências (`rich`, `textual`, `typer`) antes de executar `tui-full`.
+
+Se quiser, eu posso adicionar uma detecção automática que imprime um aviso no startup indicando a versão de
+`textual` e sugestões (upgrade/downgrade). Diga se prefere que eu adicione essa detecção ao `tui-full`.
+
+6) Integração com scripts e automação
+
+Para scripts automatizados prefira os subcomandos diretos do `emumanager` (ex: `verify`, `list-systems`, `organize`) em vez do `tui` interativo. Exemplo para rodar uma verificação programaticamente:
+
+```bash
+python -m emumanager.tui verify /path/para/biblioteca/roms/snes --dats-root /path/para/dats
+```
+
+Esse comando roda a verificação de forma não interativa e retorna um relatório resumido no terminal.
 
 ---
 

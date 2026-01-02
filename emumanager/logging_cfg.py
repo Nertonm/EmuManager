@@ -226,7 +226,13 @@ def get_fileops_logger(
     return logger
 
 
-def configure_logging(env: Optional[str] = "auto", level: int = logging.INFO):
+def configure_logging(
+    env: Optional[str] = "auto",
+    level: int = logging.INFO,
+    base_dir: Optional[Path] = None,
+    max_bytes: int = 10 * 1024 * 1024,
+    backup_count: int = 10,
+):
     """Configure the root logger.
 
     env: 'auto' (default) | 'json' | 'human'
@@ -236,7 +242,29 @@ def configure_logging(env: Optional[str] = "auto", level: int = logging.INFO):
 
     Returns the root logger.
     """
-    # Determine mode
+    # Allow environment overrides for level, format and rotation
+    env_level = os.getenv("EMUMANAGER_LOG_LEVEL")
+    if env_level:
+        try:
+            level = int(env_level)
+        except Exception:
+            # allow names like DEBUG/INFO
+            level = getattr(logging, env_level.upper(), level)
+
+    # rotation overrides
+    env_max = os.getenv("EMUMANAGER_LOG_MAX_BYTES")
+    if env_max:
+        try:
+            max_bytes = int(env_max)
+        except Exception:
+            pass
+    env_backups = os.getenv("EMUMANAGER_LOG_BACKUPS")
+    if env_backups:
+        try:
+            backup_count = int(env_backups)
+        except Exception:
+            pass
+
     chosen = env or os.getenv("EMUMANAGER_LOG_FORMAT", "auto")
     if isinstance(chosen, str):
         chosen = chosen.lower()
@@ -271,6 +299,49 @@ def configure_logging(env: Optional[str] = "auto", level: int = logging.INFO):
             )
             sh.setFormatter(fmt)
         root_logger.addHandler(sh)
+
+    # Add a rotating file handler for persistent logs (idempotent)
+    if not any(
+        getattr(h, "name", None) == "emumanager_file" for h in root_logger.handlers
+    ):
+        try:
+            # Allow override via EMUMANAGER_LOG_FILE or base_dir/logs/emumanager.log
+            env_file = os.getenv("EMUMANAGER_LOG_FILE")
+            if env_file:
+                log_path = Path(env_file)
+            elif base_dir:
+                logs_dir = Path(base_dir) / "logs"
+                logs_dir.mkdir(parents=True, exist_ok=True)
+                log_path = logs_dir / "emumanager.log"
+            else:
+                # fallback to current working dir logs/
+                logs_dir = Path.cwd() / "logs"
+                logs_dir.mkdir(parents=True, exist_ok=True)
+                log_path = logs_dir / "emumanager.log"
+
+            rfh = logging.handlers.RotatingFileHandler(
+                str(log_path),
+                maxBytes=max_bytes,
+                backupCount=backup_count,
+                encoding="utf-8",
+            )
+            rfh.name = "emumanager_file"
+            if mode == "json":
+                rfh.setFormatter(JsonFormatter())
+            else:
+                # include more context for traceability
+                file_fmt = logging.Formatter(
+                    "%(asctime)s %(levelname)s %(name)s %(process)d %(threadName)s "
+                    "%(filename)s:%(lineno)d %(message)s",
+                    datefmt="%Y-%m-%d %H:%M:%S",
+                )
+                rfh.setFormatter(file_fmt)
+            root_logger.addHandler(rfh)
+        except Exception:
+            # If file handler cannot be created, don't fail
+            root_logger.debug(
+                "Could not create persistent file handler for logs at %s", base_dir
+            )
 
     return root_logger
 

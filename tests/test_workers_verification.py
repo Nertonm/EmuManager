@@ -1,9 +1,314 @@
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+import emumanager.workers.common as wc
+import emumanager.workers.verification as wv
 from emumanager.common.models import VerifyReport
+from emumanager.verification import hasher
 from emumanager.workers.verification import worker_hash_verify, worker_identify_all
+
+
+class FakeDat:
+    def lookup(self, crc=None, md5=None, sha1=None):
+        return []
+
+
+def make_args():
+    return SimpleNamespace(progress_callback=None, deep_verify=False, system_name="ps2")
+
+
+# Helper used by tests to simulate missing tools
+def _fake_find_none(name):
+    return None
+
+
+def test_chd_extraction_success_logs(monkeypatch, tmp_path):
+    # Prepare a fake CHD file
+    f = tmp_path / "game.chd"
+    f.write_bytes(b"chd")
+
+    # Capture logger messages
+    msgs = []
+
+    def log_cb(m: str):
+        msgs.append(m)
+
+    eff_logger = wc.GuiLogger(log_cb)
+
+    # Stub find_tool to pretend chdman exists
+    def _fake_find_tool_chd(name):
+        return Path("/usr/bin/chdman") if name == "chdman" else None
+
+    monkeypatch.setattr(wc, "find_tool", _fake_find_tool_chd)
+
+    # Stub run_cmd_stream to create the output ISO and return success
+    def fake_run_cmd_stream(cmd, progress_cb=None, **kwargs):
+        # assume last arg is the output path
+        out = cmd[-1]
+        Path(out).write_bytes(b"ISO")
+
+        class R:
+            returncode = 0
+
+        return R()
+
+    monkeypatch.setattr(wv, "run_cmd_stream", fake_run_cmd_stream)
+
+    # Stub hasher to avoid heavy IO
+    def _fake_calc(path, algorithms, progress_cb=None):
+        return {"crc32": "c", "md5": "m", "sha1": "s"}
+
+    monkeypatch.setattr(hasher, "calculate_hashes", _fake_calc)
+
+    res = wv._verify_single_file(
+        f,
+        FakeDat(),
+        make_args(),
+        None,
+        0.0,
+        1.0,
+        lib_db=None,
+        logger=eff_logger,
+    )
+    assert res is not None
+
+    # We should have logged attempt and success messages
+    assert any("Attempting to extract CHD" in m for m in msgs)
+    assert any("CHD extracted to temporary ISO" in m for m in msgs)
+
+
+def test_chd_tool_missing_logs(monkeypatch, tmp_path):
+    f = tmp_path / "game.chd"
+    f.write_bytes(b"chd")
+
+    msgs = []
+
+    def log_cb(m: str):
+        msgs.append(m)
+
+    eff_logger = wc.GuiLogger(log_cb)
+
+    # Stub find_tool to return None (tool missing)
+    monkeypatch.setattr(wc, "find_tool", _fake_find_none)
+
+    # Stub hasher to return some hashes so flow continues
+    def _fake_calc2(path, algorithms, progress_cb=None):
+        return {"crc32": "c", "md5": "m", "sha1": "s"}
+
+    monkeypatch.setattr(hasher, "calculate_hashes", _fake_calc2)
+
+    res = wv._verify_single_file(
+        f,
+        FakeDat(),
+        make_args(),
+        None,
+        0.0,
+        1.0,
+        lib_db=None,
+        logger=eff_logger,
+    )
+    assert res is not None
+
+    # Should have logged that chdman was not found
+    assert any("chdman" in m and "não encontrada" in m for m in msgs)
+
+
+def test_cso_decompression_success_logs(monkeypatch, tmp_path):
+    f = tmp_path / "game.cso"
+    f.write_bytes(b"cso")
+
+    msgs = []
+
+    def log_cb(m: str):
+        msgs.append(m)
+
+    eff_logger = wc.GuiLogger(log_cb)
+
+    def _fake_find_tool_max(name):
+        return Path("/usr/bin/maxcso") if name == "maxcso" else None
+
+    monkeypatch.setattr(wc, "find_tool", _fake_find_tool_max)
+
+    def fake_run_cmd_stream(cmd, progress_cb=None, **kwargs):
+        out = cmd[-1]
+        Path(out).write_bytes(b"ISO")
+
+        class R:
+            returncode = 0
+
+        return R()
+
+    monkeypatch.setattr(wv, "run_cmd_stream", fake_run_cmd_stream)
+
+    def _fake_calc3(path, algorithms, progress_cb=None):
+        return {"crc32": "c", "md5": "m", "sha1": "s"}
+
+    monkeypatch.setattr(hasher, "calculate_hashes", _fake_calc3)
+
+    res = wv._verify_single_file(
+        f,
+        FakeDat(),
+        make_args(),
+        None,
+        0.0,
+        1.0,
+        lib_db=None,
+        logger=eff_logger,
+    )
+    assert res is not None
+
+    assert any("Attempting to decompress CSO" in m for m in msgs)
+    assert any("CSO decompressed to temporary ISO" in m for m in msgs)
+
+
+def test_cso_tool_missing_logs(monkeypatch, tmp_path):
+    f = tmp_path / "game.cso"
+    f.write_bytes(b"cso")
+
+    msgs = []
+
+    def log_cb(m: str):
+        msgs.append(m)
+
+    eff_logger = wc.GuiLogger(log_cb)
+
+    monkeypatch.setattr(wc, "find_tool", _fake_find_none)
+
+    def _fake_calc4(path, algorithms, progress_cb=None):
+        return {"crc32": "c", "md5": "m", "sha1": "s"}
+
+    monkeypatch.setattr(hasher, "calculate_hashes", _fake_calc4)
+
+    res = wv._verify_single_file(
+        f,
+        FakeDat(),
+        make_args(),
+        None,
+        0.0,
+        1.0,
+        lib_db=None,
+        logger=eff_logger,
+    )
+    assert res is not None
+
+    assert any("maxcso" in m and "não encontrada" in m for m in msgs)
+
+
+def test_chd_info_sha1_fallback_verified_logs(monkeypatch, tmp_path):
+    # CHD extraction fails but chdman info contains a SHA1 that matches DAT
+    f = tmp_path / "game.chd"
+    f.write_bytes(b"chd")
+
+    msgs = []
+
+    def log_cb(m: str):
+        msgs.append(m)
+
+    eff_logger = wc.GuiLogger(log_cb)
+
+    # Pretend chdman exists
+    def _fake_find_tool_chd(name):
+        return Path("/usr/bin/chdman") if name == "chdman" else None
+
+    monkeypatch.setattr(wc, "find_tool", _fake_find_tool_chd)
+
+    # Simulate extraction failure
+    def fake_run_cmd_stream(cmd, progress_cb=None, **kwargs):
+        class R:
+            returncode = 1
+            stdout = "extraction failed"
+
+        return R()
+
+    monkeypatch.setattr(wv, "run_cmd_stream", fake_run_cmd_stream)
+
+    # Simulate chdman info returning a SHA1
+    def fake_run_cmd(cmd, **kwargs):
+        class R:
+            stdout = "SHA1: a2955857e44088ea155b75fbaaa377ecf01571fd"
+
+        return R()
+
+    monkeypatch.setattr(wv, "run_cmd", fake_run_cmd)
+
+    # Fake DAT that returns a matching entry for the SHA1
+    class FakeDatMatch:
+        def lookup(self, crc=None, md5=None, sha1=None):
+            if sha1 and sha1.lower() == "a2955857e44088ea155b75fbaaa377ecf01571fd":
+                return [SimpleNamespace(game_name="God of War", dat_name="GOW")]
+            return []
+
+    res = wv._verify_single_file(
+        f,
+        FakeDatMatch(),
+        make_args(),
+        None,
+        0.0,
+        1.0,
+        lib_db=None,
+        logger=eff_logger,
+    )
+
+    assert res is not None
+    assert res.status == "VERIFIED"
+    assert any("Found SHA1 in CHD header" in m for m in msgs)
+    assert any("Verified via CHD header SHA1" in m for m in msgs)
+
+
+def test_chd_info_sha1_fallback_no_match_logs(monkeypatch, tmp_path):
+    # CHD extraction fails, chdman info contains SHA1 but DAT has no match -> COMPRESSED
+    f = tmp_path / "game.chd"
+    f.write_bytes(b"chd")
+
+    msgs = []
+
+    def log_cb(m: str):
+        msgs.append(m)
+
+    eff_logger = wc.GuiLogger(log_cb)
+
+    monkeypatch.setattr(wc, "find_tool", lambda name: Path("/usr/bin/chdman") if name == "chdman" else None)
+
+    def fake_run_cmd_stream(cmd, progress_cb=None, **kwargs):
+        class R:
+            returncode = 1
+            stdout = "extraction failed"
+
+        return R()
+
+    monkeypatch.setattr(wv, "run_cmd_stream", fake_run_cmd_stream)
+
+    def fake_run_cmd_no_match(cmd, **kwargs):
+        class R:
+            stdout = "SHA1: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+        return R()
+
+    monkeypatch.setattr(wv, "run_cmd", fake_run_cmd_no_match)
+
+    class FakeDatNoMatch:
+        def lookup(self, crc=None, md5=None, sha1=None):
+            return []
+
+    res = wv._verify_single_file(
+        f,
+        FakeDatNoMatch(),
+        make_args(),
+        None,
+        0.0,
+        1.0,
+        lib_db=None,
+        logger=eff_logger,
+    )
+
+    assert res is not None
+    assert res.status == "COMPRESSED"
+    assert any("Found SHA1 in CHD header" in m for m in msgs)
+    assert any("falling back to compressed status" in m for m in msgs)
+
 
 
 @pytest.fixture

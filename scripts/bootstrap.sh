@@ -61,7 +61,13 @@ install_arch_deps() {
     if ! command_exists make; then MISSING_PACKAGES="$MISSING_PACKAGES base-devel python openssl zlib"; fi
 
     if [[ ! -z "$MISSING_PACKAGES" ]]; then
-        echo -e "Installing missing official packages: ${RED}$MISSING_PACKAGES${NC}"
+        # Ensure system is updated and MAME + common codec libs are present
+        echo -e "\n${YELLOW}Updating system and ensuring MAME and codecs (xz, flac) are installed...${NC}"
+        echo "You may be prompted for your password to run pacman."
+        sudo pacman -Syu
+        sudo pacman -S mame xz flac
+
+        echo -e "Installing other missing official packages: ${RED}$MISSING_PACKAGES${NC}"
         sudo pacman -S --noconfirm $MISSING_PACKAGES
     else
         echo -e "${GREEN}All official system packages installed.${NC}"
@@ -123,6 +129,54 @@ case "$DISTRO" in
         echo "  clamav, dolphin-emu, mame-tools, maxcso, git, build-essential/base-devel"
         ;;
 esac
+
+# Quick check: confirm chdman has runtime codec support (liblzma, libFLAC, libz)
+check_chdman_codecs() {
+    if ! command_exists chdman; then
+        echo -e "\n${YELLOW}chdman not found; skipping codec runtime check.${NC}\n"
+        return
+    fi
+
+    CHDMAN_PATH=$(command -v chdman)
+    echo -e "\n${YELLOW}Checking chdman runtime libraries (${CHDMAN_PATH})...${NC}"
+    # Capture ldd output for diagnostics
+    LDD_OUT=$(ldd "${CHDMAN_PATH}" 2>&1 || true)
+    # Save to project root for easier debugging
+    echo "--- ldd output for ${CHDMAN_PATH} ---" > .bootstrap-chdman-ldd.txt
+    echo "${LDD_OUT}" >> .bootstrap-chdman-ldd.txt
+
+    echo "${LDD_OUT}" | sed -n '1,200p'
+
+    has_lzma=0
+    has_flac=0
+    echo "${LDD_OUT}" | grep -qi lzma && has_lzma=1 || true
+    echo "${LDD_OUT}" | grep -qi flac && has_flac=1 || true
+
+    if [[ ${has_lzma} -eq 1 && ${has_flac} -eq 1 ]]; then
+        echo -e "${GREEN}chdman appears to have LZMA and FLAC support.${NC}\n"
+    else
+        echo -e "${RED}Warning: chdman is missing one or more codec libraries (LZMA/FLAC).${NC}"
+        echo "Saved ldd output to .bootstrap-chdman-ldd.txt for inspection."
+        case "$DISTRO" in
+            ubuntu|debian|pop|mint|kali)
+                echo -e "To add runtime support on Debian/Ubuntu, try:\n  sudo apt update\n  sudo apt install liblzma5 libflac8\nIf chdman still lacks LZMA support, install the 'mame' or 'mame-tools' package from your distro or build chdman from source (install liblzma-dev libflac-dev before building)."
+                ;;
+            arch|manjaro|endeavouros)
+                echo -e "On Arch, install the official mame package and runtime libs:\n  sudo pacman -Syu\n  sudo pacman -S mame xz flac\nIf chdman still lacks codecs, build chdman from MAME source after installing base-devel xz flac."
+                ;;
+            fedora|rhel|centos)
+                echo -e "On Fedora, install runtime libs:\n  sudo dnf install xz flac\nAnd if needed: sudo dnf install xz-libs flac\nThen reinstall mame-tools or build from source."
+                ;;
+            *)
+                echo -e "Please ensure liblzma (xz) and libFLAC are installed on your system and that your chdman binary links to them. See .bootstrap-chdman-ldd.txt for details."
+                ;;
+        esac
+        echo -e "\nIf you prefer, re-run this bootstrap after installing the needed packages."
+    fi
+}
+
+# Run the chdman codec check (helps diagnose missing liblzma/libFLAC at runtime)
+check_chdman_codecs
 
 # 2. Hactool (Switch Metadata)
 echo -e "\n${YELLOW}[2/6] Checking hactool...${NC}"

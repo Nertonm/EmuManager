@@ -201,6 +201,17 @@ class Ui_MainWindow:
         self.progress_bar.setVisible(False)
         self.statusbar.addPermanentWidget(self.progress_bar)
 
+        # Small label next to progress bar for operation / filename messages
+        self.progress_label = qt.QLabel(self.statusbar)
+        self.progress_label.setObjectName("progress_label")
+        try:
+            # Small, muted style
+            self.progress_label.setStyleSheet("color: #bbb; font-size: 11px;")
+        except Exception:
+            pass
+        self.progress_label.setVisible(False)
+        self.statusbar.addPermanentWidget(self.progress_label)
+
         self.retranslate_ui(MainWindow)
         self.tabs.setCurrentIndex(0)
 
@@ -442,6 +453,7 @@ class Ui_MainWindow:
         self._setup_microsoft_tab(qt)
         self._setup_nintendo_legacy_tab(qt)
         self._setup_general_tab(qt)
+        self._setup_quarantine_tab(qt)
 
     def _setup_sega_tab(self, qt):
         self.tab_sega = qt.QWidget()
@@ -936,6 +948,46 @@ class Ui_MainWindow:
         gen_layout.addWidget(grp_gen)
         gen_layout.addStretch()
         self.tools_tabs.addTab(self.tab_general, "General")
+
+    def _setup_quarantine_tab(self, qt):
+        self.tab_quarantine = qt.QWidget()
+        layout = qt.QVBoxLayout(self.tab_quarantine)
+
+        # Table showing quarantined files
+        self.quarantine_table = qt.QTableWidget()
+        self.quarantine_table.setColumnCount(4)
+        self.quarantine_table.setHorizontalHeaderLabels([
+            "Path",
+            "Size",
+            "MTime",
+            "Status",
+        ])
+        try:
+            self.quarantine_table.setEditTriggers(qt.QTableWidget.NoEditTriggers)
+            self.quarantine_table.setSelectionBehavior(
+                qt.QTableWidget.SelectRows
+            )
+            self.quarantine_table.setSelectionMode(qt.QTableWidget.SingleSelection)
+        except Exception:
+            pass
+
+        layout.addWidget(self.quarantine_table)
+
+        btn_layout = qt.QHBoxLayout()
+        self.btn_quar_open = qt.QPushButton("Open Location")
+        self.btn_quar_restore = qt.QPushButton("Restore")
+        self.btn_quar_delete = qt.QPushButton("Delete")
+        self.btn_quar_open.setEnabled(False)
+        self.btn_quar_restore.setEnabled(False)
+        self.btn_quar_delete.setEnabled(False)
+
+        btn_layout.addWidget(self.btn_quar_open)
+        btn_layout.addWidget(self.btn_quar_restore)
+        btn_layout.addWidget(self.btn_quar_delete)
+        btn_layout.addStretch()
+        layout.addLayout(btn_layout)
+
+        self.tools_tabs.addTab(self.tab_quarantine, "Quarantine")
 
     def setup_verification_tab(self, qt, parent):
         layout = qt.QVBoxLayout(parent)

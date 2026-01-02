@@ -7,7 +7,11 @@ name = "emumanager"
 version = "0.1.0"
 description = "Small emulation collection manager and utilities"
 authors = [ { name = "EmuManager Maintainer" } ]
-dependencies = []
+dependencies = [
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "textual>=0.54.0",
+]
 readme = "README.md"
 license = "MIT"
 
@@ -16,9 +20,11 @@ emumanager = "emumanager.manager:main"
 emumanager-arch = "emumanager.architect:main"
 ps2-convert = "emumanager.converters.ps2_converter:_main"
 emumanager-gui = "emumanager.gui:main"
+emumanager-tui = "emumanager.tui:main"
 
 [project.optional-dependencies]
 gui = ["pyqt6"]
+tui = ["typer>=0.9.0", "rich>=13.0.0", "textual>=0.54.0"]
 docs = [
     "mkdocs",
     "mkdocs-material",

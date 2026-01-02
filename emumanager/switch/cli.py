@@ -3,18 +3,23 @@
 import argparse
 import csv
 import logging
+import os
 import re
 import shutil
 import signal
 import subprocess
 import sys
 import tempfile
-from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, List, Optional
 
 from emumanager.common.execution import cancel_current_process, find_tool, run_cmd
-from emumanager.logging_cfg import Col, get_fileops_logger
+from emumanager.logging_cfg import (
+    Col,
+    get_fileops_logger,
+    configure_logging,
+    get_logger,
+)
 from emumanager.switch import meta_extractor, meta_parser, metadata
 from emumanager.verification.hasher import get_file_hash
 
@@ -267,37 +272,43 @@ def setup_logging(
     verbose: bool = False,
     max_bytes: int = 5 * 1024 * 1024,
     backups: int = 3,
+    base_dir: Optional[Path] = None,
 ) -> None:
-    """Configura o logger global com rotação e console.
+    """Configure logging using central `configure_logging`.
 
-    logfile: caminho para o arquivo de log
-    verbose: se True, nível DEBUG
+    This sets environment overrides so that the centralized logging
+    configuration will place the persistent log file where the CLI
+    expects. We intentionally keep behavior idempotent and minimal here.
     """
-    # remove handlers antigos
-    for h in logger.handlers:
-        logger.removeHandler(h)
-
-    level = logging.DEBUG if verbose else logging.INFO
-    logger.setLevel(level)
-    fmt = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
-
-    # Rotating file handler
+    # Respect CLI-specified logfile: prefer a path relative to base_dir
     try:
-        fh = RotatingFileHandler(
-            logfile, maxBytes=max_bytes, backupCount=backups, encoding="utf-8"
-        )
-        fh.setFormatter(fmt)
-        logger.addHandler(fh)
+        if logfile:
+            # If logfile is not an absolute path, place it under base_dir or cwd
+            lf = Path(logfile)
+            if not lf.is_absolute():
+                target_dir = Path(base_dir) if base_dir else Path.cwd()
+                lf = target_dir / lf
+            os.environ["EMUMANAGER_LOG_FILE"] = str(lf)
     except Exception:
-        # fallback to basic file handler
-        fh = logging.FileHandler(logfile, encoding="utf-8")
-        fh.setFormatter(fmt)
-        logger.addHandler(fh)
+        # Best-effort only; don't fail the app for logging env setup
+        pass
 
-    # console handler
-    ch = logging.StreamHandler(sys.stdout)
-    ch.setFormatter(fmt)
-    logger.addHandler(ch)
+    # Map verbose flag to log level env so configure_logging picks it up
+    if verbose:
+        os.environ.setdefault("EMUMANAGER_LOG_LEVEL", str(logging.DEBUG))
+
+    # Call centralized configure with rotation parameters
+    configure_logging(
+        base_dir=Path(base_dir) if base_dir else None,
+        level=logging.DEBUG if verbose else logging.INFO,
+        max_bytes=max_bytes,
+        backup_count=backups,
+    )
+
+    # Ensure module logger uses the centralized handlers
+    global logger
+    logger = get_logger("organizer_v13", base_dir=Path(base_dir) if base_dir else None)
+    logger.setLevel(logging.DEBUG if verbose else logging.INFO)
 
 
 # --- DETECÇÃO DE FERRAMENTAS ---

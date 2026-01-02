@@ -456,7 +456,10 @@ def worker_ps2_verify(
 
         # Skip files flagged as compressed by scanner
         try:
-            if skip_if_compressed(f, logger):
+            # If scanner marked as COMPRESSED, normally we skip. For .chd
+            # files we still want to attempt PS2-specific processing (serial
+            # extraction / chdman verify), so don't skip .chd here.
+            if skip_if_compressed(f, logger) and f.suffix.lower() != ".chd":
                 unknown += 1
                 continue
         except Exception:

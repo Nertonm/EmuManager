@@ -115,3 +115,4 @@ secrets.py
 .env
 .env.*
 a
+.bootstrap-chdman-ldd.txt

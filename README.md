@@ -41,6 +41,24 @@ A documentação completa está disponível na pasta `docs/` e pode ser visualiz
     - **PS2**: Converta ISO/CSO para CHD.
     - **PSP**: Converta ISO para CSO.
 
+    ### Interface TUI/CLI
+    - **Modo Terminal Completo**: `emumanager-tui` oferece um menu interativo para as mesmas ações da GUI diretamente no shell.
+    - **Subcomandos dedicados**: organize Switch, verifique com DATs, limpe lixo, atualize DATs, adicione ROMs e faça health check sem abrir a GUI.
+    - **Modo fullscreen**: `emumanager-tui tui-full` abre um dashboard com painéis ao vivo de log e progresso.
+    - **Baseada em Typer + Rich/Textual**: ajuda colorida (`--help`), tabelas e logs legíveis no terminal.
+
+        Consulte `docs/cli.md` para instruções detalhadas do TUI/CLI. Um resumo rápido:
+
+        - Menu simples (interativo):
+            ```bash
+            python -m emumanager.tui tui --base /path/to/library
+            ```
+
+        - Dashboard fullscreen (Textual):
+            ```bash
+            python -m emumanager.tui tui-full --base /path/to/library --keys /path/keys.txt --dats-root /path/dats
+            ```
+
 #### Barra de Menu, Toolbar e Atalhos
 - **Menu superior (File / Tools / View)**: ações reutilizáveis entre menu e toolbar.
 - **Toolbar**: botões rápidos para Abrir Biblioteca, Atualizar Lista, Init, Add ROM, Verificar DAT, Cancelar, Alternar Log e Focar Filtro.

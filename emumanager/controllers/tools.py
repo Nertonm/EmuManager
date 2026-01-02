@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from emumanager.gui_actions import ActionsDialog
+from emumanager.gui_quarantine import QuarantineDialog
 from emumanager.gui_workers import (
     worker_clean_junk,
     worker_compress_single,
@@ -271,6 +272,38 @@ class ToolsController:
 
         def _done(res):
             logging.info(str(res))
+            # If the worker returned an error that references a saved log
+            # file (e.g. 'Error: chdman failed (1); see /tmp/xyz.chdman.out'),
+            # offer the user a visible dialog with an "Open Log" button so
+            # they can inspect diagnostics immediately.
+            try:
+                if isinstance(res, str) and "see " in res and ".chdman.out" in res:
+                    try:
+                        qt = self.mw._qtwidgets
+                        # Extract path after the last 'see '
+                        idx = res.rfind("see ")
+                        logpath = res[idx + 4 :].strip()
+                        # Build a message box with an Open Log button
+                        mb = qt.QMessageBox(self.mw.window)
+                        mb.setWindowTitle("Extraction Failed")
+                        mb.setText(f"{res}")
+                        open_btn = mb.addButton("Open Log", qt.QMessageBox.ActionRole)
+                        mb.addButton(qt.QMessageBox.StandardButton.Ok)
+                        mb.exec()
+                        if mb.clickedButton() == open_btn:
+                            try:
+                                import subprocess
+
+                                subprocess.run(["xdg-open", logpath], check=False)
+                            except Exception:
+                                # Fallback to logging if opening fails
+                                logging.info(f"Could not open log file: {logpath}")
+                    except Exception:
+                        # If GUI dialog fails for any reason, just log
+                        logging.info(str(res))
+            except Exception:
+                pass
+
             try:
                 self.mw.on_list()  # Refresh list
             except Exception:
@@ -291,6 +324,15 @@ class ToolsController:
             dlg.show()
         except Exception as e:
             logging.exception(f"Failed to open actions dialog: {e}")
+
+    def on_show_quarantine(self):
+        """Open a dialog showing quarantined files and allow restore/delete."""
+        try:
+            qt = self.mw._qtwidgets
+            dlg = QuarantineDialog(qt, self.mw.window, self.mw.library_db)
+            dlg.show()
+        except Exception as e:
+            logging.exception(f"Failed to open quarantine dialog: {e}")
 
     def on_organize(self):
         self._run_tool_task(worker_organize, "Organize Switch", needs_env=True)

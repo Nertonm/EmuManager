@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from emumanager.common.execution import run_cmd_stream
+from emumanager.common.execution import run_cmd, run_cmd_stream
 from emumanager.common.models import VerifyReport, VerifyResult
 from emumanager.library import LibraryDB, LibraryEntry
 from emumanager.logging_cfg import log_call, set_correlation_id
@@ -176,8 +177,11 @@ def _run_verification(base_path, db, args, logger, list_files_fn) -> VerifyRepor
         file_weight = 1.0 / total
 
         # If scanner already marked this file as COMPRESSED, skip expensive
-        # verification and record a COMPRESSED result for reporting.
-        if skip_if_compressed(f, logger):
+        # verification and record a COMPRESSED result for reporting. However,
+        # for CHD files we still want to attempt CHD-specific verification
+        # (extraction / header-SHA1 lookup) so do not skip .chd files here.
+        suffix = f.suffix.lower()
+        if skip_if_compressed(f, logger) and suffix != ".chd":
             compressed += 1
             from emumanager.common.models import VerifyResult as _VR
 
@@ -281,56 +285,285 @@ def _verify_single_file(
     # handle multi-suffix like .nkit.iso
     suffix = f.suffix.lower()
     f_to_check = None
-    # If it's a CHD and the caller requested on-the-fly decompression, try to
-    # extract to a temporary ISO using chdman and verify that instead. This is
-    # opt-in via args.decompress_chd to avoid surprises.
-    if suffix == ".chd" and getattr(args, "decompress_chd", False):
-        chdman = workers_common.find_tool("chdman")
-        if chdman:
-            tmpfile = None
-            try:
-                # Create a temp file for the extracted ISO
-                fd, tmp_path = tempfile.mkstemp(suffix=".iso")
-                os.close(fd)
-                tmpfile = Path(tmp_path)
-                cmd = [
-                    str(chdman),
-                    "extract",
-                    "-i",
-                    str(f),
-                    "-o",
-                    str(tmpfile),
-                ]
+    # If it's a CHD or CSO, try on-the-fly decompression using chdman/maxcso.
+    # Prefer to extract to a temporary ISO for hashing so verification can use
+    # the ISO DATs. If extraction fails or no tool is present, fall back to
+    # marking as COMPRESSED.
+    if suffix in {".chd", ".cso"}:
+        attempted = False
+        # CHD extraction via chdman
+        if suffix == ".chd":
+            chdman = workers_common.find_tool("chdman")
+            if chdman:
+                attempted = True
+                tmpfile = None
+                try:
+                    fd, tmp_path = tempfile.mkstemp(suffix=".iso")
+                    os.close(fd)
+                    tmpfile = Path(tmp_path)
+                    cmd = [str(chdman), "extract", "-i", str(f), "-o", str(tmpfile)]
+                    if eff_logger:
+                        eff_logger.info(f"Attempting to extract CHD for verification: {f.name}")
+                    res = run_cmd_stream(cmd, progress_cb=getattr(args, "progress_callback", None))
+                    if getattr(res, "returncode", 1) == 0 and tmpfile.exists():
+                        if eff_logger:
+                            eff_logger.info(f"CHD extracted to temporary ISO: {tmpfile.name}")
+                        f_to_check = tmpfile
+                    else:
+                        # Save detailed output for diagnostics
+                        combined_out = getattr(res, "stdout", "") or ""
+                        full_log_path = None
+                        try:
+                            with tempfile.NamedTemporaryFile(suffix=".chdman.out", delete=False, mode="w", encoding="utf-8") as outf:
+                                full_log_path = Path(outf.name)
+                                try:
+                                    outf.write("--- chdman extraction output ---\n")
+                                    outf.write((combined_out or "") + "\n")
+                                except Exception:
+                                    pass
+                                try:
+                                    info_res = run_cmd([str(chdman), "info", "-i", str(f)])
+                                    info_out = getattr(info_res, "stdout", "") or ""
+                                    outf.write("--- chdman info ---\n")
+                                    outf.write(info_out + "\n")
+                                except Exception:
+                                    pass
+                                try:
+                                    ldd_res = run_cmd(["ldd", str(chdman)])
+                                    ldd_out = getattr(ldd_res, "stdout", "") or ""
+                                    if not ldd_out:
+                                        ldd_out = getattr(ldd_res, "stderr", "") or ""
+                                    outf.write("--- chdman ldd ---\n")
+                                    outf.write(ldd_out + "\n")
+                                except Exception:
+                                    pass
+                        except Exception:
+                            full_log_path = None
+
+                        # Try to parse CHD header info for a SHA1 we can use
+                        parsed_sha1 = None
+                        try:
+                            info_res = run_cmd([str(chdman), "info", "-i", str(f)])
+                            info_out = getattr(info_res, "stdout", "") or ""
+                            # Look for Data SHA1 first, then fallback to SHA1
+                            m = re.search(r"Data SHA1:\s*([0-9a-fA-F]{40})", info_out)
+                            if not m:
+                                m = re.search(r"SHA1:\s*([0-9a-fA-F]{40})", info_out)
+                            if m:
+                                parsed_sha1 = m.group(1).lower()
+                                # treat all-zero Data SHA1 as absent
+                                if parsed_sha1 == "0" * 40:
+                                    parsed_sha1 = None
+                        except Exception:
+                            parsed_sha1 = None
+
+                        # If we couldn't parse a SHA1 from the CHD header, log
+                        # an informational message so it's clear why we fall
+                        # back to COMPRESSED below.
+                        if not parsed_sha1:
+                            try:
+                                if eff_logger:
+                                    eff_logger.info(
+                                        f"No usable SHA1 found in CHD header for {f.name}; cannot verify without extraction"
+                                    )
+                            except Exception:
+                                pass
+
+                        if parsed_sha1:
+                            # We have a SHA1 from CHD header; attempt to lookup in DAT
+                            try:
+                                if eff_logger:
+                                    eff_logger.info(
+                                        f"Found SHA1 in CHD header: {parsed_sha1}; attempting DAT lookup"
+                                    )
+                                matches = db.lookup(crc=None, md5=None, sha1=parsed_sha1)
+                                match = matches[0] if matches else None
+                                if match:
+                                    # Build a verified result based on DAT match
+                                    res = VerifyResult(
+                                        filename=f.name,
+                                        status="VERIFIED",
+                                        match_name=match.game_name,
+                                        crc=None,
+                                        sha1=parsed_sha1,
+                                        md5=None,
+                                        sha256=None,
+                                        full_path=str(f),
+                                        dat_name=getattr(match, "dat_name", None),
+                                    )
+                                    # Inform user that verification succeeded using CHD header SHA1
+                                    try:
+                                        if eff_logger:
+                                            eff_logger.info(
+                                                f"Verified via CHD header SHA1: {parsed_sha1} -> {match.game_name}"
+                                            )
+                                    except Exception:
+                                        pass
+                                    # Update library DB entry
+                                    if lib_db:
+                                        try:
+                                            st = f.stat()
+                                            lib_db.update_entry(
+                                                LibraryEntry(
+                                                    path=str(f.resolve()),
+                                                    system=getattr(args, "system_name", "unknown"),
+                                                    size=st.st_size,
+                                                    mtime=st.st_mtime,
+                                                    crc32=None,
+                                                    md5=None,
+                                                    sha1=parsed_sha1,
+                                                    sha256=None,
+                                                    status=res.status,
+                                                    match_name=res.match_name,
+                                                    dat_name=res.dat_name,
+                                                )
+                                            )
+                                        except Exception:
+                                            pass
+                                    return res
+                                else:
+                                    # No exact DAT match; but we may have a mismatch candidate
+                                    mismatch_reason = _check_mismatch(db, None, None, parsed_sha1)
+                                    if mismatch_reason:
+                                        res = VerifyResult(
+                                            filename=f.name,
+                                            status="MISMATCH",
+                                            match_name=mismatch_reason,
+                                            crc=None,
+                                            sha1=parsed_sha1,
+                                            md5=None,
+                                            sha256=None,
+                                            full_path=str(f),
+                                        )
+                                        try:
+                                            if eff_logger:
+                                                eff_logger.info(
+                                                    f"CHD header SHA1 found but mismatch detected: {parsed_sha1} -> {mismatch_reason}"
+                                                )
+                                        except Exception:
+                                            pass
+                                        if lib_db:
+                                            try:
+                                                st = f.stat()
+                                                lib_db.update_entry(
+                                                    LibraryEntry(
+                                                        path=str(f.resolve()),
+                                                        system=getattr(args, "system_name", "unknown"),
+                                                        size=st.st_size,
+                                                        mtime=st.st_mtime,
+                                                        crc32=None,
+                                                        md5=None,
+                                                        sha1=parsed_sha1,
+                                                        sha256=None,
+                                                        status=res.status,
+                                                        match_name=res.match_name,
+                                                        dat_name=None,
+                                                    )
+                                                )
+                                            except Exception:
+                                                pass
+                                        return res
+                            except Exception:
+                                # If lookup fails, continue to fallback behavior below
+                                pass
+
+                        if eff_logger:
+                            try:
+                                out_excerpt = (combined_out or "").strip().splitlines()
+                                excerpt = out_excerpt[-8:] if out_excerpt else []
+                                eff_logger.warning(
+                                    f"chdman failed to extract {f.name}; falling back to compressed status. Output: %s",
+                                    "\n".join(excerpt),
+                                )
+                                if full_log_path:
+                                    eff_logger.info(f"Full chdman output saved to: {full_log_path}")
+                            except Exception:
+                                pass
+                        f_to_check = None
+                except Exception as e:
+                    if eff_logger:
+                        eff_logger.warning(f"CHD extraction failed for {f.name}: {e}")
+                    f_to_check = None
+            else:
                 if eff_logger:
                     eff_logger.info(
-                        f"Attempting to extract CHD for verification: {f.name}"
+                        "Ferramenta 'chdman' não encontrada no PATH; "
+                        "não será possível extrair CHD para verificação"
                     )
-                # Stream extraction so we can surface progress to GUI when
-                # available
-                res = run_cmd_stream(
-                    cmd,
-                    progress_cb=getattr(args, "progress_callback", None),
-                )
-                if getattr(res, "returncode", 1) == 0 and tmpfile.exists():
-                    # Use the extracted ISO for subsequent hashing/lookup
+
+        # CSO extraction via maxcso
+        if suffix == ".cso":
+            maxcso = workers_common.find_tool("maxcso")
+            if maxcso:
+                attempted = True
+                tmpfile = None
+                try:
+                    fd, tmp_path = tempfile.mkstemp(suffix=".iso")
+                    os.close(fd)
+                    tmpfile = Path(tmp_path)
+                    cmd = [str(maxcso), "--decompress", str(f), "-o", str(tmpfile)]
                     if eff_logger:
-                        eff_logger.info(
-                            f"CHD extracted to temporary ISO: {tmpfile.name}"
-                        )
-                    f_to_check = tmpfile
-                else:
+                        eff_logger.info(f"Attempting to decompress CSO for verification: {f.name}")
+                    res = run_cmd_stream(cmd, progress_cb=getattr(args, "progress_callback", None))
+                    rc = getattr(res, "returncode", 1)
+                    out = getattr(res, "stdout", "") or ""
+                    if rc == 0 and tmpfile.exists():
+                        if eff_logger:
+                            eff_logger.info(f"CSO decompressed to temporary ISO: {tmpfile.name}")
+                        f_to_check = tmpfile
+                    else:
+                        # Save maxcso output
+                        full_log_path = None
+                        try:
+                            with tempfile.NamedTemporaryFile(suffix=".maxcso.out", delete=False, mode="w", encoding="utf-8") as outf:
+                                full_log_path = Path(outf.name)
+                                try:
+                                    outf.write((out or "") + "\n")
+                                except Exception:
+                                    pass
+                                try:
+                                    ver_res = run_cmd([str(maxcso), "--version"])
+                                    ver_out = getattr(ver_res, "stdout", "") or ""
+                                    outf.write("--- maxcso version ---\n")
+                                    outf.write(ver_out + "\n")
+                                except Exception:
+                                    pass
+                                # Try to append ldd output for maxcso (runtime linked libs)
+                                try:
+                                    ldd_res = run_cmd(["ldd", str(maxcso)])
+                                    ldd_out = getattr(ldd_res, "stdout", "") or ""
+                                    if not ldd_out:
+                                        ldd_out = getattr(ldd_res, "stderr", "") or ""
+                                    outf.write("--- maxcso ldd ---\n")
+                                    outf.write(ldd_out + "\n")
+                                except Exception:
+                                    pass
+                        except Exception:
+                            full_log_path = None
+
+                        if eff_logger:
+                            try:
+                                out_excerpt = out.strip().splitlines()
+                                excerpt = out_excerpt[-8:] if out_excerpt else []
+                                eff_logger.warning(
+                                    f"maxcso failed to decompress {f.name}; falling back to compressed status. Output: %s",
+                                    "\n".join(excerpt),
+                                )
+                                if full_log_path:
+                                    eff_logger.info(f"Full maxcso output saved to: {full_log_path}")
+                            except Exception:
+                                pass
+                        f_to_check = None
+                except Exception as e:
                     if eff_logger:
-                        eff_logger.warning(
-                            f"chdman failed to extract {f.name}; falling back to "
-                            "compressed status"
-                        )
+                        eff_logger.warning(f"CSO decompression failed for {f.name}: {e}")
                     f_to_check = None
-            except Exception as e:
+            else:
                 if eff_logger:
-                    eff_logger.warning(f"CHD extraction failed for {f.name}: {e}")
-                f_to_check = None
-        else:
-            f_to_check = None
+                    eff_logger.info(
+                        "Ferramenta 'maxcso' não encontrada no PATH; "
+                        "não será possível decomprimir CSO para verificação"
+                    )
 
         # If we attempted extraction but failed, treat as compressed
         if f_to_check is None:
