@@ -271,6 +271,10 @@ fi
 echo "Installing nsz..."
 pip install nsz
 
+# Ensure TUI-related Python packages are present (textual, rich, typer)
+echo "Ensuring TUI Python packages (textual, rich, typer) are installed..."
+pip install textual rich typer || true
+
 # Final check for dolphin-tool
 if ! command_exists dolphin-tool && ! command_exists dolphin-emu-tool; then
     echo -e "\n${RED}WARNING: dolphin-tool not found!${NC}"

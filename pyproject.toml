@@ -16,7 +16,8 @@ readme = "README.md"
 license = "MIT"
 
 [project.scripts]
-emumanager = "emumanager.manager:main"
+# Make the installed `emumanager` console script launch the TUI by default
+emumanager = "emumanager.tui:main"
 emumanager-arch = "emumanager.architect:main"
 ps2-convert = "emumanager.converters.ps2_converter:_main"
 emumanager-gui = "emumanager.gui:main"

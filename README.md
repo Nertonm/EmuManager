@@ -75,6 +75,24 @@ A documentação completa está disponível na pasta `docs/` e pode ser visualiz
   - Duplo clique na ROM: Comprimir
   - Duplo clique em resultado de verificação: Abrir pasta do arquivo
 
+#### Atalhos do TUI fullscreen (Textual)
+No dashboard `tui-full`, algumas ações têm atalhos para acelerar o fluxo:
+
+- `?`: ajuda rápida
+- `p`: abrir paleta de comandos
+- `/`: filtrar (abre o prompt de filtro)
+- `v`: verificar (DAT)
+- `r`: atualizar/refresh
+- `l`: alternar painel de log
+- `q`: sair
+
+Na tabela de resultados de verificação (quando aberta):
+
+- `/`: filtrar
+- `s` / `S`: ordenar por coluna (avança / volta)
+- `e`: exportar CSV
+- `Esc`: fechar tabela/voltar
+
 #### Persistência do Layout e Estado
 - **QSettings**: janela, estado dos docks, visibilidade da toolbar, posição do splitter, larguras das colunas da verificação, texto do filtro e último sistema selecionado são restaurados entre sessões.
 - **View > Reset Layout**: limpa as preferências salvas e restaura o layout padrão.
