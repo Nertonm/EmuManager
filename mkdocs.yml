@@ -43,12 +43,13 @@ nav:
   - User Guide:
     - Installation: installation.md
     - Usage: usage.md
+    - CLI Reference: cli.md
     - Supported Systems: supported_systems.md
     - Troubleshooting: troubleshooting.md
     - Configuration: configuration.md
   - API Reference:
+    - Orchestrator: reference/orchestrator.md
     - Manager: reference/manager.md
-    - Architect: reference/architect.md
     - GUI: reference/gui.md
     - Workers: reference/workers.md
   - Contributing: contributing.md
