@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from emumanager.gui_actions import ActionsDialog
 from emumanager.gui_quarantine import QuarantineDialog
@@ -128,44 +128,34 @@ class ToolsController:
         if hasattr(self.ui, "btn_nint_organize"):
             self.ui.btn_nint_organize.clicked.connect(self.on_generic_organize_click)
 
-    def on_compress_selected(self):
-        def dispatcher(path, env, args, log_cb):
-            ext = path.suffix.lower()
-            # Switch
-            if ext in (".nsp", ".xci"):
-                return worker_compress_single(path, env, args, log_cb)
-            # 3DS
-            elif ext in (".3ds", ".cia", ".cci"):
-                return worker_n3ds_compress_single(path, args, log_cb)
-            # PSP
-            elif ext == ".iso":
-                # Prefer determining system from the UI selection rather than
-                # inferring from the path string. Use the main window's current
-                # system selection when available.
-                try:
-                    sys_item = self.mw.sys_list.currentItem()
-                    system = sys_item.text().lower() if sys_item else None
-                except Exception:
-                    system = None
+    def _compression_dispatcher(self, path: Path, env: Any, args: Any, log_cb: Callable):
+        ext = path.suffix.lower()
+        if ext in (".nsp", ".xci"):
+            return worker_compress_single(path, env, args, log_cb)
+        if ext in (".3ds", ".cia", ".cci"):
+            return worker_n3ds_compress_single(path, args, log_cb)
+        
+        if ext == ".iso":
+            system = self._get_current_system_name()
+            if system in ("gamecube", "wii"):
+                from emumanager.workers.dolphin import worker_dolphin_convert_single
+                return worker_dolphin_convert_single(path, args, log_cb)
+            if system == "psp":
+                return worker_psp_compress_single(path, args, log_cb)
 
-                if system in ("gamecube", "wii"):
-                    # Use a dedicated single-file dolphin convert worker
-                    from emumanager.workers.dolphin import (
-                        worker_dolphin_convert_single,
-                    )
+        logging.warning(f"No compression handler for {ext}")
+        return None
 
-                    return worker_dolphin_convert_single(path, args, log_cb)
-
-                # PSP: if the UI-selected system is PSP, run the PSP compressor
-                # as a single-file operation by wrapping the directory worker.
-                if system == "psp":
-                    # Use a dedicated single-file PSP compress worker
-                    return worker_psp_compress_single(path, args, log_cb)
-
-            logging.warning(f"No compression handler for {ext}")
+    def _get_current_system_name(self) -> Optional[str]:
+        try:
+            sys_item = self.mw.sys_list.currentItem()
+            return sys_item.text().lower() if sys_item else None
+        except Exception as e:
+            logging.debug(f"Failed to get current system: {e}")
             return None
 
-        self._run_single_file_task(dispatcher, "Compress", needs_env=True)
+    def on_compress_selected(self):
+        self._run_single_file_task(self._compression_dispatcher, "Compress", needs_env=True)
 
     def on_recompress_selected(self):
         def dispatcher(path, env, args, log_cb):
@@ -222,90 +212,63 @@ class ToolsController:
 
         self._run_single_file_task(dispatcher, "Decompress", needs_env=True)
 
-    def _run_single_file_task(self, worker_func, label, needs_env=False):
-        if not self.mw.rom_list:
-            logging.error("ROM list not found")
-            return
-        item = self.mw.rom_list.currentItem()
-        if not item:
-            logging.error("No ROM selected")
-            return
-
-        # We need to resolve the full path.
-        # MW has logic for this in _on_rom_selection_changed but we can reconstruct it.
+    def _resolve_rom_path(self, rom_name: str, system: str) -> Optional[Path]:
         if not self.mw._last_base:
-            logging.error("No base directory selected")
-            return
-
-        sys_item = self.mw.sys_list.currentItem()
-        if not sys_item:
-            logging.error("No system selected")
-            return
-        system = sys_item.text()
-
-        rom_rel_path = item.text()
-        # Assuming standard structure
-        # Check if _last_base already ends with "roms" to avoid duplication
+            return None
         base = Path(self.mw._last_base)
-
-        # Resolve the full path to the selected ROM. If the base already
-        # points to a 'roms' folder, avoid duplicating the segment.
         if base.name == "roms":
-            full_path = base / system / rom_rel_path
-        else:
-            full_path = base / "roms" / system / rom_rel_path
+            return base / system / rom_name
+        return base / "roms" / system / rom_name
 
-        if not full_path.exists():
-            logging.error(f"File not found: {full_path}")
+    def _handle_task_error_log(self, res: Any):
+        if not (isinstance(res, str) and "see " in res and ".chdman.out" in res):
+            logging.info(str(res))
+            return
+
+        try:
+            qt = self.mw._qtwidgets
+            idx = res.rfind("see ")
+            logpath = res[idx + 4 :].strip()
+            
+            mb = qt.QMessageBox(self.mw.window)
+            mb.setWindowTitle("Extraction Failed")
+            mb.setText(f"{res}")
+            open_btn = mb.addButton("Open Log", qt.QMessageBox.ActionRole)
+            mb.addButton(qt.QMessageBox.StandardButton.Ok)
+            mb.exec()
+            
+            if mb.clickedButton() == open_btn:
+                import subprocess
+                subprocess.run(["xdg-open", logpath], check=False)
+        except Exception as e:
+            logging.debug(f"Failed to show error dialog: {e}")
+            logging.info(str(res))
+
+    def _run_single_file_task(self, worker_func, label, needs_env=False):
+        rom_item = self.mw.rom_list.currentItem() if self.mw.rom_list else None
+        sys_item = self.mw.sys_list.currentItem() if self.mw.sys_list else None
+        
+        if not rom_item or not sys_item:
+            logging.error("No ROM or system selected")
+            return
+
+        full_path = self._resolve_rom_path(rom_item.text(), sys_item.text())
+        if not full_path or not full_path.exists():
+            logging.error(f"File not found or base invalid: {full_path}")
             return
 
         logging.info(f"{label}ing {full_path.name}...")
-
-        args = self.mw._get_common_args()
-        env = self.mw._env
+        args, env = self.mw._get_common_args(), self.mw._env
 
         def _work():
             if needs_env:
                 return worker_func(full_path, env, args, self.mw.log_msg)
-            else:
-                return worker_func(full_path, args, self.mw.log_msg)
+            return worker_func(full_path, args, self.mw.log_msg)
 
         def _done(res):
-            logging.info(str(res))
-            # If the worker returned an error that references a saved log
-            # file (e.g. 'Error: chdman failed (1); see /tmp/xyz.chdman.out'),
-            # offer the user a visible dialog with an "Open Log" button so
-            # they can inspect diagnostics immediately.
+            self._handle_task_error_log(res)
             try:
-                if isinstance(res, str) and "see " in res and ".chdman.out" in res:
-                    try:
-                        qt = self.mw._qtwidgets
-                        # Extract path after the last 'see '
-                        idx = res.rfind("see ")
-                        logpath = res[idx + 4 :].strip()
-                        # Build a message box with an Open Log button
-                        mb = qt.QMessageBox(self.mw.window)
-                        mb.setWindowTitle("Extraction Failed")
-                        mb.setText(f"{res}")
-                        open_btn = mb.addButton("Open Log", qt.QMessageBox.ActionRole)
-                        mb.addButton(qt.QMessageBox.StandardButton.Ok)
-                        mb.exec()
-                        if mb.clickedButton() == open_btn:
-                            try:
-                                import subprocess
-
-                                subprocess.run(["xdg-open", logpath], check=False)
-                            except Exception:
-                                # Fallback to logging if opening fails
-                                logging.info(f"Could not open log file: {logpath}")
-                    except Exception:
-                        # If GUI dialog fails for any reason, just log
-                        logging.info(str(res))
-            except Exception:
-                pass
-
-            try:
-                self.mw.on_list()  # Refresh list
+                self.mw.on_list()
             except Exception:
                 pass
 

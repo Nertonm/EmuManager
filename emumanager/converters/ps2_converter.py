@@ -191,6 +191,55 @@ def convert_file(
         )
 
 
+def _ensure_tools(maxcso: Optional[Path], chdman: Optional[Path]) -> tuple[Path, Path]:
+    m = maxcso or find_tool("maxcso")
+    c = chdman or find_tool("chdman")
+    if not m:
+        raise RuntimeError("'maxcso' not found. Install it (eg. sudo pacman -S maxcso)")
+    if not c:
+        raise RuntimeError("'chdman' not found. Install it (eg. sudo pacman -S mame-tools)")
+    return m, c
+
+
+def _process_iso_file(
+    path: Path,
+    chdman: Path,
+    backup_dir: Path,
+    dry_run: bool,
+    timeout: int,
+    verbose: bool,
+    remove_original: bool,
+) -> ConversionResult:
+    chd_path = path.with_suffix(".chd")
+    if chd_path.exists():
+        msg = f"{chd_path.name} already exists, skipping"
+        logger.info(msg)
+        return ConversionResult(cso=path, iso=path, chd=chd_path, success=False, message=msg)
+
+    try:
+        if not _convert_iso_to_chd(path, chd_path, chdman, dry_run, timeout, verbose=verbose):
+            msg = "Failed to produce CHD from ISO"
+            logger.error(msg)
+            return ConversionResult(cso=path, iso=path, chd=None, success=False, message=msg)
+
+        if not dry_run and remove_original:
+            try:
+                backup_dir.mkdir(parents=True, exist_ok=True)
+                path.rename(backup_dir / path.name)
+            except Exception as e:
+                logger.debug("Failed to move original ISO to backup: %s", e, exc_info=True)
+
+        return ConversionResult(cso=path, iso=path, chd=chd_path, success=True, message="OK")
+    except subprocess.CalledProcessError as exc:
+        msg = f"External tool failed: {exc}"
+        logger.error(msg)
+        return ConversionResult(cso=path, iso=path, chd=None, success=False, message=msg)
+    except Exception as exc:
+        msg = f"Unexpected error: {exc}"
+        logger.exception(msg)
+        return ConversionResult(cso=path, iso=path, chd=None, success=False, message=msg)
+
+
 def convert_directory(
     directory: str | Path = ".",
     dry_run: bool = False,
@@ -202,106 +251,36 @@ def convert_directory(
     chdman: Optional[Path] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None,
 ) -> List[ConversionResult]:
-    directory = Path(directory)
-    backup_dir = Path(backup_dir)
-
-    if not maxcso:
-        maxcso = find_tool("maxcso")
-    if not chdman:
-        chdman = find_tool("chdman")
-
-    if not maxcso:
-        raise RuntimeError("'maxcso' not found. Install it (eg. sudo pacman -S maxcso)")
-    if not chdman:
-        raise RuntimeError(
-            "'chdman' not found. Install it (eg. sudo pacman -S mame-tools)"
-        )
-
+    directory, backup_dir = Path(directory), Path(backup_dir)
+    m_tool, c_tool = _ensure_tools(maxcso, chdman)
     results: List[ConversionResult] = []
 
-    # Collect both CSO and ISO files. CSO require maxcso; ISO only need chdman.
-    cso_files = sorted(directory.glob("*.cso"))
-    iso_files = sorted(directory.glob("*.iso"))
-
-    files = [*cso_files, *iso_files]
+    files = sorted([*directory.glob("*.cso"), *directory.glob("*.iso")])
     total = len(files)
 
     for i, p in enumerate(files):
         if progress_callback:
             progress_callback(i / total, f"Converting {p.name}...")
 
-        logger.info("--------------------------------------------------")
+        logger.info("-" * 50)
         logger.info("Processing: %s", p.name)
 
         if p.suffix.lower() == ".cso":
-            # CSO -> ISO -> CHD (existing flow)
             res = convert_file(
-                p,
-                maxcso=maxcso,
-                chdman=chdman,
-                backup_dir=backup_dir,
-                dry_run=dry_run,
-                timeout=timeout,
-                remove_original=remove_original,
-                verbose=verbose,
+                p, m_tool, c_tool, backup_dir, dry_run, timeout, remove_original, verbose
             )
-            results.append(res)
-        elif p.suffix.lower() == ".iso":
-            # ISO -> CHD directly
-            chd_path = p.with_suffix(".chd")
-            if chd_path.exists():
-                msg = f"{chd_path.name} already exists, skipping"
-                logger.info(msg)
-                results.append(
-                    ConversionResult(
-                        cso=p, iso=p, chd=chd_path, success=False, message=msg
-                    )
-                )
-                continue
+        else:
+            res = _process_iso_file(
+                p, c_tool, backup_dir, dry_run, timeout, verbose, remove_original
+            )
+        results.append(res)
 
-            try:
-                ok = _convert_iso_to_chd(
-                    p, chd_path, chdman, dry_run, timeout, verbose=verbose
-                )
-                if not ok:
-                    msg = "Failed to produce CHD from ISO"
-                    logger.error(msg)
-                    results.append(
-                        ConversionResult(
-                            cso=p, iso=p, chd=None, success=False, message=msg
-                        )
-                    )
-                    continue
+    if progress_callback:
+        progress_callback(1.0, "PS2 Conversion complete")
 
-                # finalize: move/remove original ISO according to remove_original
-                if not dry_run:
-                    if remove_original:
-                        try:
-                            # move to backup_dir
-                            backup_dir.mkdir(parents=True, exist_ok=True)
-                            p.rename(backup_dir / p.name)
-                        except Exception:
-                            logger.debug(
-                                "Failed to move original ISO to backup", exc_info=True
-                            )
-
-                results.append(
-                    ConversionResult(
-                        cso=p, iso=p, chd=chd_path, success=True, message="OK"
-                    )
-                )
-            except subprocess.CalledProcessError as exc:
-                msg = f"External tool failed: {exc}"
-                logger.error(msg)
-                results.append(
-                    ConversionResult(cso=p, iso=p, chd=None, success=False, message=msg)
-                )
-            except Exception as exc:  # pragma: no cover - unexpected
-                msg = f"Unexpected error: {exc}"
-                logger.exception(msg)
-                results.append(
-                    ConversionResult(cso=p, iso=p, chd=None, success=False, message=msg)
-                )
+    logger.info("=== OPERATION COMPLETE ===")
+    logger.info("Original files (when converted) are in: %s", str(backup_dir))
+    return results
 
     if progress_callback:
         progress_callback(1.0, "PS2 Conversion complete")

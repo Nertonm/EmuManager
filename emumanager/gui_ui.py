@@ -9,25 +9,7 @@ ORGANIZE_LABEL = "Organize (Rename)"
 class Ui_MainWindow:
     def setupUi(self, MainWindow, qtwidgets: Any):
         qt = qtwidgets
-
-        # Resolve Qt namespace for enums
-        self._Qt_enum = None
-        self._QSize = None
-        try:
-            from PyQt6.QtCore import QSize as _QSize
-            from PyQt6.QtCore import Qt as _Qt
-
-            self._Qt_enum = _Qt
-            self._QSize = _QSize
-        except ImportError:
-            try:
-                from PySide6.QtCore import QSize as _QSize  # type: ignore
-                from PySide6.QtCore import Qt as _Qt  # type: ignore
-
-                self._Qt_enum = _Qt
-                self._QSize = _QSize
-            except ImportError:
-                pass
+        self._resolve_qt_namespaces()
 
         MainWindow.setObjectName("MainWindow")
         MainWindow.resize(900, 700)
@@ -37,156 +19,12 @@ class Ui_MainWindow:
         self.verticalLayout = qt.QVBoxLayout(self.centralwidget)
         self.verticalLayout.setObjectName("verticalLayout")
 
-        # Top Bar: Library Selection
-        self.top_bar_layout = qt.QHBoxLayout()
-        self.label_lib_title = qt.QLabel(self.centralwidget)
-        self.label_lib_title.setText("Current Library:")
-        self.top_bar_layout.addWidget(self.label_lib_title)
-
-        self.lbl_library = qt.QLabel(self.centralwidget)
-        self.lbl_library.setText("No library open")
-        self.lbl_library.setStyleSheet("font-weight: bold; color: #aaa;")
-        self.top_bar_layout.addWidget(self.lbl_library)
-
-        self.btn_open_lib = qt.QPushButton(self.centralwidget)
-        self.btn_open_lib.setText("Open Library")
-        self.top_bar_layout.addWidget(self.btn_open_lib)
-
-        self.top_bar_layout.addStretch()
-        self.verticalLayout.addLayout(self.top_bar_layout)
+        self._setup_top_bar(qt)
 
         # Tabs
-        self.tabs = qt.QTabWidget(self.centralwidget)
-        self.tabs.setObjectName("tabs")
+        self._setup_tabs_container(qt)
 
-        # --- Tab 0: Dashboard ---
-        self.tab_dashboard = qt.QWidget()
-        self.tab_dashboard.setObjectName("tab_dashboard")
-        self.setupDashboardTab(qt, self.tab_dashboard)
-        ic_dash = self._get_icon(qt, "SP_ComputerIcon")
-        if ic_dash:
-            self.tabs.addTab(self.tab_dashboard, ic_dash, "Dashboard")
-        else:
-            self.tabs.addTab(self.tab_dashboard, "Dashboard")
-
-        # --- Tab 1: Library ---
-        self.tab_library = qt.QWidget()
-        self.tab_library.setObjectName("tab_library")
-        self.setupLibraryTab(qt, self.tab_library)
-        ic_lib = self._get_icon(qt, "SP_DirHomeIcon")
-        if ic_lib:
-            self.tabs.addTab(self.tab_library, ic_lib, "Library")
-        else:
-            self.tabs.addTab(self.tab_library, "Library")
-
-        # --- Tab 2: Tools ---
-        self.tab_tools = qt.QWidget()
-        self.tab_tools.setObjectName("tab_tools")
-        self.setupToolsTab(qt, self.tab_tools)
-        ic_tools = self._get_icon(qt, "SP_FileDialogDetailedView")
-        if ic_tools:
-            self.tabs.addTab(self.tab_tools, ic_tools, "Tools")
-        else:
-            self.tabs.addTab(self.tab_tools, "Tools")
-
-        # --- Tab 3: Verification ---
-        self.tab_verification = qt.QWidget()
-        self.tab_verification.setObjectName("tab_verification")
-        self.setup_verification_tab(qt, self.tab_verification)
-        ic_verify = self._get_icon(qt, "SP_DialogApplyButton")
-        if ic_verify:
-            self.tabs.addTab(self.tab_verification, ic_verify, "Verification")
-        else:
-            self.tabs.addTab(self.tab_verification, "Verification")
-
-        # --- Tab 4: Settings ---
-        self.tab_settings = qt.QWidget()
-        self.tab_settings.setObjectName("tab_settings")
-        self.setup_settings_tab(qt, self.tab_settings)
-        ic_settings = self._get_icon(qt, "SP_FileDialogListView")  # Fallback icon
-        # Try to find a better settings icon if available in standard pixmaps
-        # SP_CustomBase is not standard. SP_FileDialogListView is okay.
-        if ic_settings:
-            self.tabs.addTab(self.tab_settings, ic_settings, "Settings")
-        else:
-            self.tabs.addTab(self.tab_settings, "Settings")
-
-        # --- Tab 5: Gallery ---
-        self.tab_gallery = qt.QWidget()
-        self.tab_gallery.setObjectName("tab_gallery")
-        self.setupGalleryTab(qt, self.tab_gallery)
-        ic_gallery = self._get_icon(qt, "SP_FileIcon")
-        if ic_gallery:
-            self.tabs.addTab(self.tab_gallery, ic_gallery, "Gallery")
-        else:
-            self.tabs.addTab(self.tab_gallery, "Gallery")
-
-        # --- Tab 6: Duplicates ---
-        self.tab_duplicates = qt.QWidget()
-        self.tab_duplicates.setObjectName("tab_duplicates")
-        self.setupDuplicatesTab(qt, self.tab_duplicates)
-        ic_dups = self._get_icon(qt, "SP_FileDialogDetailedView")
-        if ic_dups:
-            self.tabs.addTab(self.tab_duplicates, ic_dups, "Duplicates")
-        else:
-            self.tabs.addTab(self.tab_duplicates, "Duplicates")
-
-        self.verticalLayout.addWidget(self.tabs)
-
-        # Log as Dockable panel
-        self.log = qt.QTextEdit()
-        self.log.setReadOnly(True)
-        self.log.setObjectName("log")
-        self.log_dock = qt.QDockWidget("Log")
-        self.log_dock.setObjectName("log_dock")
-        self.log_dock.setWidget(self.log)
-
-        # Add dock to bottom with robust enum resolution
-        _Qt = None
-        try:
-            from PyQt6.QtCore import Qt as _Qt
-        except Exception:
-            try:
-                from PySide6.QtCore import Qt as _Qt  # type: ignore
-            except Exception:
-                _Qt = None
-        try:
-            if _Qt is not None:
-                try:
-                    MainWindow.addDockWidget(
-                        _Qt.DockWidgetArea.BottomDockWidgetArea, self.log_dock
-                    )
-                except Exception:
-                    MainWindow.addDockWidget(_Qt.BottomDockWidgetArea, self.log_dock)
-            else:
-                # Fallback to bottom via numeric value (8)
-                MainWindow.addDockWidget(8, self.log_dock)
-        except Exception:
-            # As last resort, just add without area (some bindings may allow it)
-            try:
-                MainWindow.addDockWidget(self.log_dock)
-            except Exception:
-                pass
-
-        # Ensure log dock is visible by default
-        self.log_dock.setVisible(True)
-        try:
-            # Try Qt6 Enum
-            self.log_dock.setFeatures(
-                qt.QDockWidget.DockWidgetFeature.DockWidgetMovable
-                | qt.QDockWidget.DockWidgetFeature.DockWidgetFloatable
-                | qt.QDockWidget.DockWidgetFeature.DockWidgetClosable
-            )
-        except AttributeError:
-            try:
-                # Try Legacy Enum
-                self.log_dock.setFeatures(
-                    qt.QDockWidget.DockWidgetMovable
-                    | qt.QDockWidget.DockWidgetFloatable
-                    | qt.QDockWidget.DockWidgetClosable
-                )
-            except AttributeError:
-                pass
+        self._setup_dock_and_status(MainWindow, qt)
 
         MainWindow.setCentralWidget(self.centralwidget)
 
@@ -1512,3 +1350,139 @@ class Ui_MainWindow:
         splitter.addWidget(right)
         splitter.setSizes([350, 650])
         layout.addWidget(splitter)
+
+    def _resolve_qt_namespaces(self):
+        """Resolve Qt namespace for enums and common classes across PyQt/PySide."""
+        self._Qt_enum = None
+        self._QSize = None
+        try:
+            from PyQt6.QtCore import QSize as _QSize
+            from PyQt6.QtCore import Qt as _Qt
+            self._Qt_enum = _Qt
+            self._QSize = _QSize
+        except ImportError:
+            try:
+                from PySide6.QtCore import QSize as _QSize  # type: ignore
+                from PySide6.QtCore import Qt as _Qt  # type: ignore
+                self._Qt_enum = _Qt
+                self._QSize = _QSize
+            except ImportError:
+                import logging
+                logging.debug("Could not resolve Qt namespaces for enums.")
+
+    def _setup_top_bar(self, qt):
+        """Setup the top selection bar for the library."""
+        self.top_bar_layout = qt.QHBoxLayout()
+        self.label_lib_title = qt.QLabel(self.centralwidget)
+        self.label_lib_title.setText("Current Library:")
+        self.top_bar_layout.addWidget(self.label_lib_title)
+
+        self.lbl_library = qt.QLabel(self.centralwidget)
+        self.lbl_library.setText("No library open")
+        self.lbl_library.setStyleSheet("font-weight: bold; color: #aaa;")
+        self.top_bar_layout.addWidget(self.lbl_library)
+
+        self.btn_open_lib = qt.QPushButton(self.centralwidget)
+        self.btn_open_lib.setText("Open Library")
+        self.top_bar_layout.addWidget(self.btn_open_lib)
+
+        self.top_bar_layout.addStretch()
+        self.verticalLayout.addLayout(self.top_bar_layout)
+
+    def _setup_tabs_container(self, qt):
+        """Setup main tabs and their respective icons."""
+        self.tabs = qt.QTabWidget(self.centralwidget)
+        self.tabs.setObjectName("tabs")
+
+        # Configuration map: (method, name, icon_key)
+        tabs_config = [
+            (self.setupDashboardTab, "Dashboard", "SP_ComputerIcon"),
+            (self.setupLibraryTab, "Library", "SP_DirHomeIcon"),
+            (self.setupToolsTab, "Tools", "SP_FileDialogDetailedView"),
+            (self.setup_verification_tab, "Verification", "SP_DialogApplyButton"),
+            (self.setup_settings_tab, "Settings", "SP_FileDialogListView"),
+            (self.setupGalleryTab, "Gallery", "SP_FileIcon"),
+            (self.setupDuplicatesTab, "Duplicates", "SP_FileDialogDetailedView")
+        ]
+
+        for setup_fn, title, icon_key in tabs_config:
+            tab_widget = qt.QWidget()
+            tab_widget.setObjectName(f"tab_{title.lower()}")
+            setup_fn(qt, tab_widget)
+            
+            icon = self._get_icon(qt, icon_key)
+            if icon:
+                self.tabs.addTab(tab_widget, icon, title)
+            else:
+                self.tabs.addTab(tab_widget, title)
+            
+            # Store reference dynamically
+            setattr(self, f"tab_{title.lower()}", tab_widget)
+
+        self.verticalLayout.addWidget(self.tabs)
+
+    def _setup_dock_and_status(self, MainWindow, qt):
+        """Setup the log dock widget and the main status bar."""
+        self.log = qt.QTextEdit()
+        self.log.setReadOnly(True)
+        self.log.setObjectName("log")
+        self.log_dock = qt.QDockWidget("Log")
+        self.log_dock.setObjectName("log_dock")
+        self.log_dock.setWidget(self.log)
+
+        self._attach_log_dock(MainWindow, qt)
+        self._setup_dock_features(qt)
+
+        self.statusbar = qt.QStatusBar(MainWindow)
+        MainWindow.setStatusBar(self.statusbar)
+
+        self.progress_bar = qt.QProgressBar(self.statusbar)
+        self.progress_bar.setMaximumWidth(200)
+        self.progress_bar.setVisible(False)
+        self.statusbar.addPermanentWidget(self.progress_bar)
+
+        self.progress_label = qt.QLabel(self.statusbar)
+        self.progress_label.setObjectName("progress_label")
+        try:
+            self.progress_label.setStyleSheet("color: #bbb; font-size: 11px;")
+        except Exception as e:
+            import logging
+            logging.debug(f"Failed to style progress label: {e}")
+        self.progress_label.setVisible(False)
+        self.statusbar.addPermanentWidget(self.progress_label)
+
+    def _attach_log_dock(self, MainWindow, qt):
+        """Handles robust dock attachment for different Qt versions."""
+        try:
+            if self._Qt_enum is not None:
+                try:
+                    MainWindow.addDockWidget(self._Qt_enum.DockWidgetArea.BottomDockWidgetArea, self.log_dock)
+                except Exception:
+                    MainWindow.addDockWidget(self._Qt_enum.BottomDockWidgetArea, self.log_dock)
+            else:
+                MainWindow.addDockWidget(8, self.log_dock) # Numeric 8 is Bottom
+        except Exception as e:
+            import logging
+            logging.warning(f"Failed to attach log dock to area: {e}")
+            try:
+                MainWindow.addDockWidget(self.log_dock)
+            except Exception:
+                pass
+
+    def _setup_dock_features(self, qt):
+        """Configures mobility and closure features for the log dock."""
+        self.log_dock.setVisible(True)
+        try:
+            self.log_dock.setFeatures(
+                qt.QDockWidget.DockWidgetFeature.DockWidgetMovable
+                | qt.QDockWidget.DockWidgetFeature.DockWidgetFloatable
+                | qt.QDockWidget.DockWidgetFeature.DockWidgetClosable
+            )
+        except AttributeError:
+            try:
+                self.log_dock.setFeatures(
+                    qt.QDockWidget.Movable | qt.QDockWidget.Floatable | qt.QDockWidget.Closable
+                )
+            except AttributeError as e:
+                import logging
+                logging.debug(f"Dock features not supported: {e}")

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 def calculate_hashes(
+
     path: Path, 
     algorithms: tuple[str, ...] = ("crc32", "sha1"),
     chunk_size: int = 1024 * 1024 # Buffer de 1MB para eficiência de cache L3

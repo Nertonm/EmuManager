@@ -193,6 +193,76 @@ class BaseWorker(abc.ABC):
         except Exception:
             return False
 
+class GuiLogger:
+    """Wrapper para encaminhar logs para o callback de log da GUI."""
+    def __init__(self, log_cb: Callable[[str], None]):
+        self.log_cb = log_cb
+    def info(self, msg: str, *args): self.log_cb(msg % args if args else msg)
+    def warning(self, msg: str, *args): self.log_cb(f"WARN: {msg % args if args else msg}")
+    def error(self, msg: str, *args): self.log_cb(f"ERROR: {msg % args if args else msg}")
+    def debug(self, msg: str, *args): pass
+    def exception(self, msg: str, *args): self.log_cb(f"EXCEPTION: {msg % args if args else msg}")
+
+def get_logger_for_gui(log_cb: Callable[[str], None], name: str = "gui") -> logging.Logger:
+    """Retorna um logger configurado para enviar mensagens para a GUI."""
+    logger = logging.getLogger(name)
+    class GuiHandler(logging.Handler):
+        def emit(self, record):
+            log_cb(self.format(record))
+    handler = GuiHandler()
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    return logger
+
+def find_tool(name: str) -> Optional[Path]:
+    from emumanager.common.execution import find_tool as _ft
+    return _path_resolve(_ft(name))
+
+def _path_resolve(p: Optional[Path]) -> Optional[Path]:
+    return p.resolve() if p else None
+
+def calculate_file_hash(path: Path, algo: str = "sha1", chunk_size: int = 1024 * 1024, progress_cb: Optional[Callable[[float], None]] = None) -> str:
+    from emumanager.verification.hasher import calculate_hashes
+    # Simulação de progresso se progress_cb for passado
+    if progress_cb: progress_cb(0.5) # Simplificado
+    res = calculate_hashes(path, algorithms=(algo,), chunk_size=chunk_size)
+    if progress_cb: progress_cb(1.0)
+    return res.get(algo, "")
+
+def create_file_progress_cb(main_cb: Callable, start: float, end: float, name: str) -> Callable:
+    def _cb(p: float):
+        pct = start + (p * (end - start))
+        main_cb(pct, f"Processando {name}...")
+    return _cb
+
+def find_target_dir(base: Path, candidates: list[str]) -> Optional[Path]:
+    for c in candidates:
+        p = base / c
+        if p.is_dir(): return p
+    return None
+
+def emit_verification_result(cb: Callable, **kwargs):
+    if cb: cb(SimpleNamespace(**kwargs))
+
+def verify_chd(path: Path) -> bool:
+    from emumanager.common.execution import run_cmd
+    chdman = find_tool("chdman")
+    if not chdman: return False
+    try:
+        res = run_cmd([str(chdman), "verify", "-i", str(path)], timeout=60)
+        return res.returncode == 0 or "verify ok" in (getattr(res, "stdout", "") or "").lower()
+    except Exception: return False
+
+def skip_if_compressed(path: Path, logger: logging.Logger) -> bool:
+    db = LibraryDB()
+    entry = db.get_entry(str(path.resolve()))
+    if entry and entry.status == "COMPRESSED":
+        logger.info(f"Pular (já comprimido): {path.name}")
+        db.log_action(str(path), "SKIP_COMPRESSED", "Skipped by worker")
+        return True
+    return False
+
 def worker_clean_junk(base_path: Path, args: Any, log_cb: Callable[[str], None], list_files_fn: Callable, list_dirs_fn: Callable) -> str:
     """Legacy entry point para clean junk."""
     set_correlation_id()
@@ -207,5 +277,17 @@ def worker_clean_junk(base_path: Path, args: Any, log_cb: Callable[[str], None],
             if not getattr(args, "dry_run", False):
                 f.unlink(missing_ok=True)
             count += 1
+            
+    # Deletar pastas vazias
+    dirs = list_dirs_fn(base_path)
+    # Ordenar por profundidade (reversa)
+    for d in sorted(dirs, key=lambda x: len(x.parts), reverse=True):
+        try:
+            if not any(d.iterdir()):
+                if not getattr(args, "dry_run", False):
+                    d.rmdir()
+        except Exception: pass
+        
     return f"Limpeza concluída. {count} ficheiros removidos."
+from types import SimpleNamespace
 

@@ -14,9 +14,6 @@ from emumanager.workers.n3ds import worker_n3ds_process
 from emumanager.workers.switch import worker_switch_compress
 from emumanager.workers.dolphin import worker_dolphin_compress
 
-# Shims Universais para compatibilidade com GUI Legada
-def _not_imp(*args, **kwargs): return "Feature migrada para o novo Core Orchestrator."
-
 def worker_organize(base_path: Path, env: Any, args: Any, log_cb: Callable, list_files_fn: Callable, progress_cb: Optional[Callable] = None) -> str:
     # Tentar usar o Orchestrator se disponível via args
     orch = getattr(args, "orchestrator", None)
@@ -50,6 +47,27 @@ worker_dolphin_recompress_single = _not_imp
 worker_chd_decompress_single = _not_imp
 worker_chd_recompress_single = _not_imp
 worker_switch_decompress = _not_imp
+worker_compress_single = _not_imp
+worker_decompress_single = _not_imp
+worker_recompress_single = _not_imp
+worker_ps2_convert = _not_imp
+worker_ps2_verify = _not_imp
+worker_psx_convert = _not_imp
+worker_psx_verify = _not_imp
+worker_ps3_verify = _not_imp
+worker_psp_verify = _not_imp
+worker_psp_compress = _not_imp
+worker_psp_compress_single = _not_imp
+worker_n3ds_verify = _not_imp
+worker_n3ds_compress = _not_imp
+worker_n3ds_compress_single = _not_imp
+worker_n3ds_decompress = _not_imp
+worker_n3ds_decompress_single = _not_imp
+worker_n3ds_convert_cia = _not_imp
+worker_n3ds_decrypt = _not_imp
+worker_dolphin_convert = _not_imp
+worker_dolphin_convert_single = _not_imp
+worker_dolphin_verify = _not_imp
 
 DOLPHIN_CONVERTIBLE_EXTENSIONS = {".iso", ".gcm", ".wbfs"}
 

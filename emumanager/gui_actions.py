@@ -14,119 +14,157 @@ class ActionsDialog:
         self.qt = qt
         self.parent = parent
         self.db = library_db
+        self.dlg = None
+        self.table = None
+        self.filter_edit = None
+        self.action_combo = None
+        self.unmark_btn = None
 
     def show(self):
         qt = self.qt
-        dlg = qt.QDialog(self.parent)
-        dlg.setWindowTitle("Library Actions")
-        dlg.resize(800, 400)
+        self.dlg = qt.QDialog(self.parent)
+        self.dlg.setWindowTitle("Library Actions")
+        self.dlg.resize(800, 400)
 
-        layout = qt.QVBoxLayout(dlg)
+        layout = qt.QVBoxLayout(self.dlg)
+        
+        self._setup_filter_bar(layout)
+        self._setup_table(layout)
+        self._populate_data()
+        self._setup_connections()
 
-        # Search / filter row
+        button_box = qt.QDialogButtonBox(qt.QDialogButtonBox.Close)
+        button_box.rejected.connect(self.dlg.reject)
+        layout.addWidget(button_box)
+
+        self.dlg.exec()
+
+    def _setup_filter_bar(self, layout):
+        qt = self.qt
         filter_layout = qt.QHBoxLayout()
+        
         filter_layout.addWidget(qt.QLabel("Filter:"))
-        filter_edit = qt.QLineEdit()
-        filter_edit.setPlaceholderText("Filter by path or action...")
-        filter_layout.addWidget(filter_edit)
+        self.filter_edit = qt.QLineEdit()
+        self.filter_edit.setPlaceholderText("Filter by path or action...")
+        filter_layout.addWidget(self.filter_edit)
 
         filter_layout.addWidget(qt.QLabel("Action:"))
-        action_combo = qt.QComboBox()
-        action_combo.addItem("All")
-        filter_layout.addWidget(action_combo)
+        self.action_combo = qt.QComboBox()
+        self.action_combo.addItem("All")
+        filter_layout.addWidget(self.action_combo)
 
-        # Unmark button to clear COMPRESSED status for selected entry
-        unmark_btn = qt.QPushButton("Unmark as compressed")
-        unmark_btn.setEnabled(False)
-        filter_layout.addWidget(unmark_btn)
+        self.unmark_btn = qt.QPushButton("Unmark as compressed")
+        self.unmark_btn.setEnabled(False)
+        filter_layout.addWidget(self.unmark_btn)
 
         layout.addLayout(filter_layout)
 
-        table = qt.QTableWidget(dlg)
-        table.setColumnCount(4)
-        table.setHorizontalHeaderLabels(["Path", "Action", "Detail", "Timestamp"])
-        table.setEditTriggers(qt.QTableWidget.NoEditTriggers)
-        table.setSelectionBehavior(qt.QTableWidget.SelectRows)
-        table.setSelectionMode(qt.QTableWidget.SingleSelection)
-        table.setSortingEnabled(True)
+    def _setup_table(self, layout):
+        qt = self.qt
+        self.table = qt.QTableWidget(self.dlg)
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels(["Path", "Action", "Detail", "Timestamp"])
+        self.table.setEditTriggers(qt.QTableWidget.NoEditTriggers)
+        self.table.setSelectionBehavior(qt.QTableWidget.SelectRows)
+        self.table.setSelectionMode(qt.QTableWidget.SingleSelection)
+        self.table.setSortingEnabled(True)
+        layout.addWidget(self.table)
 
+    def _populate_data(self):
+        qt = self.qt
         rows = self.db.get_actions(500)
-        table.setRowCount(len(rows))
+        self.table.setRowCount(len(rows))
+        
+        distinct_actions = set()
         for i, (path, action, detail, ts) in enumerate(rows):
-            try:
-                table.setItem(i, 0, qt.QTableWidgetItem(str(path)))
-                table.setItem(i, 1, qt.QTableWidgetItem(str(action)))
-                table.setItem(i, 2, qt.QTableWidgetItem(str(detail or "")))
-                # Convert ts to readable string if possible
-                try:
-                    import time
+            self._add_table_row(i, path, action, detail, ts)
+            if action:
+                distinct_actions.add(action)
 
-                    ts_s = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
-                except Exception:
-                    ts_s = str(ts)
-                table.setItem(i, 3, qt.QTableWidgetItem(ts_s))
-            except Exception:
-                # Skip malformed rows
-                continue
+        for action in sorted(distinct_actions):
+            self.action_combo.addItem(action)
+        
+        self.table.resizeColumnsToContents()
 
-        # Populate action combo with distinct actions
-        actions = sorted({a for (_, a, _, _) in rows if a})
-        for a in actions:
-            action_combo.addItem(a)
+    def _add_table_row(self, row_idx, path, action, detail, ts):
+        qt = self.qt
+        try:
+            self.table.setItem(row_idx, 0, qt.QTableWidgetItem(str(path)))
+            self.table.setItem(row_idx, 1, qt.QTableWidgetItem(str(action)))
+            self.table.setItem(row_idx, 2, qt.QTableWidgetItem(str(detail or "")))
+            
+            timestamp_str = self._format_timestamp(ts)
+            self.table.setItem(row_idx, 3, qt.QTableWidgetItem(timestamp_str))
+        except Exception as e:
+            import logging
+            logging.error(f"Failed to add row {row_idx} to ActionsDialog: {e}")
 
-        table.resizeColumnsToContents()
-        layout.addWidget(table)
+    def _format_timestamp(self, ts):
+        try:
+            import time
+            return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
+        except Exception:
+            return str(ts)
 
-        def apply_filter():
-            q = filter_edit.text().lower()
-            selected_action = action_combo.currentText()
-            for r in range(table.rowCount()):
-                visible = False
-                for c in range(table.columnCount()):
-                    item = table.item(r, c)
-                    if item and q in item.text().lower():
-                        visible = True
-                        break
-                # Apply action filter
-                if selected_action and selected_action != "All":
-                    act_item = table.item(r, 1)
-                    if not act_item or act_item.text() != selected_action:
-                        visible = False
-                table.setRowHidden(r, not visible)
+    def _setup_connections(self):
+        self.filter_edit.textChanged.connect(self._apply_filter)
+        self.action_combo.currentIndexChanged.connect(self._apply_filter)
+        self.table.itemSelectionChanged.connect(self._on_selection_changed)
+        self.unmark_btn.clicked.connect(self._unmark_selected)
 
-        filter_edit.textChanged.connect(apply_filter)
-        action_combo.currentIndexChanged.connect(lambda _: apply_filter())
+    def _apply_filter(self):
+        query = self.filter_edit.text().lower()
+        selected_action = self.action_combo.currentText()
+        
+        for r in range(self.table.rowCount()):
+            is_visible = self._is_row_matching_filter(r, query, selected_action)
+            self.table.setRowHidden(r, not is_visible)
 
-        def on_selection_changed():
-            sel = table.selectedItems()
-            unmark_btn.setEnabled(bool(sel))
+    def _is_row_matching_filter(self, row_idx, query, selected_action):
+        # Text filter check
+        match_text = False
+        for c in range(self.table.columnCount()):
+            item = self.table.item(row_idx, c)
+            if item and query in item.text().lower():
+                match_text = True
+                break
+        
+        if not match_text:
+            return False
+            
+        # Action filter check
+        if selected_action != "All":
+            action_item = self.table.item(row_idx, 1)
+            if not action_item or action_item.text() != selected_action:
+                return False
+                
+        return True
 
-        table.itemSelectionChanged.connect(on_selection_changed)
+    def _on_selection_changed(self):
+        has_selection = bool(self.table.selectedItems())
+        self.unmark_btn.setEnabled(has_selection)
 
-        def unmark_selected():
-            sel = table.selectedItems()
-            if not sel:
-                return
-            row = sel[0].row()
-            path_item = table.item(row, 0)
-            if not path_item:
-                return
-            path = path_item.text()
-            try:
-                db = self.db
-                entry = db.get_entry(path)
-                if entry and entry.status == "COMPRESSED":
-                    entry.status = "UNKNOWN"
-                    db.update_entry(entry)
-                    db.log_action(path, "UNMARK_COMPRESSED", "User unmarked via UI")
-                    apply_filter()
-            except Exception:
-                pass
+    def _unmark_selected(self):
+        selected_items = self.table.selectedItems()
+        if not selected_items:
+            return
+            
+        row_idx = selected_items[0].row()
+        path_item = self.table.item(row_idx, 0)
+        if not path_item:
+            return
+            
+        path = path_item.text()
+        try:
+            self._process_unmark(path)
+        except Exception as e:
+            import logging
+            logging.error(f"Failed to unmark file {path}: {e}")
 
-        unmark_btn.clicked.connect(unmark_selected)
-
-        btns = qt.QDialogButtonBox(qt.QDialogButtonBox.Close)
-        btns.rejected.connect(dlg.reject)
-        layout.addWidget(btns)
-
-        dlg.exec()
+    def _process_unmark(self, path):
+        entry = self.db.get_entry(path)
+        if entry and entry.status == "COMPRESSED":
+            entry.status = "UNKNOWN"
+            self.db.update_entry(entry)
+            self.db.log_action(path, "UNMARK_COMPRESSED", "User unmarked via UI")
+            self._apply_filter()

@@ -64,6 +64,69 @@ def _handle_quarantine(
         return "QUARANTINE_ERROR"
 
 
+def _check_cache_status(f: Path, lib_db: LibraryDB) -> tuple[bool, Optional[bool], bool]:
+    """Retorna (ok, av_result, used_cache)."""
+    try:
+        entry = lib_db.get_entry(str(f.resolve()))
+        if not entry:
+            return False, False, False
+            
+        st = f.stat()
+        if st.st_size == entry.size and abs(st.st_mtime - entry.mtime) < 1.0:
+            if entry.status == "VERIFIED":
+                return True, None, True
+            if entry.status == "CORRUPT":
+                return False, None, True
+            if entry.status == "INFECTED":
+                return True, True, True
+    except (OSError, ValueError) as e:
+        import logging
+        logging.debug(f"Cache check failed for {f}: {e}")
+    return False, False, False
+
+
+def _update_file_cache(f: Path, lib_db: LibraryDB, ok: bool, av_result: Optional[bool]):
+    try:
+        st = f.stat()
+        status = "UNKNOWN"
+        if av_result:
+            status = "INFECTED"
+        elif not ok:
+            status = "CORRUPT"
+        else:
+            status = "VERIFIED"
+
+        new_entry = LibraryEntry(
+            path=str(f.resolve()),
+            system="switch",
+            size=st.st_size,
+            mtime=st.st_mtime,
+            status=status,
+            match_name="Integrity Check"
+        )
+        lib_db.update_entry(new_entry)
+    except OSError as e:
+        import logging
+        logging.debug(f"Cache update failed for {f}: {e}")
+
+
+def _consolidate_file_status(f: Path, ok: bool, av_result: Optional[bool], corrupted: list, infected: list, unknown_av: list, av_out: str):
+    integrity_status = "OK" if ok else "CORRUPT"
+    if not ok:
+        corrupted.append(f)
+
+    if av_result is True:
+        infected.append((f, av_out))
+        av_status = "INFECTED"
+    elif av_result is False:
+        av_status = "CLEAN"
+    else:
+        unknown_av.append((f, av_out))
+        av_status = "UNKNOWN"
+        
+    return integrity_status, av_status
+
+
 def _scan_files(
     all_files: List[Path],
     args: Any,
@@ -73,16 +136,10 @@ def _scan_files(
     safe_move: callable,
     logger,
 ) -> tuple:
-    corrupted = []
-    infected = []
-    unknown_av = []
-    report_rows = []
-
+    corrupted, infected, unknown_av, report_rows = [], [], [], []
     total = len(all_files)
     progress_cb = getattr(args, "progress_callback", None)
     cancel_event = getattr(args, "cancel_event", None)
-
-    # Initialize LibraryDB
     lib_db = LibraryDB()
 
     for i, f in enumerate(all_files):
@@ -90,112 +147,24 @@ def _scan_files(
             logger.warning("Operation cancelled by user.")
             break
 
-        # Check cache
-        cached_ok = False
-        cached_av = False
-        used_cache = False
-
-        try:
-            entry = lib_db.get_entry(str(f.resolve()))
-            if entry:
-                st = f.stat()
-                if st.st_size == entry.size and abs(st.st_mtime - entry.mtime) < 1.0:
-                    # Interpret status
-                    if entry.status == "VERIFIED":
-                        cached_ok = True
-                        cached_av = None  # Assume clean if verified
-                        used_cache = True
-                    elif entry.status == "CORRUPT":
-                        cached_ok = False
-                        cached_av = None
-                        used_cache = True
-                    elif entry.status == "INFECTED":
-                        # Might be valid file but infected? Usually corrupt too.
-                        cached_ok = True
-                        cached_av = True
-                        used_cache = True
-        except (OSError, ValueError):
-            pass
-
+        ok, av_result, used_cache = _check_cache_status(f, lib_db)
+        
         if used_cache:
-            if progress_cb:
-                progress_cb(i / total, f"Checking {f.name} (Cached)...")
-
-            ok = cached_ok
-            av_result = cached_av
-            verify_out = "Cached Result"
-            av_out = "Cached Result"
+            if progress_cb: progress_cb(i / total, f"Checking {f.name} (Cached)...")
+            verify_out, av_out = "Cached Result", "Cached Result"
         else:
-            if progress_cb:
-                progress_cb(i / total, f"Checking {f.name}...")
+            if progress_cb: progress_cb(i / total, f"Checking {f.name}...")
+            ok, verify_out, av_result, av_out = _check_file_health(f, args, verify_integrity, scan_for_virus)
+            _update_file_cache(f, lib_db, ok, av_result)
 
-            ok, verify_out, av_result, av_out = _check_file_health(
-                f, args, verify_integrity, scan_for_virus
-            )
+        integrity_status, av_status = _consolidate_file_status(f, ok, av_result, corrupted, infected, unknown_av, av_out)
 
-            # Update Cache
-            try:
-                st = f.stat()
-                status = "UNKNOWN"
-                if av_result:
-                    status = "INFECTED"
-                elif not ok:
-                    status = "CORRUPT"
-                else:
-                    status = "VERIFIED"
+        action_taken = _handle_quarantine(f, integrity_status, av_status, quarantine_dir, args, safe_move, logger)
 
-                new_entry = LibraryEntry(
-                    path=str(f.resolve()),
-                    system="switch",
-                    size=st.st_size,
-                    mtime=st.st_mtime,
-                    crc32=None,
-                    md5=None,
-                    sha1=None,
-                    sha256=None,
-                    status=status,
-                    match_name="Integrity Check",
-                    dat_name=None,
-                )
-                lib_db.update_entry(new_entry)
-            except OSError:
-                pass
-
-        if not ok:
-            corrupted.append(f)
-            integrity_status = "CORRUPT"
-        else:
-            integrity_status = "OK"
-
-        if av_result is True:
-            infected.append((f, av_out))
-            av_status = "INFECTED"
-        elif av_result is False:
-            av_status = "CLEAN"
-        else:
-            unknown_av.append((f, av_out))
-            av_status = "UNKNOWN"
-
-        action_taken = _handle_quarantine(
-            f,
-            integrity_status,
-            av_status,
-            quarantine_dir,
-            args,
-            safe_move,
-            logger,
-        )
-
-        report_rows.append(
-            [
-                str(f),
-                integrity_status,
-                (verify_out or "")[:10000],
-                av_status,
-                (av_out or "")[:10000],
-                action_taken,
-            ]
-        )
+        report_rows.append([
+            str(f), integrity_status, (verify_out or "")[:10000],
+            av_status, (av_out or "")[:10000], action_taken
+        ])
 
     return corrupted, infected, unknown_av, report_rows
 

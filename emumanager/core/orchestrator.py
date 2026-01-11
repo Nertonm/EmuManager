@@ -159,6 +159,27 @@ Wiki: {info.get('wiki', 'N/A')}
         return generator.generate(result, logs_dir)
 
 
+    def _fetch_single_cover(self, entry: Any, system_id: str, provider: Any, cache_dir: Path) -> bool:
+        """Tenta descarregar uma capa individual."""
+        import requests
+        url = provider.get_cover_url(system_id, None, entry.match_name or Path(entry.path).stem)
+        if not url:
+            return False
+
+        try:
+            target = cache_dir / f"{Path(entry.path).stem}.png"
+            if target.exists():
+                return False
+                
+            resp = requests.get(url, timeout=10)
+            if resp.status_code == 200:
+                target.write_bytes(resp.content)
+                return True
+        except Exception as e:
+            self.logger.debug(f"Falha ao descarregar capa para {entry.path}: {e}")
+            
+        return False
+
     def fetch_covers_for_system(self, system_id: str, progress_cb: Optional[Callable] = None):
         """Descarrega capas para todos os jogos de um sistema (Headless)."""
         from emumanager.metadata_providers import LibretroProvider
@@ -169,21 +190,12 @@ Wiki: {info.get('wiki', 'N/A')}
         cache_dir.mkdir(parents=True, exist_ok=True)
         
         success = 0
-        import requests
         for i, entry in enumerate(entries):
-            if progress_cb: progress_cb(i / len(entries), f"Capas: {Path(entry.path).name}")
+            if progress_cb:
+                progress_cb(i / len(entries), f"Capas: {Path(entry.path).name}")
             
-            # Tentar obter URL
-            url = provider.get_cover_url(system_id, None, entry.match_name or Path(entry.path).stem)
-            if url:
-                try:
-                    target = cache_dir / f"{Path(entry.path).stem}.png"
-                    if not target.exists():
-                        resp = requests.get(url, timeout=10)
-                        if resp.status_code == 200:
-                            target.write_bytes(resp.content)
-                            success += 1
-                except Exception: continue
+            if self._fetch_single_cover(entry, system_id, provider, cache_dir):
+                success += 1
         return success
 
     def recompress_rom(self, path: Path, target_level: int) -> bool:
@@ -265,6 +277,33 @@ Wiki: {info.get('wiki', 'N/A')}
 
     # --- Workflow: Transformação e Manutenção ---
 
+    def _get_ideal_path(self, entry: Any, provider: Any, full_entry: Any) -> Path:
+        """Resolve o caminho ideal canónico para um ficheiro."""
+        ideal_rel = provider.get_ideal_filename(Path(full_entry.path), full_entry.extra_metadata)
+        system_root = self.session.roms_path / entry.system
+        
+        # Limpeza de caracteres proibidos em cada segmento do caminho
+        parts = Path(ideal_rel).parts
+        clean_parts = ["".join([c for c in p if c not in '<>:\"/\\|?*']).strip() for p in parts]
+        return system_root / Path(*clean_parts)
+
+    def _perform_organization_move(self, entry: Any, full_entry: Any, dest_path: Path, result: Any, item_start: datetime):
+        """Executa a movimentação física e lógica de uma entrada."""
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        args = SimpleNamespace(dry_run=False, dup_check="fast")
+        orig_path = Path(full_entry.path)
+        
+        if safe_move(orig_path, dest_path, args=args, get_file_hash=lambda p: "", logger=self.logger):
+            self.db.remove_entry(full_entry.path)
+            full_entry.path = str(dest_path)
+            self.db.update_entry(full_entry)
+            result.add_item_result(orig_path, "success", (datetime.now()-item_start).total_seconds(), system=entry.system)
+            result.success_count += 1
+            return True
+        
+        result.failed_count += 1
+        return False
+
     def organize_names(self, system_id: Optional[str] = None, dry_run: bool = False, progress_cb: Optional[Callable] = None):
         """Workflow de Organização: Aplica nomes canónicos e hierarquia por sistema."""
         set_correlation_id()
@@ -275,43 +314,28 @@ Wiki: {info.get('wiki', 'N/A')}
         result = WorkerResult(task_name=f"Organize {system_id or 'All'}")
 
         for i, entry in enumerate(entries):
-            if progress_cb: progress_cb(i / len(entries), f"Organizando {entry.system}...")
+            if progress_cb:
+                progress_cb(i / len(entries), f"Organizando {entry.system}...")
             
             item_start = datetime.now()
             provider = registry.get_provider(entry.system)
             full_entry = self.db.get_entry(entry.path)
-            if not provider or not full_entry: continue
+            if not provider or not full_entry:
+                continue
 
             try:
-                # 1. Obter sugestão de caminho do Provider
-                ideal_rel = provider.get_ideal_filename(Path(full_entry.path), full_entry.extra_metadata)
-                
-                # 2. Resolver caminho absoluto (dentro da raiz do sistema)
-                system_root = self.session.roms_path / entry.system
-                # Limpeza de caracteres proibidos em cada segmento do caminho
-                clean_path = Path(*["".join([c for c in p if c not in '<>:\"/\\|?*']).strip() for p in Path(ideal_rel).parts])
-                dest_path = system_root / clean_path
+                dest_path = self._get_ideal_path(entry, provider, full_entry)
 
                 if Path(full_entry.path).resolve() == dest_path.resolve():
                     result.skipped_count += 1
                     continue
 
                 if dry_run:
-                    self.logger.info(f"[DRY-RUN] Organize: {Path(full_entry.path).name} -> {ideal_rel}")
+                    self.logger.info(f"[DRY-RUN] Organize: {Path(full_entry.path).name} -> {dest_path}")
                     result.add_item_result(Path(full_entry.path), "success", (datetime.now()-item_start).total_seconds(), system=entry.system)
                     result.success_count += 1
                 else:
-                    dest_path.parent.mkdir(parents=True, exist_ok=True)
-                    args = SimpleNamespace(dry_run=False, dup_check="fast")
-                    orig_path = Path(full_entry.path)
-                    if safe_move(orig_path, dest_path, args=args, get_file_hash=lambda p: "", logger=self.logger):
-                        self.db.remove_entry(full_entry.path)
-                        full_entry.path = str(dest_path)
-                        self.db.update_entry(full_entry)
-                        result.add_item_result(orig_path, "success", (datetime.now()-item_start).total_seconds(), system=entry.system)
-                        result.success_count += 1
-                    else:
-                        result.failed_count += 1
+                    self._perform_organization_move(entry, full_entry, dest_path, result, item_start)
 
             except Exception as e:
                 self.logger.error(f"Falha ao organizar {full_entry.path}: {e}")
@@ -319,6 +343,20 @@ Wiki: {info.get('wiki', 'N/A')}
         
         result.duration_ms = (datetime.now() - start_time).total_seconds() * 1000
         return result
+
+    def _merge_organization_stats(self, result: Any, dist_stats: dict, org_stats: Any):
+        """Funde as estatísticas de distribuição e organização no resultado final."""
+        # Considerar o organize_names como a fonte principal de itens processados se for um WorkerResult
+        if hasattr(org_stats, 'processed_items'):
+            result.processed_items.extend(org_stats.processed_items)
+            result.success_count = org_stats.success_count
+            result.failed_count = org_stats.failed_count
+            result.skipped_count = org_stats.skipped_count
+        else:
+            # Fallback se organize_names retornar dict simples
+            result.success_count = dist_stats.get("moved", 0) + org_stats.get("renamed", 0)
+            result.failed_count = dist_stats.get("errors", 0) + org_stats.get("errors", 0)
+            result.skipped_count = dist_stats.get("skipped", 0) + org_stats.get("skipped", 0)
 
     def full_organization_flow(self, dry_run: bool = False, progress_cb: Optional[Callable] = None):
         """Workflow Mestre: Move da raiz para pastas e renomeia tudo."""
@@ -342,18 +380,7 @@ Wiki: {info.get('wiki', 'N/A')}
         # 3. Organizar nomes
         org_stats = self.organize_names(dry_run=dry_run, progress_cb=progress_cb)
         
-        # Fundir stats (embora o organize_names opere sobre o que já foi distribuído ou já lá estava)
-        # Para o relatório, vamos considerar o organize_names como a fonte de itens processados
-        if hasattr(org_stats, 'processed_items'):
-            result.processed_items.extend(org_stats.processed_items)
-            result.success_count = org_stats.success_count
-            result.failed_count = org_stats.failed_count
-            result.skipped_count = org_stats.skipped_count
-        else:
-            # Fallback se organize_names retornar dict simples (padrão atual)
-            result.success_count = dist_stats.get("moved", 0) + org_stats.get("renamed", 0)
-            result.failed_count = dist_stats.get("errors", 0) + org_stats.get("errors", 0)
-            result.skipped_count = dist_stats.get("skipped", 0) + org_stats.get("skipped", 0)
+        self._merge_organization_stats(result, dist_stats, org_stats)
 
         result.duration_ms = (datetime.now() - start_time).total_seconds() * 1000
         return result
@@ -387,6 +414,24 @@ Wiki: {info.get('wiki', 'N/A')}
             else: stats["errors"] += 1
         return stats
 
+    def _score_duplicate_entry(self, entry: Any) -> tuple[int, int]:
+        """Atribui uma pontuação de preferência para um ficheiro duplicado."""
+        preferred_exts = {".chd", ".rvz", ".cso", ".z64", ".nsp", ".nsz"}
+        ext = Path(entry.path).suffix.lower()
+        return (1 if ext in preferred_exts else 0, entry.size)
+
+    def _remove_duplicate_entry(self, entry: Any, stats: dict[str, int]):
+        """Remove fisicamente e logicamente um ficheiro duplicado."""
+        try:
+            Path(entry.path).unlink(missing_ok=True)
+            self.db.remove_entry(entry.path)
+            stats["removed"] += 1
+            return True
+        except Exception as e:
+            self.logger.error(f"Erro ao remover duplicado {entry.path}: {e}")
+            stats["errors"] += 1
+            return False
+
     def cleanup_duplicates(self, dry_run: bool = False) -> dict[str, int]:
         """Remove duplicados baseados em hash, preservando a melhor versão."""
         self.logger.info("Verificando duplicados globais...")
@@ -397,20 +442,12 @@ Wiki: {info.get('wiki', 'N/A')}
                 by_hash.setdefault(e.sha1, []).append(e)
         
         stats = {"removed": 0, "errors": 0}
-        
-        # Extensões preferidas (modernas/comprimidas)
-        preferred_exts = {".chd", ".rvz", ".cso", ".z64", ".nsp", ".nsz"}
-
         for sha1, group in by_hash.items():
-            if len(group) <= 1: continue
+            if len(group) <= 1:
+                continue
             
-            # Ordenar: Preferidos primeiro, depois por tamanho (maior pode ser melhor se não comprimido, 
-            # mas aqui preferimos os formatos específicos se existirem)
-            def score(entry):
-                ext = Path(entry.path).suffix.lower()
-                return (1 if ext in preferred_exts else 0, entry.size)
-            
-            group.sort(key=score, reverse=True)
+            # Ordenar: Preferidos primeiro, depois por tamanho
+            group.sort(key=self._score_duplicate_entry, reverse=True)
             keep = group[0]
             to_remove = group[1:]
             
@@ -418,15 +455,8 @@ Wiki: {info.get('wiki', 'N/A')}
                 if dry_run:
                     self.logger.info(f"[DRY-RUN] Duplicado removido: {Path(entry.path).name} (Mantido {Path(keep.path).name})")
                     stats["removed"] += 1
-                    continue
-                
-                try:
-                    Path(entry.path).unlink(missing_ok=True)
-                    self.db.remove_entry(entry.path)
-                    stats["removed"] += 1
-                except Exception as e:
-                    self.logger.error(f"Erro ao remover duplicado {entry.path}: {e}")
-                    stats["errors"] += 1
+                else:
+                    self._remove_duplicate_entry(entry, stats)
                     
         return stats
 

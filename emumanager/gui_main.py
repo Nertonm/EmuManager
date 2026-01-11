@@ -51,91 +51,69 @@ class MainWindowBase:
         self._orchestrator = orchestrator
         self.ui = Ui_MainWindow()
         self._last_base = orchestrator.session.base_path
-
         self._current_dat_path = None
-
-        # Create widgets (use local alias to the qt binding)
-        qt = self._qtwidgets
-        # Common literals
         self._dlg_select_base_title = "Select base directory"
-        self.ui = Ui_MainWindow()
-        self._last_base = orchestrator.session.base_path
 
-        self._current_dat_path = None
+        self._init_qt_modules()
+        self._init_executor()
+        self._init_state()
+        
+        self.window = self._qtwidgets.QMainWindow()
+        self.ui.setupUi(self.window, self._qtwidgets)
+        self.window.closeEvent = self._on_close_event
+        self._original_close_event = self.window.closeEvent
 
-        # Create widgets (use local alias to the qt binding)
-        qt = self._qtwidgets
-        # Common literals
-        self._dlg_select_base_title = "Select base directory"
-        # Quarantine tab actions (if present)
-        try:
-            if hasattr(self.ui, "btn_quar_open"):
-                self.ui.btn_quar_open.clicked.connect(self._quarantine_open_location)
-            if hasattr(self.ui, "btn_quar_restore"):
-                self.ui.btn_quar_restore.clicked.connect(self._quarantine_restore)
-            if hasattr(self.ui, "btn_quar_delete"):
-                self.ui.btn_quar_delete.clicked.connect(self._quarantine_delete)
-            if hasattr(self.ui, "quarantine_table"):
-                try:
-                    self.ui.quarantine_table.itemSelectionChanged.connect(
-                        self._on_quarantine_selection_changed
-                    )
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        self._alias_widgets()
+        self._init_theme()
+        self._init_logging_signaler()
+        
+        self.logger = get_logger("gui")
+        self._init_controllers()
+        self._connect_signals()
+        self._init_settings()
+        self._init_ui_enhancements()
 
-        # Attempt to locate the QtCore module corresponding to the passed
-        # QtWidgets binding (works for PyQt6 or PySide6). Also prepare a small
-        # thread pool used for background tasks.
+    def _init_qt_modules(self):
         try:
             import importlib
-
             try:
                 self._qtcore = importlib.import_module("PyQt6.QtCore")
                 self._qtgui = importlib.import_module("PyQt6.QtGui")
             except Exception:
                 self._qtcore = importlib.import_module("PySide6.QtCore")
                 self._qtgui = importlib.import_module("PySide6.QtGui")
-        except Exception:
+        except Exception as e:
+            logging.error(f"Failed to load Qt modules: {e}")
             self._qtcore = None
             self._qtgui = None
 
-        # Executor for background tasks (small pool)
+    def _init_executor(self):
         try:
             import concurrent.futures
-
             self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
-        except Exception:
+        except Exception as e:
+            logging.error(f"Failed to init executor: {e}")
             self._executor = None
 
-        # UI state helpers
+    def _init_state(self):
         self._active_timer = None
         self._active_future = None
         self._scan_in_progress = False
         self._skip_list_side_effects = False
         self._cancel_event = threading.Event()
         self._settings = None
-        self._last_base = None
-        self._env = {}  # Cache for environment tools/paths
+        self._env = {}
         self.library_db = LibraryDB()
-        self.window = qt.QMainWindow()
+        self._Qt_enum = getattr(self._qtcore, "Qt", None) if self._qtcore else None
 
-        # Setup UI
-        self.ui.setupUi(self.window, qt)
-
-        # Setup close handler
-        self._original_close_event = self.window.closeEvent
-        self.window.closeEvent = self._on_close_event
-
-        # Alias common widgets for convenience and compatibility
+    def _alias_widgets(self):
         self.log = self.ui.log
         self.status = self.ui.statusbar
         self.rom_list = self.ui.rom_list
         self.sys_list = self.ui.sys_list
         self.cover_label = self.ui.cover_label
-
-        # Alias settings widgets
+        
+        # Settings widgets
         self.chk_dry_run = self.ui.chk_dry_run
         self.spin_level = self.ui.spin_level
         self.combo_profile = self.ui.combo_profile
@@ -146,74 +124,75 @@ class MainWindowBase:
         self.chk_process_selected = self.ui.chk_process_selected
         self.chk_standardize_names = self.ui.chk_standardize_names
 
+    def _init_theme(self):
         if self._qtgui:
-            self.ui.apply_dark_theme(qt, self._qtgui, self.window)
+            try:
+                self.ui.apply_dark_theme(self._qtwidgets, self._qtgui, self.window)
+            except Exception as e:
+                logging.debug(f"Theme application failed: {e}")
 
-        # Setup thread-safe logging signal
-        if self._qtcore:
-            # Define a QObject to hold the signal
-            class LogSignaler(self._qtcore.QObject):
-                # Try both PyQt6 and PySide6 signal names
-                if hasattr(self._qtcore, "pyqtSignal"):
-                    log_signal = self._qtcore.pyqtSignal(str)
-                    progress_signal = self._qtcore.pyqtSignal(float, str)
-                else:
-                    log_signal = self._qtcore.Signal(str)
-                    progress_signal = self._qtcore.Signal(float, str)
-
-                def emit_log(self, msg, level):
-                    # We can optionally use level to colorize, but for now just emit msg
-                    self.log_signal.emit(msg)
-
-            self._signaler = LogSignaler()
-            self._signaler.log_signal.connect(self._log_msg_slot)
-            self._signaler.progress_signal.connect(self._progress_slot)
-
-            # Configure standard logging to use this signaler
-            setup_gui_logging(self._signaler)
-
-        else:
+    def _init_logging_signaler(self):
+        if not self._qtcore:
             self._signaler = None
+            return
 
-        # Initialize logger
-        self.logger = get_logger("gui")
+        class LogSignaler(self._qtcore.QObject):
+            if hasattr(self._qtcore, "pyqtSignal"):
+                log_signal = self._qtcore.pyqtSignal(str)
+                progress_signal = self._qtcore.pyqtSignal(float, str)
+            else:
+                log_signal = self._qtcore.Signal(str)
+                progress_signal = self._qtcore.Signal(float, str)
 
-        # Initialize Controllers
+            def emit_log(self, msg, level):
+                self.log_signal.emit(msg)
+
+        self._signaler = LogSignaler()
+        self._signaler.log_signal.connect(self._log_msg_slot)
+        self._signaler.progress_signal.connect(self._progress_slot)
+        setup_gui_logging(self._signaler)
+
+    def _init_controllers(self):
         self.gallery_controller = GalleryController(self)
         self.duplicates_controller = DuplicatesController(self)
         self.tools_controller = ToolsController(self)
 
-        # Connect Signals
-        self._connect_signals()
-
-        # Initialize settings if possible
-        if self._qtcore:
-            self._settings = self._qtcore.QSettings("EmuManager", "Manager")
-            self._load_settings()
-
-        # Resolve Qt namespace for enums
-        self._Qt_enum = None
+    def _init_settings(self):
         if self._qtcore:
             try:
-                self._Qt_enum = self._qtcore.Qt
-            except AttributeError:
-                pass
+                self._settings = self._qtcore.QSettings("EmuManager", "Manager")
+                self._load_settings()
+            except Exception as e:
+                logging.error(f"Settings init failed: {e}")
 
-        # Enhance UI: toolbar and context menus
+    def _init_ui_enhancements(self):
         try:
             self._setup_toolbar()
             self._setup_menubar()
             self._setup_rom_context_menu()
             self._setup_verification_context_menu()
-        except Exception:
-            pass
+        except Exception as e:
+            logging.debug(f"UI enhancements failed: {e}")
 
-        # Setup smart startup hook
         if self._qtcore:
             self._setup_startup_hook()
-
-        # Setup Log Context Menu
         self._setup_log_context_menu()
+        self._setup_quarantine_signals()
+
+    def _setup_quarantine_signals(self):
+        try:
+            if hasattr(self.ui, "btn_quar_open"):
+                self.ui.btn_quar_open.clicked.connect(self._quarantine_open_location)
+            if hasattr(self.ui, "btn_quar_restore"):
+                self.ui.btn_quar_restore.clicked.connect(self._quarantine_restore)
+            if hasattr(self.ui, "btn_quar_delete"):
+                self.ui.btn_quar_delete.clicked.connect(self._quarantine_delete)
+            if hasattr(self.ui, "quarantine_table"):
+                self.ui.quarantine_table.itemSelectionChanged.connect(
+                    self._on_quarantine_selection_changed
+                )
+        except Exception as e:
+            logging.debug(f"Quarantine signals failed: {e}")
 
     def _setup_startup_hook(self):
         """
@@ -259,7 +238,12 @@ class MainWindowBase:
             self.on_open_library()
 
     def _connect_signals(self):
-        # Dashboard Tab
+        self._connect_dashboard_signals()
+        self._connect_library_signals()
+        self._connect_verification_signals()
+        self._connect_misc_signals()
+
+    def _connect_dashboard_signals(self):
         if hasattr(self.ui, "btn_quick_organize"):
             self.ui.btn_quick_organize.clicked.connect(self.on_organize_all)
         if hasattr(self.ui, "btn_quick_verify"):
@@ -269,57 +253,50 @@ class MainWindowBase:
         if hasattr(self.ui, "btn_quick_clean"):
             self.ui.btn_quick_clean.clicked.connect(self.tools_controller.on_clean_junk)
 
-        # Library Tab
+    def _connect_library_signals(self):
         self.ui.btn_open_lib.clicked.connect(self.on_open_library)
         self.ui.btn_init.clicked.connect(self.on_init)
         self.ui.btn_list.clicked.connect(self.on_list)
         self.ui.btn_add.clicked.connect(self.on_add)
         self.ui.btn_clear.clicked.connect(self.on_clear_log)
-        # Connect selection change for covers
+        
         self.ui.rom_list.currentItemChanged.connect(self._on_rom_selection_changed)
-        # Filter box
+        self.ui.sys_list.itemClicked.connect(self._on_system_selected)
+        self.ui.rom_list.itemDoubleClicked.connect(self._on_rom_double_clicked)
+        
         if hasattr(self.ui, "edit_filter"):
             self.ui.edit_filter.textChanged.connect(self._on_filter_text)
         if hasattr(self.ui, "btn_clear_filter"):
-            self.ui.btn_clear_filter.clicked.connect(
-                lambda: self.ui.edit_filter.setText("")
-            )
-        self.ui.sys_list.itemClicked.connect(self._on_system_selected)
-        self.ui.rom_list.itemDoubleClicked.connect(self._on_rom_double_clicked)
+            self.ui.btn_clear_filter.clicked.connect(lambda: self.ui.edit_filter.setText(""))
 
-        # Cancel button
-        self.ui.btn_cancel.clicked.connect(self.on_cancel_requested)
-
-        # Verification Tab
+    def _connect_verification_signals(self):
         self.ui.btn_select_dat.clicked.connect(self.on_select_dat)
         self.ui.btn_verify_dat.clicked.connect(self.on_verify_dat)
+        
         if hasattr(self.ui, "btn_update_dats"):
             self.ui.btn_update_dats.clicked.connect(self.on_update_dats)
+        
         if hasattr(self.ui, "combo_verif_filter"):
-            self.ui.combo_verif_filter.currentTextChanged.connect(
-                self.on_verification_filter_changed
-            )
+            self.ui.combo_verif_filter.currentTextChanged.connect(self.on_verification_filter_changed)
+        
         if hasattr(self.ui, "btn_export_csv"):
             self.ui.btn_export_csv.clicked.connect(self.on_export_verification_csv)
+            
         if hasattr(self.ui, "btn_try_rehash"):
             self.ui.btn_try_rehash.clicked.connect(self.on_try_rehash)
-        # Key handling on ROM list (Enter/Return to Compress)
-        try:
-            self._install_rom_key_filter()
-        except Exception:
-            pass
+            
         if hasattr(self.ui, "table_results"):
-            self.ui.table_results.itemDoubleClicked.connect(
-                self._on_verification_item_dblclick
-            )
-        if hasattr(self.ui, "combo_verif_filter"):
-            self.ui.combo_verif_filter.currentTextChanged.connect(
-                self.on_verification_filter_changed
-            )
-        if hasattr(self.ui, "btn_export_csv"):
-            self.ui.btn_export_csv.clicked.connect(self.on_export_verification_csv)
+            self.ui.table_results.itemDoubleClicked.connect(self._on_verification_item_dblclick)
+            
         if hasattr(self.ui, "btn_identify_all"):
             self.ui.btn_identify_all.clicked.connect(self.on_identify_all)
+
+    def _connect_misc_signals(self):
+        self.ui.btn_cancel.clicked.connect(self.on_cancel_requested)
+        try:
+            self._install_rom_key_filter()
+        except Exception as e:
+            logging.debug(f"ROM key filter installation failed: {e}")
 
     def show(self):
         self.window.show()
@@ -1360,78 +1337,73 @@ class MainWindowBase:
             self.log_msg(f"Init error: {e}")
 
 
-    def on_list(self, force_scan: bool = False):
-        base = self._last_base
-        if not base:
-            self.log_msg(MSG_SELECT_BASE)
-            return
-
-        # If a scan is already running, don't start another unless forced.
-        if self._scan_in_progress and not force_scan:
-            return
-
-        # Ensure UI is enabled before listing
-        self._set_ui_enabled(True)
-
-        systems = self._manager.cmd_list_systems(base)
-        # Programmatic selection changes can fire itemClicked/currentIndexChanged.
-        # Guard against re-entrant list/scan storms.
-        self._skip_list_side_effects = True
-        try:
-            self._refresh_system_list_ui(systems)
-        finally:
-            self._skip_list_side_effects = False
-        self._log_systems(systems)
-
-        # Start background scan
-        self.log_msg("Scanning library...")
+    def _start_background_scan(self, base: Path, systems: list[str]):
+        """Inicia a varredura da biblioteca em background."""
         self._scan_in_progress = True
-
-        # Use signal emitter for thread safety
         progress_cb = self._signaler.progress_signal.emit if self._signaler else None
 
         def _work():
             op = str(uuid.uuid4())[:8]
             log_cb = self._make_op_log_cb(op)
-            # show op id briefly in status
             try:
                 self.status.showMessage(f"Operation {op} started", 3000)
             except Exception:
                 pass
-            return worker_scan_library(Path(base), log_cb, progress_cb, self._cancel_event)
+            return worker_scan_library(base, log_cb, progress_cb, self._cancel_event)
 
         def _done(result):
-            if isinstance(result, Exception):
-                self.log_msg(f"Scan error: {result}")
-            elif result:
-                self.log_msg(f"Scan complete. Total files: {result.get('count', 0)}")
-                self._update_dashboard_stats(systems, stats=result)
-
-            self._scan_in_progress = False
-            # After a successful scan, auto-select the previous system.
-            self._auto_select_last_system()
-
-            # Reset progress bar
-            if self._signaler:
-                self._signaler.progress_signal.emit(0, "")
-            else:
-                self._progress_slot(0, "")
-
-            # Refresh quarantine tab contents after a scan
-            try:
-                self._refresh_quarantine_tab()
-            except Exception:
-                pass
+            self._handle_scan_finished(result, systems)
 
         self._run_in_background(_work, _done)
-        # Update stats immediately with cached data if available
+
+    def _handle_scan_finished(self, result: Any, systems: list[str]):
+        """Processa a conclusão do scan e atualiza a UI."""
+        if isinstance(result, Exception):
+            self.log_msg(f"Scan error: {result}")
+        elif result:
+            self.log_msg(f"Scan complete. Total files: {result.get('count', 0)}")
+            self._update_dashboard_stats(systems, stats=result)
+
+        self._scan_in_progress = False
+        self._auto_select_last_system()
+
+        if self._signaler:
+            self._signaler.progress_signal.emit(0, "")
+        else:
+            self._progress_slot(0, "")
+
+        try:
+            self._refresh_quarantine_tab()
+        except Exception as e:
+            logging.debug(f"Quarantine refresh failed: {e}")
+
+    def on_list(self, force_scan: bool = False):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
+            return
+
+        if self._scan_in_progress and not force_scan:
+            return
+
+        self._set_ui_enabled(True)
+        systems = self._orchestrator.dat_manager.list_systems() # Uso direto do orchestrator
+        
+        self._skip_list_side_effects = True
+        try:
+            self._refresh_system_list_ui(systems)
+        finally:
+            self._skip_list_side_effects = False
+            
+        self._log_systems(systems)
+        self.log_msg("Scanning library...")
+        self._start_background_scan(Path(self._last_base), systems)
         self._update_dashboard_stats(systems)
 
     def _update_dashboard_stats(self, systems=None, stats=None):
         try:
             if systems is None:
                 if self._last_base:
-                    systems = self._manager.cmd_list_systems(self._last_base)
+                    systems = self._orchestrator.dat_manager.list_systems()
                 else:
                     systems = []
 
@@ -1700,8 +1672,7 @@ class MainWindowBase:
             logging.exception("Quarantine restore failed")
 
     def on_add(self):
-        base = self._last_base
-        if not base:
+        if not self._last_base:
             self.log_msg(MSG_SELECT_BASE)
             return
 
@@ -1709,32 +1680,24 @@ class MainWindowBase:
         if not src:
             return
 
-        system = self._select_system_dialog(src, base)
+        system = self._select_system_dialog(src, Path(self._last_base))
         if not system:
             self.log_msg("Add ROM cancelled: No system selected.")
             return
 
         move = self._ask_yes_no("Move file?", "Move file instead of copy?")
-        dry_run = self._ask_yes_no("Dry-run?", "Run in dry-run (no changes)?")
-
+        
         def _work_add():
-            return self._manager.cmd_add_rom(
-                src, base, system=system, move=move, dry_run=dry_run
-            )
+            return self._orchestrator.add_rom(src, system=system, move=move)
 
         def _done_add(result):
+            self._set_ui_enabled(True)
             if isinstance(result, Exception):
                 self.log_msg(f"Add ROM error: {result}")
             else:
-                try:
-                    self.log_msg(f"Added ROM -> {result}")
-                    # Refresh list to show new file
-                    self.on_list()
-                    # Update dashboard stats
-                    self._update_dashboard_stats()
-                except Exception:
-                    pass
-            self._set_ui_enabled(True)
+                self.log_msg(f"Added ROM -> {result}")
+                self.on_list() 
+                self._update_dashboard_stats()
 
         self._set_ui_enabled(False)
         self._run_in_background(_work_add, _done_add)
@@ -1749,21 +1712,18 @@ class MainWindowBase:
 
     def _select_system_dialog(self, src: Path, base: Path) -> Optional[str]:
         qt = self._qtwidgets
-        guessed = self._manager.guess_system_for_file(src)
-        systems = self._manager.cmd_list_systems(base)
+        from emumanager.common.registry import registry
+        
+        provider = registry.find_provider_for_file(src)
+        guessed = provider.system_id if provider else None
+        systems = self._orchestrator.dat_manager.list_systems()
 
-        # If no systems found (empty library), populate with known systems
         if not systems:
             from emumanager.config import EXT_TO_SYSTEM
-
             systems = sorted(list(set(EXT_TO_SYSTEM.values())))
 
         items = sorted(systems)
-        idx = 0
-        if guessed:
-            if guessed not in items:
-                items.insert(0, guessed)
-            idx = items.index(guessed)
+        idx = items.index(guessed) if guessed in items else 0
 
         system, ok = qt.QInputDialog.getItem(
             self.window, "Select System", "Target System:", items, idx, True
@@ -1810,34 +1770,38 @@ class MainWindowBase:
         try:
             # double-click compresses by default
             self.tools_controller.on_compress_selected()
-        except Exception:
-            pass
+        except Exception as e:
+            logging.debug(f"Double-click action failed: {e}")
 
     def _list_files_recursive(self, root: Path) -> list[Path]:
         """List files recursively, excluding hidden files, DATs, and non-game files."""
         files = []
-        if not root.exists():
-            return files
+        if not root.exists(): return files
 
         # Extensions to ignore (junk, metadata, images, etc)
         IGNORED_EXTENSIONS = {
-            ".dat",
-            ".xml",
-            ".txt",
-            ".nfo",
-            ".pdf",
-            ".doc",
-            ".docx",
-            ".jpg",
-            ".jpeg",
-            ".png",
-            ".bmp",
-            ".gif",
-            ".ico",
-            ".ini",
-            ".cfg",
-            ".conf",
-            ".db",
+            ".dat", ".xml", ".txt", ".nfo", ".pdf", ".doc", ".docx", ".jpg", ".jpeg",
+            ".png", ".bmp", ".gif", ".ico", ".ini", ".cfg", ".conf", ".db", ".ds_store",
+            ".url", ".lnk", ".desktop", ".py", ".pyc", ".log", ".err", ".out",
+        }
+
+        for p in root.rglob("*"):
+            if not p.is_file() or p.name.startswith("."): continue
+            if p.suffix.lower() in IGNORED_EXTENSIONS: continue
+
+            try:
+                rel = p.relative_to(root)
+                if any(part.startswith(".") for part in rel.parts): continue
+
+                parts_lower = [part.lower() for part in rel.parts]
+                if any(d in parts_lower for d in ("dats", "no-intro", "redump")):
+                    continue
+
+                files.append(p)
+            except Exception: continue
+
+        files.sort(key=lambda p: str(p).lower())
+        return files
             ".ds_store",
             ".url",
             ".lnk",
@@ -1879,120 +1843,41 @@ class MainWindowBase:
         files.sort(key=lambda p: str(p).lower())
         return files
 
-    def _list_dirs_recursive(self, root: Path) -> list[Path]:
-        """List directories recursively, excluding hidden ones."""
-        dirs = []
-        if not root.exists():
-            return dirs
-
-        for p in root.rglob("*"):
-            if not p.is_dir():
-                continue
-            if p.name.startswith("."):
-                continue
-
-            try:
-                rel = p.relative_to(root)
-                if any(part.startswith(".") for part in rel.parts):
-                    continue
-                dirs.append(p)
-            except ValueError:
-                continue
-
-        # Sort reverse to ensure we process children before parents
-        dirs.sort(key=lambda p: str(p), reverse=True)
-        return dirs
-
-    def _list_files_flat(self, root: Path) -> list[Path]:
-        """
-        List files in the directory (non-recursive), excluding hidden files and junk.
-        """
-        files = []
-        if not root.exists():
-            return files
-
-        # Extensions to ignore (junk, metadata, images, etc)
-        IGNORED_EXTENSIONS = {
-            ".dat",
-            ".xml",
-            ".txt",
-            ".nfo",
-            ".pdf",
-            ".doc",
-            ".docx",
-            ".jpg",
-            ".jpeg",
-            ".png",
-            ".bmp",
-            ".gif",
-            ".ico",
-            ".ini",
-            ".cfg",
-            ".conf",
-            ".db",
-            ".ds_store",
-            ".url",
-            ".lnk",
-            ".desktop",
-            ".py",
-            ".pyc",
-            ".log",
-            ".err",
-            ".out",
-        }
-
-        for p in root.iterdir():
-            if not p.is_file():
-                continue
-            if p.name.startswith("."):
-                continue
-
-            if p.suffix.lower() in IGNORED_EXTENSIONS:
-                continue
-
-            files.append(p)
-        return files
-
     def _get_list_files_fn(self):
         """Returns the appropriate list_files function based on settings."""
         if self.chk_process_selected.isChecked():
             return self._list_files_selected
-        elif self.chk_recursive.isChecked():
-            return self._list_files_recursive
-        else:
-            return self._list_files_flat
+        return self._list_files_recursive
+
+    def _find_rom_files(self, system: str) -> list[Path]:
+        """Tenta localizar e listar os ficheiros físicos de um sistema."""
+        try:
+            roms_root = self._orchestrator.session.roms_path
+            roms_dir = roms_root / system
+            if not roms_dir.exists():
+                self.log_msg(f"Directory not found: {roms_dir}")
+                return []
+
+            self.log_msg(f"Listing ROMs for {system} in {roms_dir}")
+            full_files = self._list_files_recursive(roms_dir)
+            return [p.relative_to(roms_dir) for p in full_files]
+        except Exception as e:
+            self.log_msg(f"Error listing ROMs: {e}")
+            logging.error("Failed to find ROM files", exc_info=True)
+            return []
 
     def _populate_roms(self, system: str):
         if not self._last_base:
             return
-        try:
-            # Use manager's logic to find roms dir
-            roms_root = self._manager.get_roms_dir(self._last_base)
-            roms_dir = roms_root / system
 
-            self.log_msg(f"Listing ROMs for {system} in {roms_dir}")
+        files = self._find_rom_files(system)
+        self._current_roms = [str(p) for p in files]
+        self.log_msg(f"Found {len(files)} files.")
 
-            files = []
-            if roms_dir.exists():
-                # Always list recursively for the UI so users can see organized games
-                # regardless of the "Recursive" checkbox state
-                # (which controls processing).
-                full_files = self._list_files_recursive(roms_dir)
-                files = [p.relative_to(roms_dir) for p in full_files]
-                # Store for filtering
-                self._current_roms = [str(p) for p in files]
-                self.log_msg(f"Found {len(files)} files.")
-            else:
-                self.log_msg(f"Directory not found: {roms_dir}")
-
-            if self.rom_list is not None:
-                self.rom_list.clear()
-                for f in files:
-                    self.rom_list.addItem(str(f))
-        except Exception as e:
-            self.log_msg(f"Error listing ROMs: {e}")
-            if hasattr(self, "logger"):
-                self.logger.exception("Error listing ROMs")
+        if self.rom_list is not None:
+            self.rom_list.clear()
+            for f in files:
+                self.rom_list.addItem(str(f))
 
     def _on_filter_text(self, text: str):
         try:
@@ -2219,41 +2104,89 @@ class MainWindowBase:
         self._set_ui_enabled(False)
         self._run_in_background(_work, _done)
 
-    def on_try_rehash(self):
-        """Try re-hash selected verification rows or all HASH_FAILED rows.
-
-        If a DAT is selected, re-run identification against that DAT for the files.
-        Otherwise, recalculate hashes and update the LibraryDB entries.
-        """
+    def _get_rehash_targets(self):
+        """Identifica os itens da tabela de verificação que devem ser re-hashados."""
         try:
             table = self.ui.table_results
-        except Exception:
-            self.log_msg("Verification table not available")
-            return
-
-        # Determine filtered list (matches what's shown in the table)
-        filtered = self._get_filtered_verification_results()
-
-        # Determine selected rows
-        sel = set()
-        try:
+            filtered = self._get_filtered_verification_results()
             indexes = table.selectedIndexes()
-            for idx in indexes:
-                sel.add(idx.row())
+            sel_rows = sorted({idx.row() for idx in indexes})
+            
+            if sel_rows:
+                return [filtered[r] for r in sel_rows if 0 <= r < len(filtered)]
+            
+            # Default: all HASH_FAILED
+            return [r for r in filtered if getattr(r, "status", None) == "HASH_FAILED"]
+        except Exception as e:
+            logging.error(f"Failed to get rehash targets: {e}")
+            return []
+
+    def _rehash_single_item(self, target: Any, dat_path: Optional[Path]):
+        """Executa o re-hash ou re-identificação de um único arquivo."""
+        try:
+            p = Path(target.full_path) if getattr(target, "full_path", None) else None
+            if not p or not p.exists():
+                return str(p), "missing"
+
+            if dat_path:
+                return self._reidentify_with_dat(p, dat_path)
+            
+            return self._recalculate_hashes_to_db(p)
+        except Exception as e:
+            logging.debug(f"Rehash failed for {target}: {e}")
+            return str(target), f"error:{e}"
+
+    def _reidentify_with_dat(self, path: Path, dat_path: Path):
+        op = uuid.uuid4().hex
+        log_cb = self._make_op_log_cb(op)
+        try:
+            self.status.showMessage(f"Operation {op} started", 3000)
         except Exception:
-            sel = set()
+            pass
+        out = worker_identify_single_file(path, dat_path, log_cb, None)
+        return str(path), out
 
-        targets = []
-        if sel:
-            for r in sorted(sel):
-                if 0 <= r < len(filtered):
-                    targets.append(filtered[r])
-        else:
-            # default: all HASH_FAILED
-            targets = [
-                r for r in filtered if getattr(r, "status", None) == "HASH_FAILED"
-            ]
+    def _recalculate_hashes_to_db(self, path: Path):
+        algos = ("crc32", "sha1")
+        if getattr(self, "chk_deep_verify", None) and self.chk_deep_verify.isChecked():
+            algos = ("crc32", "md5", "sha1", "sha256")
+        
+        hashes = calculate_hashes(path, algorithms=algos)
+        try:
+            st = path.stat()
+            from emumanager.library import LibraryEntry
+            new_entry = LibraryEntry(
+                path=str(path.resolve()),
+                system="unknown",
+                size=st.st_size,
+                mtime=st.st_mtime,
+                crc32=hashes.get("crc32"),
+                md5=hashes.get("md5"),
+                sha1=hashes.get("sha1"),
+                sha256=hashes.get("sha256"),
+                status="UNKNOWN"
+            )
+            self.library_db.update_entry(new_entry)
+            return str(path), "rehash_ok"
+        except Exception as e:
+            return str(path), f"error:{e}"
 
+    def _update_in_memory_results(self, rehash_results: list[tuple[str, str]]):
+        """Atualiza os resultados cacheados com os novos dados do banco de dados."""
+        for p, _ in rehash_results:
+            for rr in getattr(self, "_last_verify_results", []):
+                if getattr(rr, "full_path", None) == p:
+                    try:
+                        e = self.library_db.get_entry(p)
+                        if e:
+                            rr.crc, rr.sha1, rr.md5, rr.sha256 = e.crc32, e.sha1, e.md5, e.sha256
+                            rr.status, rr.match_name = e.status, e.match_name
+                    except Exception as ex:
+                        logging.debug(f"Failed to sync memory result for {p}: {ex}")
+
+    def on_try_rehash(self):
+        """Try re-hash selected verification rows or all HASH_FAILED rows."""
+        targets = self._get_rehash_targets()
         if not targets:
             self.log_msg("No files selected for rehash")
             return
@@ -2261,109 +2194,23 @@ class MainWindowBase:
         dat_path = getattr(self, "_current_dat_path", None)
 
         def _work():
-            results = []
-            from emumanager.library import LibraryEntry
-            from emumanager.verification.hasher import calculate_hashes
-
-            for r in targets:
-                p = None
-                try:
-                    p = Path(r.full_path) if getattr(r, "full_path", None) else None
-                    if not p or not p.exists():
-                        results.append((str(p), "missing"))
-                        continue
-
-                    if dat_path:
-                        # Use existing worker to identify single file (updates DB)
-                        op = uuid.uuid4().hex
-                        log_cb = self._make_op_log_cb(op)
-                        try:
-                            self.status.showMessage(f"Operation {op} started", 3000)
-                        except Exception:
-                            pass
-                        out = worker_identify_single_file(
-                            p, Path(dat_path), log_cb, None
-                        )
-                        results.append((str(p), out))
-                    else:
-                        algos = ("crc32", "sha1")
-                        if (
-                            getattr(self, "chk_deep_verify", None)
-                            and self.chk_deep_verify.isChecked()
-                        ):
-                            algos = ("crc32", "md5", "sha1", "sha256")
-                        hashes = calculate_hashes(p, algorithms=algos)
-                        try:
-                            st = p.stat()
-                            new_entry = LibraryEntry(
-                                path=str(p.resolve()),
-                                system="unknown",
-                                size=st.st_size,
-                                mtime=st.st_mtime,
-                                crc32=hashes.get("crc32"),
-                                md5=hashes.get("md5"),
-                                sha1=hashes.get("sha1"),
-                                sha256=hashes.get("sha256"),
-                                status="UNKNOWN",
-                                match_name=None,
-                                dat_name=None,
-                            )
-                            self.library_db.update_entry(new_entry)
-                            results.append((str(p), "rehash_ok"))
-                        except Exception as e:
-                            results.append((str(p), f"error:{e}"))
-                except Exception as e:
-                    results.append((str(p) if p else str(r), f"error:{e}"))
-            return results
+            return [self._rehash_single_item(t, dat_path) for t in targets]
 
         def _done(res):
+            self._set_ui_enabled(True)
             if isinstance(res, Exception):
                 self.log_msg(f"Rehash error: {res}")
-                self._set_ui_enabled(True)
                 return
 
             self.log_msg(f"Rehash complete. Processed: {len(res)} items")
-            # If we had a DAT, refresh full verification to show match attempts
             if dat_path:
                 try:
                     self.on_verify_dat()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logging.debug(f"Refresh after rehash failed: {e}")
             else:
-                # Update in-memory results from DB for affected files
-                for p, status in res:
-                    for i, rr in enumerate(
-                        getattr(self, "_last_verify_results", [])[:]
-                    ):
-                        if getattr(rr, "full_path", None) == p:
-                            try:
-                                e = self.library_db.get_entry(p)
-                                if e:
-                                    rr.crc = e.crc32
-                                    rr.sha1 = e.sha1
-                                    rr.md5 = e.md5
-                                    rr.sha256 = e.sha256
-                                    rr.status = e.status
-                                    rr.match_name = e.match_name
-                            except Exception:
-                                pass
-                try:
-                    # Re-populate table with same filter
-                    txt = (
-                        self.ui.combo_verif_filter.currentText()
-                        if hasattr(self.ui, "combo_verif_filter")
-                        else None
-                    )
-                    status = (
-                        txt if txt in ("VERIFIED", "UNKNOWN", "HASH_FAILED") else None
-                    )
-                    self._populate_verification_results(
-                        getattr(self, "_last_verify_results", []), status
-                    )
-                except Exception:
-                    pass
-
-            self._set_ui_enabled(True)
+                self._update_in_memory_results(res)
+                self.on_verification_filter_changed()
 
         self._set_ui_enabled(False)
         self._run_in_background(_work, _done)
@@ -2624,30 +2471,28 @@ class MainWindowBase:
             if not sys_item:
                 self.log_msg(MSG_NO_SYSTEM)
                 return
+            
             system = sys_item.text()
-            roms_root = self._manager.get_roms_dir(self._last_base)
-
+            roms_root = self._orchestrator.session.roms_path
+            
             files_to_delete = []
             for item in sel_items:
                 filepath = roms_root / system / item.text()
                 if filepath.exists():
                     files_to_delete.append(filepath)
 
-            if not files_to_delete:
-                return
+            if not files_to_delete: return
 
             msg = f"Are you sure you want to delete {len(files_to_delete)} files?"
-            if not self._ask_yes_no("Confirm Delete", msg):
-                return
+            if not self._ask_yes_no("Confirm Delete", msg): return
 
             count = 0
             for fp in files_to_delete:
-                try:
-                    fp.unlink()
+                if self._orchestrator.delete_rom_file(fp):
                     count += 1
                     self.log_msg(f"Deleted: {fp.name}")
-                except Exception as e:
-                    self.log_msg(f"Failed to delete {fp.name}: {e}")
+                else:
+                    self.log_msg(f"Failed to delete {fp.name}")
 
             if count > 0:
                 self._populate_roms(system)
@@ -2655,6 +2500,7 @@ class MainWindowBase:
 
         except Exception as e:
             self.log_msg(f"Error deleting files: {e}")
+            logging.error("Failed deletion operation", exc_info=True)
 
     def on_verify_selected(self):
         if not self.rom_list:
@@ -2664,46 +2510,44 @@ class MainWindowBase:
             if sel is None:
                 self.log_msg(MSG_NO_ROM)
                 return
+            
             rom_name = sel.text()
             sys_item = self.sys_list.currentItem() if self.sys_list else None
             if not sys_item:
                 self.log_msg(MSG_NO_SYSTEM)
                 return
+            
             system = sys_item.text()
-            roms_root = self._manager.get_roms_dir(self._last_base)
+            roms_root = self._orchestrator.session.roms_path
             filepath = roms_root / system / rom_name
 
             if not filepath.exists():
                 self.log_msg(f"File not found: {filepath}")
                 return
 
-            self.log_msg(f"Calculating hashes for {rom_name}...")
+            self.log_msg(f"Identifying {rom_name}...")
 
             def _work():
-                return calculate_hashes(filepath)
+                return self._orchestrator.identify_single_file(filepath)
 
             def _done(res):
-                if not res:
-                    self.log_msg(f"Failed to calculate hashes for {rom_name}")
-                else:
-                    self.log_msg(f"Hashes for {rom_name}:")
-                    for algo, val in res.items():
-                        self.log_msg(f"  {algo.upper()}: {val}")
                 self._set_ui_enabled(True)
+                if not res:
+                    self.log_msg(f"Failed to identify {rom_name}")
+                else:
+                    self.log_msg(f"Metadata for {rom_name}: {res}")
+                    self._qtwidgets.QMessageBox.information(self.window, "Identification", str(res))
 
             self._set_ui_enabled(False)
             self._run_in_background(_work, _done)
 
         except Exception as e:
             self.log_msg(f"Error verifying file: {e}")
+            logging.error("Failed verification operation", exc_info=True)
 
     def on_rename_to_standard_selected(self):
-        """Rename selected ROM(s) to the project's standard naming for their system.
-
-        This invokes the per-system single-file organize helpers where available.
-        """
-        if not self.rom_list:
-            return
+        """Renomeia a ROM selecionada para o padrão canónico via Orchestrator."""
+        if not self.rom_list: return
         try:
             sel_items = self.rom_list.selectedItems()
             if not sel_items:
@@ -2714,40 +2558,26 @@ class MainWindowBase:
             if not sys_item:
                 self.log_msg(MSG_NO_SYSTEM)
                 return
+            
             system = sys_item.text()
-            roms_root = self._manager.get_roms_dir(self._last_base)
+            self.log_msg(f"Organizando nomes para: {system}")
+            
+            # Executar workflow de organização apenas para este sistema
+            def _work():
+                return self._orchestrator.organize_names(system_id=system, dry_run=False)
 
-            renamed = 0
-            for item in sel_items:
-                try:
-                    fp = roms_root / system / item.text()
-                    if not fp.exists():
-                        self.log_msg(f"File not found: {fp}")
-                        continue
-                    ok = self._rename_single_to_standard(system.lower(), roms_root, fp)
-                    if ok:
-                        renamed += 1
-                        # Record GUI-initiated rename for auditability
-                        try:
-                            self.library_db.log_action(
-                                str(fp),
-                                "RENAMED",
-                                f"GUI rename to standard (system={system})",
-                            )
-                        except Exception:
-                            # Don't break UI flow if logging fails
-                            self.log_msg(
-                                f"WARN: Failed to record GUI rename action for {fp}"
-                            )
-                except Exception as e:
-                    self.log_msg(f"Error renaming {item.text()}: {e}")
-
-            if renamed > 0:
+            def _done(res):
+                self._set_ui_enabled(True)
+                self.log_msg(f"Renomeação concluída: {res}")
                 self._populate_roms(system)
                 self._update_dashboard_stats()
 
+            self._set_ui_enabled(False)
+            self._run_in_background(_work, _done)
+
         except Exception as e:
-            self.log_msg(f"Error renaming selected files: {e}")
+            self.log_msg(f"Error renaming files: {e}")
+            logging.error("Failed rename operation", exc_info=True)
 
     def _rename_single_to_standard(
         self, system: str, roms_root: Path, filepath: Path
@@ -2788,52 +2618,46 @@ class MainWindowBase:
             self.log_msg(f"Rename helper error: {e}")
             return False
 
+    def _guess_rom_region(self, path_str: str) -> Optional[str]:
+        if "(USA)" in path_str or "(US)" in path_str:
+            return "US"
+        if "(Europe)" in path_str or "(EU)" in path_str:
+            return "EN"
+        if "(Japan)" in path_str or "(JP)" in path_str:
+            return "JA"
+        return None
+
     def _on_rom_selection_changed(self, current, previous):
         if not current:
             self.cover_label.clear()
             self.cover_label.setText("No ROM selected")
             return
 
-        # Get system
-        if not self.sys_list.currentItem():
-            return
-        system = self.sys_list.currentItem().text()
-
-        # Get file path
-        if not self._last_base:
+        sys_item = self.sys_list.currentItem()
+        if not sys_item or not self._last_base:
             return
 
-        base_roms_dir = get_roms_dir(Path(self._last_base))
-        system_dir = base_roms_dir / system
-
+        system = sys_item.text()
         rom_rel_path = current.text()
-        full_path = system_dir / rom_rel_path
+        
+        try:
+            from .manager import get_roms_dir
+            base_roms_dir = get_roms_dir(Path(self._last_base))
+            full_path = base_roms_dir / system / rom_rel_path
+            
+            cache_dir = Path(self._last_base) / ".covers"
+            cache_dir.mkdir(exist_ok=True)
+            
+            self.log_msg(f"Fetching cover for {rom_rel_path} (System: {system})...")
+            region = self._guess_rom_region(rom_rel_path)
+            
+            self._start_cover_downloader(system, region, cache_dir, full_path)
+        except Exception as e:
+            logging.error(f"Selection change failed: {e}")
 
-        # Start cover download/extraction
-        # Use a cache dir for covers
-        cache_dir = Path(self._last_base) / ".covers"
-        cache_dir.mkdir(exist_ok=True)
-
-        self.log_msg(f"Fetching cover for {rom_rel_path} (System: {system})...")
-
-        # Guess region from filename
-        region = None
-        if "(USA)" in rom_rel_path or "(US)" in rom_rel_path:
-            region = "US"
-        elif "(Europe)" in rom_rel_path or "(EU)" in rom_rel_path:
-            region = "EN"
-        elif "(Japan)" in rom_rel_path or "(JP)" in rom_rel_path:
-            region = "JA"
-
-        # Do not pass the filename as Game ID; allow the downloader to extract
-        # a real game ID from the file (serial/metadata) when possible. Passing
-        # the stem causes GameTDB to attempt lookups by name which frequently
-        # produce 404s for systems like PS2.
-        downloader = CoverDownloader(
-            system, None, region, str(cache_dir), str(full_path)
-        )
-
-        # Force QueuedConnection to ensure UI updates happen in the main thread
+    def _start_cover_downloader(self, system, region, cache_dir, full_path):
+        downloader = CoverDownloader(system, None, region, str(cache_dir), str(full_path))
+        
         conn_type = (
             self._Qt_enum.ConnectionType.QueuedConnection
             if self._Qt_enum and hasattr(self._Qt_enum, "ConnectionType")
@@ -2843,41 +2667,67 @@ class MainWindowBase:
         downloader.signals.finished.connect(self._update_cover_image, conn_type)
         downloader.signals.log.connect(self.log_msg, conn_type)
 
-        # Run in thread pool
         if self._qtcore:
             self._qtcore.QThreadPool.globalInstance().start(downloader)
 
-    def _update_cover_image(self, image_path):
-        import threading
+    def _download_dats_phase(self, downloader):
+        self.progress_hook(0.0, "Fetching No-Intro file list...")
+        ni_files = downloader.list_available_dats("no-intro")
 
-        self.log_msg(
-            f"Update cover called in thread: {threading.current_thread().name}"
-        )
+        self.progress_hook(0.0, "Fetching Redump file list...")
+        rd_files = downloader.list_available_dats("redump")
+        
+        return ni_files, rd_files
 
-        if not image_path or not Path(image_path).exists():
-            self.cover_label.setText("No Cover Found")
+    def _execute_dat_downloads(self, downloader, ni_files, rd_files):
+        import concurrent.futures
+        total_files = len(ni_files) + len(rd_files)
+        if total_files == 0:
+            return "No DAT files found to download."
+
+        self.log_msg(f"Found {len(ni_files)} No-Intro and {len(rd_files)} Redump DATs. Starting...")
+        completed = success = 0
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = []
+            for f in ni_files: futures.append(executor.submit(downloader.download_dat, "no-intro", f))
+            for f in rd_files: futures.append(executor.submit(downloader.download_dat, "redump", f))
+
+            for future in concurrent.futures.as_completed(futures):
+                completed += 1
+                try:
+                    if future.result(): success += 1
+                except Exception as e:
+                    logging.debug(f"DAT download failed: {e}")
+                
+                percent = completed / total_files
+                self.progress_hook(percent, f"Downloading: {completed}/{total_files} ({(percent * 100):.1f}%)")
+
+        return f"Update complete. Downloaded {success}/{total_files} DATs."
+
+    def on_update_dats(self):
+        if not self._last_base:
+            self.log_msg(MSG_SELECT_BASE)
             return
 
-        # Check file size
-        try:
-            size = Path(image_path).stat().st_size
-            if size == 0:
-                self.log_msg(f"Error: Image file is empty: {image_path}")
-                self.cover_label.setText("Empty Image")
-                return
-        except Exception:
-            pass
+        dats_dir = self._last_base / "dats"
+        dats_dir.mkdir(parents=True, exist_ok=True)
 
-        self.log_msg(f"Displaying cover: {image_path}")
-        pixmap = self._qtgui.QPixmap(image_path)
+        self.log_msg("Initializing DAT update process...")
+        self.progress_hook(0.0, "Connecting to GitHub...")
+        self._set_ui_enabled(False)
 
-        if not pixmap.isNull():
-            self.log_msg(f"Loaded pixmap: {pixmap.width()}x{pixmap.height()}")
-            self.cover_label.setPixmap(pixmap)
-            self.cover_label.setVisible(True)
-        else:
-            self.log_msg(f"Failed to load pixmap from {image_path}")
-            self.cover_label.setText("Invalid Image")
+        def _work():
+            downloader = DatDownloader(dats_dir)
+            ni, rd = self._download_dats_phase(downloader)
+            return self._execute_dat_downloads(downloader, ni, rd)
+
+        def _done(res):
+            self.log_msg(str(res))
+            self._set_ui_enabled(True)
+            self.progress_hook(1.0, "DAT update complete")
+
+        self._run_in_background(_work, _done)
 
     def on_identify_selected(self):
         """Identify the selected ROM using a DAT file."""

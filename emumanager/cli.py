@@ -25,6 +25,8 @@ app = typer.Typer(
 )
 console = Console()
 
+HELP_ACERVO_DIR = "Diretoria do acervo."
+
 @app.callback()
 def global_options(
     profile: bool = typer.Option(False, "--profile", help="Gera um relatório de performance (cProfile).")
@@ -114,7 +116,7 @@ def cmd_scan(
 
 @app.command("organize")
 def cmd_organize(
-    base: Path = typer.Option(Path(BASE_DEFAULT), help="Diretoria do acervo."),
+    base: Path = typer.Option(Path(BASE_DEFAULT), help=HELP_ACERVO_DIR),
     dry_run: bool = typer.Option(False, "--dry-run", help="Modo simulação: não renomeia ficheiros.")
 ):
     """
@@ -130,7 +132,7 @@ def cmd_organize(
 
 @app.command("maintain")
 def cmd_maintain(
-    base: Path = typer.Option(Path(BASE_DEFAULT), help="Diretoria do acervo."),
+    base: Path = typer.Option(Path(BASE_DEFAULT), help=HELP_ACERVO_DIR),
     dry_run: bool = typer.Option(False, "--dry-run", help="Modo simulação.")
 ):
     """
@@ -146,7 +148,7 @@ def cmd_maintain(
 
 @app.command("transcode")
 def cmd_transcode(
-    base: Path = typer.Option(Path(BASE_DEFAULT), help="Diretoria do acervo."),
+    base: Path = typer.Option(Path(BASE_DEFAULT), help=HELP_ACERVO_DIR),
     dry_run: bool = typer.Option(False, "--dry-run", help="Simula o transcoding paralelo.")
 ):
     """
@@ -162,7 +164,7 @@ def cmd_transcode(
 
 @app.command("report")
 def cmd_report(
-    base: Path = typer.Option(Path(BASE_DEFAULT), help="Diretoria do acervo."),
+    base: Path = typer.Option(Path(BASE_DEFAULT), help=HELP_ACERVO_DIR),
     out: str = typer.Option("report.csv", help="Caminho do ficheiro CSV.")
 ):
     """
@@ -176,6 +178,7 @@ def cmd_report(
         console.print(f"[bold green]✔[/bold green] Relatório exportado: [underline]{out}[/underline]")
     else:
         console.print("[bold red]✘[/bold red] Erro ao exportar relatório.")
+        sys.exit(1)
 
 def main():
     app()

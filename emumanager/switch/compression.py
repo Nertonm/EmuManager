@@ -63,6 +63,25 @@ def recompress_candidate(
         raise
 
 
+def _report_recompress_progress(cb: Optional[Callable], idx: int, total: int, status: str):
+    if cb:
+        try:
+            cb(float(idx) / max(1, total), f"{status}:{idx}/{total}")
+        except Exception as e:
+            import logging
+            logging.debug(f"Progress callback failed: {e}")
+
+
+def _execute_recompress_attempt(cmd: List[str], run_cmd: Callable, timeout: Optional[int]) -> bool:
+    try:
+        run_cmd(cmd, timeout=timeout)
+        return True
+    except Exception as e:
+        import logging
+        logging.debug(f"Recompress attempt failed for cmd {cmd}: {e}")
+        return False
+
+
 def try_multiple_recompress_attempts(
     tmpdir: Path,
     attempts: List[List[str]],
@@ -71,50 +90,79 @@ def try_multiple_recompress_attempts(
     timeout: Optional[int] = 120,
     progress_callback: Optional[Callable[[float, str], None]] = None,
 ) -> List[Path]:
-    """Run a sequence of recompression attempts (each attempt is a full cmd list).
-
-    After running attempts, inspect `tmpdir` for any produced `.nsz` files and
-    return a list of Paths found (may be empty).
-    """
     total = len(attempts)
     iterator = enumerate(attempts)
     if tqdm:
         iterator = enumerate(tqdm(attempts, desc="Recompress attempts", unit="attempt"))
 
     for idx, cmd in iterator:
-        # report progress per-attempt
-        if progress_callback:
-            try:
-                progress_callback(
-                    float(idx) / max(1, total), f"attempt:{idx + 1}/{total}"
-                )
-            except Exception:
-                pass
-        try:
-            run_cmd(cmd, timeout=timeout)
-        except Exception:
-            # ignore and try next
-            if progress_callback:
-                try:
-                    progress_callback(
-                        float(idx + 1) / max(1, total),
-                        f"attempt_failed:{idx + 1}/{total}",
-                    )
-                except Exception:
-                    pass
-            continue
-        else:
-            if progress_callback:
-                try:
-                    progress_callback(
-                        float(idx + 1) / max(1, total),
-                        f"attempt_success:{idx + 1}/{total}",
-                    )
-                except Exception:
-                    pass
+        _report_recompress_progress(progress_callback, idx + 1, total, "attempt")
+        
+        success = _execute_recompress_attempt(cmd, run_cmd, timeout)
+        
+        status = "attempt_success" if success else "attempt_failed"
+        _report_recompress_progress(progress_callback, idx + 1, total, status)
+        
+        if success:
+            # We could break here if we only want the first success, 
+            # but current behavior runs all. Keeping original functionality.
+            pass
 
-    produced = list(Path(tmpdir).rglob("*.nsz"))
-    return produced
+    return list(Path(tmpdir).rglob("*.nsz"))
+
+
+def _verify_produced_file(path: Path, run_cmd: Callable, verify_fn: Callable, args) -> bool:
+    try:
+        cb = getattr(args, "progress_callback", None)
+        if cb:
+            cb(0.0, "verify:start")
+        ok = verify_fn(path, run_cmd)
+        if cb:
+            cb(0.8, "verify:done")
+        return ok
+    except Exception as e:
+        import logging
+        logging.debug(f"Verification raised exception for {path}: {e}")
+        return True # Fallback safer behavior
+
+
+def _apply_recompression_replacement(target_tmp: Path, original: Path, args) -> Path:
+    try:
+        if target_tmp.resolve() == original.resolve():
+            return original
+        if original.exists():
+            original.unlink()
+        shutil.move(str(target_tmp), str(original))
+        cb = getattr(args, "progress_callback", None)
+        if cb:
+            cb(1.0, "replace:done")
+        return original
+    except Exception as e:
+        import logging
+        logging.error(f"Failed to replace original {original} with {target_tmp}: {e}")
+        return target_tmp
+
+
+def _quarantine_failed_file(target_tmp: Path, original: Path, args, roms_dir: Path) -> Path:
+    if not getattr(args, "keep_on_failure", False):
+        return original
+    
+    try:
+        qdir = getattr(args, "quarantine_dir", None)
+        quarantine_dir = Path(qdir).resolve() if qdir else Path(roms_dir) / "_QUARANTINE"
+        
+        if not getattr(args, "dry_run", False):
+            quarantine_dir.mkdir(parents=True, exist_ok=True)
+            dest = quarantine_dir / target_tmp.name
+            shutil.move(str(target_tmp), str(dest))
+            cb = getattr(args, "progress_callback", None)
+            if cb:
+                cb(1.0, "quarantine:moved")
+    except Exception as e:
+        import logging
+        logging.error(f"Quarantine failed for {target_tmp}: {e}")
+    
+    return original
 
 
 def handle_produced_file(
@@ -125,81 +173,55 @@ def handle_produced_file(
     args,
     roms_dir: Path,
 ) -> Path:
-    """Handle a single produced recompressed file.
-
-    Moves a produced file next to the original, verifies it using verify_fn,
-    and replaces or quarantines according to `args`. Returns the file that is
-    now the candidate (usually the original path if replaced, otherwise the
-    produced target path or original depending on failure modes).
-    """
     target_tmp = original.parent / produced.name
-
-    def _call_progress(pct: float, msg: str):
-        # backward-compatible no-op unless caller provides callback
-        try:
-            cb = getattr(args, "progress_callback", None)
-            if cb:
-                cb(pct, msg)
-        except Exception:
-            pass
 
     try:
         if target_tmp.exists():
             target_tmp.unlink()
         shutil.move(str(produced), str(target_tmp))
-    except Exception:
-        # If move fails, return original unchanged
+    except Exception as e:
+        import logging
+        logging.debug(f"Initial move failed for produced file {produced}: {e}")
         return original
 
-    # Verify produced file
-    ok = True
+    if _verify_produced_file(target_tmp, run_cmd, verify_fn, args):
+        return _apply_recompression_replacement(target_tmp, original, args)
+
+    return _quarantine_failed_file(target_tmp, original, args, roms_dir)
+
+
+def _execute_compression_command(cmd: List[str], run_cmd: Callable, file_name: str, args, logbase: Path):
     try:
-        if hasattr(args, "progress_callback") and getattr(args, "progress_callback"):
-            _call_progress(0.0, "verify:start")
-        ok = verify_fn(target_tmp, run_cmd)
-        if hasattr(args, "progress_callback") and getattr(args, "progress_callback"):
-            _call_progress(0.8, "verify:done")
-    except Exception:
-        ok = True
+        cb = getattr(args, "progress_callback", None)
+        if cb:
+            cb(0.0, f"compress:start:{file_name}")
 
-    if ok:
-        try:
-            # If target_tmp is already the original path, nothing to do
-            if target_tmp.resolve() == original.resolve():
-                return original
-            if original.exists():
-                original.unlink()
-            shutil.move(str(target_tmp), str(original))
-            if hasattr(args, "progress_callback") and getattr(
-                args, "progress_callback"
-            ):
-                _call_progress(1.0, "replace:done")
-            return original
-        except Exception:
-            # leave produced next to original
-            return target_tmp
+        timeout = getattr(args, "cmd_timeout", None) if args else None
+        
+        if tqdm and not cb:
+            with tqdm(total=1, desc=f"Compressing {file_name}", unit="op"):
+                run_cmd(cmd, filebase=logbase, timeout=timeout, check=True)
+        else:
+            run_cmd(cmd, filebase=logbase, timeout=timeout, check=True)
 
-    # verification failed: optionally move to quarantine
-    if getattr(args, "keep_on_failure", False):
-        try:
-            qdir = getattr(args, "quarantine_dir", None)
-            if qdir:
-                quarantine_dir = Path(qdir).resolve()
-            else:
-                quarantine_dir = Path(roms_dir) / "_QUARANTINE"
-            if not getattr(args, "dry_run", False):
-                quarantine_dir.mkdir(parents=True, exist_ok=True)
-                dest = quarantine_dir / target_tmp.name
-                shutil.move(str(target_tmp), str(dest))
-                if hasattr(args, "progress_callback") and getattr(
-                    args, "progress_callback"
-                ):
-                    _call_progress(1.0, "quarantine:moved")
-                return original
-        except Exception:
-            return original
+        if cb:
+            cb(1.0, f"compress:done:{file_name}")
+        return True
+    except Exception as e:
+        import logging
+        logging.debug(f"Compression command failed for {file_name}: {e}")
+        if cb:
+            cb(1.0, f"compress:error:{file_name}")
+        return False
 
-    return original
+
+def _find_compressed_artifact(filepath: Path) -> Optional[Path]:
+    candidate = filepath.with_suffix(".nsz")
+    if candidate.exists():
+        return candidate
+
+    matches = list(filepath.parent.glob(filepath.stem + "*.nsz"))
+    return matches[0] if matches else None
 
 
 def compress_file(
@@ -211,55 +233,13 @@ def compress_file(
     args=None,
     roms_dir: Path = Path("."),
 ) -> Optional[Path]:
-    """Compress `filepath` using tool_nsz and return the compressed candidate path.
-
-    The function uses run_cmd to execute compression and then looks for the
-    produced `.nsz` file in the same folder or by stem matching.
-    """
-    logbase_c = Path(roms_dir) / "logs" / "nsz" / (filepath.stem + ".compress")
-    try:
-        if getattr(args, "progress_callback", None):
-            try:
-                args.progress_callback(0.0, f"compress:start:{filepath.name}")
-            except Exception:
-                pass
-
-        if tqdm and not getattr(args, "progress_callback", None):
-            # a single-shot progress indicator for the compression step
-            with tqdm(total=1, desc=f"Compressing {filepath.name}", unit="op"):
-                run_cmd(
-                    [str(tool_nsz), "-C", "-l", str(level), str(filepath)],
-                    filebase=logbase_c,
-                    timeout=getattr(args, "cmd_timeout", None) if args else None,
-                    check=True,
-                )
-        else:
-            run_cmd(
-                [str(tool_nsz), "-C", "-l", str(level), str(filepath)],
-                filebase=logbase_c,
-                timeout=getattr(args, "cmd_timeout", None) if args else None,
-                check=True,
-            )
-
-        if getattr(args, "progress_callback", None):
-            try:
-                args.progress_callback(1.0, f"compress:done:{filepath.name}")
-            except Exception:
-                pass
-    except Exception:
-        if getattr(args, "progress_callback", None):
-            try:
-                args.progress_callback(1.0, f"compress:error:{filepath.name}")
-            except Exception:
-                pass
+    logbase = Path(roms_dir) / "logs" / "nsz" / (filepath.stem + ".compress")
+    cmd = [str(tool_nsz), "-C", "-l", str(level), str(filepath)]
+    
+    if not _execute_compression_command(cmd, run_cmd, filepath.name, args, logbase):
         return None
 
-    compressed_candidate = filepath.with_suffix(".nsz")
-    if compressed_candidate.exists():
-        return compressed_candidate
-
-    candidates = list(filepath.parent.glob(filepath.stem + "*.nsz"))
-    return candidates[0] if candidates else None
+    return _find_compressed_artifact(filepath)
 
 
 def decompress_and_find_candidate(

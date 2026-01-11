@@ -1,8 +1,19 @@
+import logging
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Iterator
+
+logger = logging.getLogger(__name__)
+
+# Common Regex Patterns
+RE_NAME = re.compile(r'name\s+"([^"]+)"')
+RE_VERSION = re.compile(r'version\s+"([^"]+)"')
+RE_SIZE = re.compile(r"size\s+(\d+)")
+RE_CRC = re.compile(r"crc\s+([0-9A-Fa-f]+)")
+RE_MD5 = re.compile(r"md5\s+([0-9A-Fa-f]+)")
+RE_SHA1 = re.compile(r"sha1\s+([0-9A-Fa-f]+)")
 
 
 @dataclass
@@ -66,8 +77,8 @@ def parse_dat_file(dat_path: Path) -> DatDb:
             head = f.read(512)
         if b"<?xml" in head or b"<datafile>" in head:
             return _parse_xml_dat(dat_path)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed to read DAT header for {dat_path}: {e}")
 
     # Fallback to ClrMamePro
     return _parse_clrmamepro(dat_path)
@@ -116,33 +127,15 @@ def _parse_xml_dat(dat_path: Path) -> DatDb:
                 )
                 db.add_rom(info)
 
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"XML parsing failed for {dat_path}: {e}")
 
     return db
 
 
-def _parse_clrmamepro(dat_path: Path) -> DatDb:
-    db = DatDb()
-    try:
-        content = dat_path.read_text(encoding="utf-8", errors="ignore")
-    except Exception:
-        return db
-
-    # Extract header info (clrmamepro block)
-    header_match = re.search(r"clrmamepro\s*\((.*?)\)", content, re.DOTALL)
-    if header_match:
-        header_content = header_match.group(1)
-        name_match = re.search(r'name\s+"([^"]+)"', header_content)
-        if name_match:
-            db.name = name_match.group(1)
-        version_match = re.search(r'version\s+"([^"]+)"', header_content)
-        if version_match:
-            db.version = version_match.group(1)
-
-    # Iterate over "game (" occurrences
-    iterator = re.finditer(r"game\s*\(", content)
-    for match in iterator:
+def _extract_nested_blocks(content: str, pattern: str) -> Iterator[str]:
+    """Helper to extract balanced parenthesized blocks after a pattern."""
+    for match in re.finditer(pattern, content):
         start = match.end()
         depth = 1
         end = start
@@ -152,60 +145,63 @@ def _parse_clrmamepro(dat_path: Path) -> DatDb:
             elif content[end] == ")":
                 depth -= 1
             end += 1
-
+        
         if depth == 0:
-            game_block = content[start : end - 1]
-            _parse_game_block(db, game_block)
+            yield content[start : end - 1]
+
+
+def _parse_clrmamepro(dat_path: Path) -> DatDb:
+    db = DatDb()
+    try:
+        content = dat_path.read_text(encoding="utf-8", errors="ignore")
+    except Exception as e:
+        logger.error(f"Failed to read ClrMamePro file {dat_path}: {e}")
+        return db
+
+    # Extract header info
+    header_match = re.search(r"clrmamepro\s*\((.*?)\)", content, re.DOTALL)
+    if header_match:
+        header_content = header_match.group(1)
+        name_match = RE_NAME.search(header_content)
+        if name_match:
+            db.name = name_match.group(1)
+        version_match = RE_VERSION.search(header_content)
+        if version_match:
+            db.version = version_match.group(1)
+
+    # Process game blocks
+    for game_block in _extract_nested_blocks(content, r"game\s*\("):
+        _parse_game_block(db, game_block)
 
     return db
 
 
 def _parse_game_block(db, block_content):
-    # Extract game name
-    name_match = re.search(r'name\s+"([^"]+)"', block_content)
+    name_match = RE_NAME.search(block_content)
     game_name = name_match.group(1) if name_match else "Unknown"
 
-    # Find roms
-    rom_iter = re.finditer(r"rom\s*\(", block_content)
-    for match in rom_iter:
-        start = match.end()
-        depth = 1
-        end = start
-        while depth > 0 and end < len(block_content):
-            if block_content[end] == "(":
-                depth += 1
-            elif block_content[end] == ")":
-                depth -= 1
-            end += 1
-
-        if depth == 0:
-            rom_content = block_content[start : end - 1]
-            _parse_rom(db, game_name, rom_content)
+    for rom_content in _extract_nested_blocks(block_content, r"rom\s*\("):
+        _parse_rom(db, game_name, rom_content)
 
 
 def _parse_rom(db, game_name, rom_content):
-    name_match = re.search(r'name\s+"([^"]+)"', rom_content)
+    name_match = RE_NAME.search(rom_content)
     rom_name = name_match.group(1) if name_match else "Unknown"
 
-    size_match = re.search(r"size\s+(\d+)", rom_content)
+    size_match = RE_SIZE.search(rom_content)
     size = int(size_match.group(1)) if size_match else 0
 
-    crc_match = re.search(r"crc\s+([0-9A-Fa-f]+)", rom_content)
-    crc = crc_match.group(1) if crc_match else None
-
-    md5_match = re.search(r"md5\s+([0-9A-Fa-f]+)", rom_content)
-    md5 = md5_match.group(1) if md5_match else None
-
-    sha1_match = re.search(r"sha1\s+([0-9A-Fa-f]+)", rom_content)
-    sha1 = sha1_match.group(1) if sha1_match else None
+    crc_match = RE_CRC.search(rom_content)
+    md5_match = RE_MD5.search(rom_content)
+    sha1_match = RE_SHA1.search(rom_content)
 
     info = RomInfo(
         game_name=game_name,
         rom_name=rom_name,
         size=size,
-        crc=crc,
-        md5=md5,
-        sha1=sha1,
+        crc=crc_match.group(1) if crc_match else None,
+        md5=md5_match.group(1) if md5_match else None,
+        sha1=sha1_match.group(1) if sha1_match else None,
         dat_name=db.name,
     )
     db.add_rom(info)

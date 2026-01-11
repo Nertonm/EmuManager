@@ -63,68 +63,72 @@ class CoverDownloader(QRunnable):
         # Keep a strong reference until run() completes; removed in run()
         _active_downloaders.add(self)
 
+    def _try_thegamesdb(self, game_name: str | None) -> bool:
+        """Tenta obter a capa via TheGamesDB API."""
+        try:
+            from emumanager.metadata_providers import TheGamesDBProvider
+            tgdb = TheGamesDBProvider()
+            tg_url = tgdb.get_cover_url(self.system, self.game_id, game_name, self.region)
+            
+            if not tg_url:
+                return False
+
+            ext = tg_url.split(".")[-1]
+            tgt_path = str(Path(self.cache_dir) / "covers" / self.system / f"{game_name or self.game_id}.{ext}")
+            
+            self.signals.log.emit(f"Trying TheGamesDB URL: {tg_url}")
+            if self._download_file(tg_url, tgt_path):
+                self.signals.log.emit(f"Downloaded from TheGamesDB: {tg_url}")
+                self.signals.finished.emit(tgt_path)
+                return True
+        except Exception as e:
+            self.signals.log.emit(f"TheGamesDB provider error: {str(e)}")
+        return False
+
+    def _identify_game(self) -> str | None:
+        """Extrai o nome ou ID do jogo para busca."""
+        # Tenta extrair game_id se estiver em falta
+        if not self.game_id and self.file_path and os.path.exists(self.file_path):
+            self.game_id = self._extract_game_id()
+            if self.game_id:
+                self.signals.log.emit(f"Extracted Game ID: {self.game_id}")
+        
+        if self.file_path:
+            return Path(self.file_path).stem
+        return None
+
     def run(self):
         try:
-            self.signals.log.emit(
-                f"CoverDownloader started for {self.system}, ID: {self.game_id}"
-            )
+            self.signals.log.emit(f"CoverDownloader started for {self.system}, ID: {self.game_id}")
 
-            # Try to extract game_id if missing
-            if not self.game_id and self.file_path and os.path.exists(self.file_path):
-                self.game_id = self._extract_game_id()
-                if self.game_id:
-                    self.signals.log.emit(f"Extracted Game ID: {self.game_id}")
-
-            # If we still don't have a game_id, try the filename (without ext).
-            # This helps as a fallback for Libretro thumbnails.
-            game_name = None
-            if self.file_path:
-                game_name = Path(self.file_path).stem
+            game_name = self._identify_game()
 
             if not self.game_id and not game_name:
                 self.signals.log.emit("No Game ID and no Game Name found. Aborting.")
                 self.signals.finished.emit(None)
                 return
 
-            # Strategy 1: GameTDB (requires Game ID)
-            if self.game_id:
-                if self._try_gametdb():
-                    return
+            # Executa estratégias em ordem de prioridade
+            if self.game_id and self._try_gametdb():
+                return
 
-            # Strategy 2: Libretro Thumbnails (Fallback using Game Name)
-            if game_name:
-                if self._try_libretro(game_name):
-                    return
+            if game_name and self._try_libretro(game_name):
+                return
 
-            # Strategy 3: TheGamesDB (fallback search provider). This is
-            # optional and will be attempted only if configured or available.
-            try:
-                from emumanager.metadata_providers import TheGamesDBProvider
-
-                tgdb = TheGamesDBProvider()
-                tg_url = tgdb.get_cover_url(
-                    self.system, self.game_id, game_name, self.region
-                )
-                if tg_url:
-                    # Use TheGamesDB's URL directly
-                    ext = tg_url.split(".")[-1]
-                    tgt_path = str(Path(self.cache_dir) / "covers" / self.system / f"{game_name}.{ext}")
-                    self.signals.log.emit(f"Trying TheGamesDB URL: {tg_url}")
-                    if self._download_file(tg_url, tgt_path):
-                        self.signals.log.emit(f"Downloaded from TheGamesDB: {tg_url}")
-                        self.signals.finished.emit(tgt_path)
-                        return
-            except Exception:
-                pass
+            if self._try_thegamesdb(game_name):
+                return
 
             self.signals.log.emit("Cover not found.")
             self.signals.finished.emit(None)
+        except Exception as e:
+            self.signals.log.emit(f"Critical error in CoverDownloader: {str(e)}")
+            self.signals.finished.emit(None)
         finally:
-            # Allow GC after the work is done
             try:
                 _active_downloaders.discard(self)
-            except Exception:
-                pass
+            except Exception as e:
+                # Log the discard failure as per Rule 2
+                print(f"Failed to discard downloader: {e}")
 
     def _try_gametdb(self) -> bool:
         provider = GameTDBProvider()

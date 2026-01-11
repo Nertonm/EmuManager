@@ -44,6 +44,21 @@ class DuplicateGroup:
         return sum(sizes[1:])
 
 
+def normalize_game_name(name: str) -> str:
+    """Remove tags (brackets/parens) and normalize for comparison."""
+    # Remover extensão se houver
+    name = Path(name).stem
+    # Remover tudo entre (), [], {}
+    name = re.sub(r"\([^)]*\)", "", name)
+    name = re.sub(r"\[[^]]*\]", "", name)
+    name = re.sub(r"\{[^}]*\}", "", name)
+    # Lowercase e remover caracteres especiais
+    name = name.lower()
+    name = re.sub(r"[^a-z0-9 ]", " ", name)
+    # Colapsar espaços e trim
+    return " ".join(name.split())
+
+
 class LibraryDB:
     """Interface de persistência robusta com suporte a WAL e concorrência."""
 
@@ -192,3 +207,20 @@ class LibraryDB:
                 entries = [self._row_to_entry(r, cursor2.description) for r in cursor2.fetchall()]
                 groups.append(DuplicateGroup(key=str(h), kind=col, entries=entries))
         return groups
+
+    def find_duplicates_by_normalized_name(self, filter_non_games: bool = True) -> list[DuplicateGroup]:
+        """Procura duplicados baseados no nome normalizado do jogo."""
+        all_entries = self.get_all_entries()
+        by_norm_name: dict[str, list[LibraryEntry]] = {}
+        
+        for entry in all_entries:
+            norm = normalize_game_name(entry.match_name or Path(entry.path).name)
+            if not norm: continue
+            by_norm_name.setdefault(norm, []).append(entry)
+            
+        groups = []
+        for norm, entries in by_norm_name.items():
+            if len(entries) > 1:
+                groups.append(DuplicateGroup(key=norm, kind="name", entries=entries))
+        return groups
+                

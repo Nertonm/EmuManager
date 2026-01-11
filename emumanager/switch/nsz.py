@@ -11,6 +11,20 @@ import re
 from typing import Optional
 
 
+def _validate_level(match: Optional[re.Match]) -> Optional[int]:
+    """Converts a regex match group to a valid compression level (1-22)."""
+    if not match:
+        return None
+    try:
+        val = int(match.group(1))
+        if 1 <= val <= 22:
+            return val
+    except (ValueError, TypeError, IndexError) as e:
+        import logging
+        logging.debug(f"Failed to validate level from match: {e}")
+    return None
+
+
 def detect_nsz_level_from_stdout(stdout: Optional[str]) -> Optional[int]:
     """Try to extract a zstd compression level from NSZ tool output.
 
@@ -18,42 +32,24 @@ def detect_nsz_level_from_stdout(stdout: Optional[str]) -> Optional[int]:
     """
     if not stdout:
         return None
-    s = stdout
-    # common patterns: 'zstd level: 3', 'compression level: 19', '-19' or 'level 3'
-    m = re.search(
+
+    # Strategy 1: Explicit labels (e.g. 'zstd level: 3', 'compression level: 19')
+    lvl = _validate_level(re.search(
         r"(?:zstd|compression|level)[^0-9]{0,10}([1-9]|1[0-9]|2[0-2])\b",
-        s,
-        re.IGNORECASE,
-    )
-    if m:
-        try:
-            val = int(m.group(1))
-            if 1 <= val <= 22:
-                return val
-        except Exception:
-            return None
+        stdout, re.IGNORECASE
+    ))
+    if lvl:
+        return lvl
 
-    # sometimes tools embed '-19' or ' -19 ' flags in logs
-    m2 = re.search(r"-([1-9]|1[0-9]|2[0-2])\b", s)
-    if m2:
-        try:
-            val = int(m2.group(1))
-            if 1 <= val <= 22:
-                return val
-        except Exception:
-            return None
+    # Strategy 2: CLI flags embedded in logs (e.g. '-19')
+    lvl = _validate_level(re.search(r"-([1-9]|1[0-9]|2[0-2])\b", stdout))
+    if lvl:
+        return lvl
 
-    # Filename-like hints: look for 'level3' or 'l3'
-    m3 = re.search(r"\b(?:level|l)([1-9]|1[0-9]|2[0-2])\b", s, re.IGNORECASE)
-    if m3:
-        try:
-            val = int(m3.group(1))
-            if 1 <= val <= 22:
-                return val
-        except Exception:
-            return None
-
-    return None
+    # Strategy 3: Filename-like hints (e.g. 'level3', 'l3')
+    return _validate_level(re.search(
+        r"\b(?:level|l)([1-9]|1[0-9]|2[0-2])\b", stdout, re.IGNORECASE
+    ))
 
 
 def parse_nsz_verify_output(stdout: Optional[str]) -> bool:

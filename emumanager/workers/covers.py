@@ -1,7 +1,12 @@
+import logging
 import os
+from pathlib import Path
 
 import requests
 from PyQt6.QtCore import QObject, QRunnable, pyqtSignal
+from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 class CoverSignals(QObject):
@@ -17,86 +22,66 @@ class CoverDownloader(QRunnable):
         self.cache_dir = cache_dir
         self.signals = CoverSignals()
 
+    def _get_target_system(self) -> str:
+        """Map internal system names to GameTDB system names."""
+        system_map = {
+            "switch": "switch",
+            "wii": "wii",
+            "gamecube": "wii",
+            "ps2": "ps2",
+            "ps3": "ps3",
+            "3ds": "3ds",
+            "ds": "ds",
+            "psp": "psp",
+            "psx": "psx",
+        }
+        return system_map.get(self.system.lower(), self.system.lower())
+
+    def _search_remote_cover(self, target_system: str) -> tuple[Optional[bytes], Optional[str]]:
+        """Try to find cover data by iterating regions and extensions. Returns (data, extension)."""
+        regions = [self.region] if self.region else ["US", "EN", "JA", "EU", "Other"]
+        extensions = [".png", ".jpg"]
+
+        for reg in regions:
+            if not reg:
+                continue
+            for ext in extensions:
+                url = f"https://art.gametdb.com/{target_system}/cover/{reg}/{self.game_id}{ext}"
+                try:
+                    response = requests.get(url, timeout=5)
+                    if response.status_code == 200:
+                        return response.content, ext
+                except Exception as e:
+                    logger.debug(f"Request failed for {url}: {e}")
+                    continue
+        return None, None
+
     def run(self):
         if not self.game_id:
             self.signals.finished.emit(None)
             return
 
-        # Normalize system names for GameTDB
-        # GameTDB uses: wii, switch, ps2, ps3, ds, 3ds, etc.
-        gametdb_system = self.system.lower()
-        if gametdb_system == "gamecube":
-            gametdb_system = "wii"
-            # GameTDB hosts GC covers under Wii usually, or has a specific section?
-            # Checking GameTDB: they have a section for Wii, WiiU, PS3, Switch, DS, 3DS.
-            # GameCube covers are often found under Wii section with ID.
-            # Let's verify this assumption later, but for now 'wii' is a safe bet
-            # for Nintendo consoles on GameTDB often.
-            # Actually, GameTDB has 'wii' and 'ds'.
-            # For PS2, GameTDB has 'ps2'.
-            pass
-
-        from pathlib import Path
-        file_path = str(Path(self.cache_dir) / "covers" / gametdb_system / f"{self.game_id}.jpg")
+        target_system = self._get_target_system()
+        file_path = Path(self.cache_dir) / "covers" / target_system / f"{self.game_id}.jpg"
 
         # Check cache
-        if os.path.exists(file_path):
-            self.signals.finished.emit(file_path)
+        if file_path.exists():
+            self.signals.finished.emit(str(file_path))
             return
 
-        # Construct URL
-        # GameTDB URL format:
-        # https://art.gametdb.com/{system}/cover/{region}/{game_id}.png (or .jpg)
-        # We try a few common extensions and regions if not specified
+        # Fetch remote
+        found_data, actual_ext = self._search_remote_cover(target_system)
 
-        regions_to_try = (
-            [self.region] if self.region else ["US", "EN", "JA", "EU", "Other"]
-        )
-        extensions = [".png", ".jpg"]
+        if found_data and actual_ext:
+            # Update path with correct extension if needed
+            file_path = file_path.with_suffix(actual_ext)
+            
+            try:
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                file_path.write_bytes(found_data)
+                self.signals.finished.emit(str(file_path))
+                return
+            except Exception as e:
+                logger.error(f"Failed to save cover to {file_path}: {e}")
 
-        # Map internal system names to GameTDB system names
-        system_map = {
-            "switch": "switch",
-            "wii": "wii",
-            "gamecube": "wii",
-            # GameTDB mixes them often, or uses 'wii' for both in some contexts?
-            # Actually GameTDB has 'wii' covers.
-            # Let's try 'wii' for GC for now.
-            "ps2": "ps2",
-            "ps3": "ps3",
-            "3ds": "3ds",
-            "ds": "ds",
-            "psp": "psp",  # GameTDB might not have PSP?
-            "psx": "psx",  # GameTDB might not have PSX?
-        }
-
-        target_system = system_map.get(gametdb_system, gametdb_system)
-
-        found_data = None
-
-        for reg in regions_to_try:
-            if not reg:
-                continue
-            for ext in extensions:
-                url = (
-                    f"https://art.gametdb.com/{target_system}/cover/{reg}/"
-                    f"{self.game_id}{ext}"
-                )
-                try:
-                    response = requests.get(url, timeout=5)
-                    if response.status_code == 200:
-                        found_data = response.content
-                        file_path = file_path.replace(".jpg", ext)  # Update extension
-                        break
-                except Exception:
-                    continue
-            if found_data:
-                break
-
-        if found_data:
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            with open(file_path, "wb") as f:
-                f.write(found_data)
-            self.signals.finished.emit(file_path)
-        else:
-            self.signals.finished.emit(None)
+        self.signals.finished.emit(None)

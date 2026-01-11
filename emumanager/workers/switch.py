@@ -94,3 +94,33 @@ def worker_switch_organize(base_path: Path, log_cb: Callable, progress_cb: Optio
     worker = SwitchOrganizationWorker(base_path, log_cb, progress_cb, None)
     roms = [p for p in (base_path / "roms" / "switch").rglob("*") if p.is_file()]
     return worker.run(roms, "Organização Switch", parallel=True)
+
+
+def worker_switch_compress(base_path: Path, args: Any, log_cb: Callable, list_files_fn: Callable) -> str:
+    """Legacy/GUI bridge for Switch compression."""
+    from emumanager.switch.cli import handle_compression, configure_environment
+    from emumanager.common.execution import find_tool
+    
+    try:
+        env = configure_environment(args, logging.getLogger("gui"), find_tool)
+        files = list_files_fn(Path(env["ROMS_DIR"]))
+        total = len(files)
+        success = 0
+        
+        for i, f in enumerate(files):
+            if args.cancel_event and args.cancel_event.is_set():
+                break
+            if log_cb: log_cb(f"Comprimindo {f.name}...")
+            
+            res = handle_compression(f, args=args, tool_nsz=env["TOOL_NSZ"], roms_dir=env["ROMS_DIR"],
+                                     tool_metadata=env["TOOL_METADATA"], is_nstool=env["IS_NSTOOL"],
+                                     keys_path=env["KEYS_PATH"], cmd_timeout=args.cmd_timeout,
+                                     tool_hactool=env["TOOL_HACTOOL"])
+            if res and res != f:
+                success += 1
+            if progress_cb := getattr(args, "progress_callback", None):
+                progress_cb(i / total, f"Comprimindo: {f.name}")
+                
+        return f"Processo concluído. {success} ficheiros processados."
+    except Exception as e:
+        return f"Erro na compressão: {e}"

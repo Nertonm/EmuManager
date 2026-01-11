@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -13,6 +14,7 @@ logger = logging.getLogger(__name__)
 _RUNNING_PROCESSES: Set[subprocess.Popen] = set()
 _LOCK = threading.Lock()
 ORIGINAL_SUBPROCESS_RUN = subprocess.run
+PCT_RE = re.compile(r"(\d{1,3})\s*%")
 
 
 def _register_process(proc: subprocess.Popen) -> None:
@@ -45,12 +47,13 @@ def cancel_current_process() -> bool:
         try:
             proc.kill()
             cancelled_any = True
-        except Exception:
+        except Exception as e:
+            logger.debug("Failed to kill process %s: %s", getattr(proc, "pid", "unknown"), e)
             try:
                 proc.terminate()
                 cancelled_any = True
-            except Exception:
-                pass
+            except Exception as e2:
+                logger.debug("Failed to terminate process %s: %s", getattr(proc, "pid", "unknown"), e2)
     return cancelled_any
 
 
@@ -209,6 +212,124 @@ def run_cmd(
     return res
 
 
+def _run_cmd_stream_setup(cmd: List[str]) -> tuple[Any, logging.LoggerAdapter]:
+    si = subprocess.STARTUPINFO() if os.name == "nt" else None
+    if si:
+        si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+
+    operation_id = uuid.uuid4().hex
+    adapter = logging.LoggerAdapter(logger, {"operation_id": operation_id})
+    adapter.debug("run_cmd_stream start: %s", shlex.join(cmd))
+    return si, adapter
+
+
+def _run_cmd_stream_monkeypatch(
+    cmd: List[str], timeout: Optional[float]
+) -> Optional[subprocess.CompletedProcess]:
+    try_run = subprocess.run
+    if try_run is not ORIGINAL_SUBPROCESS_RUN:
+        res = _run_with_subprocess_run(cmd, timeout)
+        out = getattr(res, "stdout", "") or ""
+        return subprocess.CompletedProcess(
+            cmd, getattr(res, "returncode", 1), stdout=out, stderr=None
+        )
+    return None
+
+
+def _run_cmd_stream_open_file(
+    stream_to_file: Optional[Path], adapter: logging.LoggerAdapter
+) -> Any:
+    if stream_to_file is None:
+        return None
+    try:
+        stream_to_file.parent.mkdir(parents=True, exist_ok=True)
+        return open(
+            str(stream_to_file) + ".out",
+            "w",
+            encoding="utf-8",
+            errors="replace",
+        )
+    except Exception:
+        adapter.debug("failed to open stream_to_file %s", stream_to_file)
+        return None
+
+
+def _run_cmd_stream_parse_pct(
+    line: str, parser: Optional[Callable[[str], Optional[float]]], adapter: logging.LoggerAdapter
+) -> Optional[float]:
+    try:
+        if parser:
+            return parser(line)
+        m = PCT_RE.search(line)
+        if m:
+            return max(0.0, min(1.0, float(m.group(1)) / 100.0))
+    except Exception as e:
+        adapter.debug("Failed to parse progress from line: %s", e)
+    return None
+
+
+def _run_cmd_stream_process_line(
+    line: str,
+    file_handle: Any,
+    out_lines: List[str],
+    parser: Optional[Callable[[str], Optional[float]]],
+    progress_cb: Optional[Callable[[float, str], None]],
+    last_pct: Optional[float],
+    adapter: logging.LoggerAdapter,
+) -> Optional[float]:
+    if file_handle:
+        try:
+            file_handle.write(line + "\n")
+            file_handle.flush()
+        except Exception:
+            adapter.debug("failed to write stream line to file")
+    else:
+        out_lines.append(line)
+
+    pct = _run_cmd_stream_parse_pct(line, parser, adapter)
+
+    if pct is not None and progress_cb:
+        if last_pct is None or abs(pct - last_pct) >= 0.005:
+            try:
+                progress_cb(pct, line)
+            except Exception as e:
+                adapter.debug("Progress callback failed: %s", e)
+            return pct
+    return last_pct
+
+
+def _run_cmd_stream_persist(filebase: Optional[Path], combined: str, adapter: logging.LoggerAdapter) -> None:
+    if filebase is not None:
+        try:
+            filebase.parent.mkdir(parents=True, exist_ok=True)
+            with open(
+                str(filebase) + ".out",
+                "w",
+                encoding="utf-8",
+                errors="replace",
+            ) as fo:
+                fo.write(combined)
+        except Exception:
+            adapter.debug("Failed to write streaming command output for %s", filebase)
+
+
+def _run_cmd_stream_cleanup(
+    proc: subprocess.Popen, file_handle: Any, adapter: logging.LoggerAdapter
+) -> None:
+    if file_handle:
+        try:
+            file_handle.close()
+        except Exception as e:
+            adapter.debug("Failed to close stream file handle: %s", e)
+    try:
+        stdout = getattr(proc, "stdout", None)
+        if stdout:
+            stdout.close()
+    except Exception:
+        pass
+    _unregister_process(proc)
+
+
 def run_cmd_stream(
     cmd: List[str],
     *,
@@ -227,28 +348,11 @@ def run_cmd_stream(
 
     Returns a CompletedProcess-like object with stdout/stderr combined.
     """
-    import re
+    si, adapter = _run_cmd_stream_setup(cmd)
 
-    si = subprocess.STARTUPINFO() if os.name == "nt" else None
-    if si:
-        si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-
-    operation_id = uuid.uuid4().hex
-    adapter = logging.LoggerAdapter(logger, {"operation_id": operation_id})
-    adapter.debug("run_cmd_stream start: %s", shlex.join(cmd))
-
-    pct_re = re.compile(r"(\d{1,3})\s*%")
-
-    # If tests or environment monkeypatch subprocess.run, prefer using that
-    # path so mocks apply. In that case we run the command via subprocess.run
-    # and synthesize a CompletedProcess for compatibility.
-    try_run = subprocess.run
-    if try_run is not ORIGINAL_SUBPROCESS_RUN:
-        res = _run_with_subprocess_run(cmd, timeout)
-        out = getattr(res, "stdout", "") or ""
-        return subprocess.CompletedProcess(
-            cmd, getattr(res, "returncode", 1), stdout=out, stderr=None
-        )
+    monkey_res = _run_cmd_stream_monkeypatch(cmd, timeout)
+    if monkey_res:
+        return monkey_res
 
     proc = subprocess.Popen(
         cmd,
@@ -260,77 +364,24 @@ def run_cmd_stream(
         startupinfo=si,
     )
     _register_process(proc)
-    out_lines: list[str] = []
+
+    out_lines: List[str] = []
     last_pct: Optional[float] = None
-    file_handle = None
-    if stream_to_file is not None:
-        try:
-            stream_to_file.parent.mkdir(parents=True, exist_ok=True)
-            file_handle = open(
-                str(stream_to_file) + ".out",
-                "w",
-                encoding="utf-8",
-                errors="replace",
-            )
-        except Exception:
-            adapter.debug("failed to open stream_to_file %s", stream_to_file)
+    file_handle = _run_cmd_stream_open_file(stream_to_file, adapter)
 
     try:
         if proc.stdout:
             for raw in proc.stdout:
                 line = raw.rstrip("\n")
-                if file_handle:
-                    try:
-                        file_handle.write(line + "\n")
-                        file_handle.flush()
-                    except Exception:
-                        adapter.debug("failed to write stream line to file")
-                else:
-                    out_lines.append(line)
-                # Prefer custom parser if provided
-                pct = None
-                try:
-                    if parser:
-                        pct = parser(line)
-                    else:
-                        m = pct_re.search(line)
-                        if m:
-                            try:
-                                pct = max(0.0, min(1.0, float(m.group(1)) / 100.0))
-                            except Exception:
-                                pct = None
-                except Exception:
-                    pct = None
-
-                # Only emit progress when it changes meaningfully
-                if pct is not None and progress_cb:
-                    if last_pct is None or abs(pct - last_pct) >= 0.005:
-                        last_pct = pct
-                        try:
-                            progress_cb(pct, line)
-                        except Exception:
-                            pass
+                last_pct = _run_cmd_stream_process_line(
+                    line, file_handle, out_lines, parser, progress_cb, last_pct, adapter
+                )
 
         rc = proc.wait()
         combined = "\n".join(out_lines)
         completed = subprocess.CompletedProcess(cmd, rc, stdout=combined, stderr=None)
 
-        # persist outputs when requested
-        if filebase is not None:
-            try:
-                filebase.parent.mkdir(parents=True, exist_ok=True)
-                with open(
-                    str(filebase) + ".out",
-                    "w",
-                    encoding="utf-8",
-                    errors="replace",
-                ) as fo:
-                    fo.write(combined)
-            except Exception:
-                adapter.debug(
-                    "Failed to write streaming command output for %s",
-                    filebase,
-                )
+        _run_cmd_stream_persist(filebase, combined, adapter)
 
         if check and completed.returncode != 0:
             raise subprocess.CalledProcessError(
@@ -341,23 +392,6 @@ def run_cmd_stream(
             )
 
         adapter.debug("run_cmd_stream finished: rc=%s", completed.returncode)
-
         return completed
     finally:
-        if file_handle:
-            try:
-                file_handle.close()
-            except Exception:
-                pass
-        # Ensure subprocess stdout wrapper is closed to avoid ResourceWarning
-        try:
-            if proc.stdout:
-                try:
-                    proc.stdout.close()
-                except Exception:
-                    pass
-        except Exception:
-            # proc may not have stdout attribute in some monkeypatched tests
-            pass
-
-        _unregister_process(proc)
+        _run_cmd_stream_cleanup(proc, file_handle, adapter)
