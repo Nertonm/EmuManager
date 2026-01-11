@@ -1,21 +1,22 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import List, Optional
 
 
-@dataclass
+@dataclass(slots=True)
 class VerifyResult:
     filename: str
     status: str  # "VERIFIED", "UNKNOWN", "MISMATCH"
-    match_name: Optional[str]
-    crc: Optional[str]
-    sha1: Optional[str]
-    md5: Optional[str] = None
-    sha256: Optional[str] = None
-    full_path: Optional[str] = None
-    dat_name: Optional[str] = None
+    match_name: str | None = None
+    crc: str | None = None
+    sha1: str | None = None
+    md5: str | None = None
+    sha256: str | None = None
+    full_path: str | None = None
+    dat_name: str | None = None
 
 
-@dataclass
+@dataclass(slots=True)
 class VerifyReport:
     text: str
-    results: List[VerifyResult] = field(default_factory=list)
+    results: list[VerifyResult] = field(default_factory=list)

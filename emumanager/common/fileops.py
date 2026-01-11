@@ -1,46 +1,31 @@
-"""File operation helpers extracted from the legacy script.
+"""File operation helpers (Core Python Refactoring).
 
-Provide a testable safe_move implementation that attempts to perform an
-atomic, verified move. The function prefers an atomic rename when possible
-(same filesystem) and falls back to copying into the destination directory
-to a secure temporary file and then atomically replacing the final path.
-
-It also optionally verifies content (via provided get_file_hash) before
-removing the original, and logs audit information via the provided logger.
+Uso exclusivo de pathlib.Path para garantir portabilidade e legibilidade.
+Inclui tratamento atómico de ficheiros e verificação de duplicados.
 """
 
 from __future__ import annotations
 
-import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 
 def _is_exact_duplicate_fast(s: Path, d: Path) -> bool:
+    """Verificação rápida de duplicados por metadados e prefixo de bytes."""
     try:
-        # Use full-precision mtime + size check as a fast hint, but guard
-        # against false positives by performing a cheap byte-prefix compare
-        # when metadata matches. This avoids treating different small files
-        # as duplicates when they were created close together.
-        if os.path.getsize(s) != os.path.getsize(d):
+        s_stat = s.stat()
+        d_stat = d.stat()
+        
+        if s_stat.st_size != d_stat.st_size:
             return False
-        if os.path.getmtime(s) != os.path.getmtime(d):
+        if s_stat.st_mtime != d_stat.st_mtime:
             return False
 
-        # Quick content check: compare up to the first 4 KiB. For small files
-        # this reads the entire file; for large files this gives a fast
-        # heuristic that usually rules out coincidental metadata collisions.
-        try:
-            with open(s, "rb") as fs, open(d, "rb") as fd:
-                a = fs.read(4096)
-                b = fd.read(4096)
-                return a == b
-        except Exception:
-            # If reading fails, fall back to conservative False so we don't
-            # accidentally remove non-duplicates.
-            return False
+        # Comparação dos primeiros 4KiB
+        with s.open("rb") as fs, d.open("rb") as fd:
+            return fs.read(4096) == fd.read(4096)
     except Exception:
         return False
 
@@ -48,6 +33,7 @@ def _is_exact_duplicate_fast(s: Path, d: Path) -> bool:
 def _is_exact_duplicate_strict(
     s: Path, d: Path, get_file_hash: Callable[[Path], str]
 ) -> bool:
+    """Verificação rigorosa de duplicados via Hash."""
     try:
         return get_file_hash(s) == get_file_hash(d)
     except Exception:
@@ -60,55 +46,29 @@ def _choose_duplicate_target(
     args: Any,
     get_file_hash: Callable[[Path], str],
     logger: Any,
-) -> Optional[Path]:
-    """Return None if exact duplicate handled (source removed), else a new path."""
+) -> Path | None:
+    """Decide o destino em caso de colisão ou remove o original se for duplicado."""
     try:
+        is_dup = False
         if getattr(args, "dup_check", "fast") == "strict":
-            if _is_exact_duplicate_strict(source, dst, get_file_hash):
-                logger.info(
-                    "Exact duplicate (strict) detected; removing source file: %s",
-                    source.name,
-                )
-                logger.debug("Exact duplicate (strict) full path: %s", source)
-                try:
-                    source.unlink()
-                except Exception:
-                    logger.debug("Failed removing duplicate source: %s", source)
-                return None
+            is_dup = _is_exact_duplicate_strict(source, dst, get_file_hash)
         else:
-            if _is_exact_duplicate_fast(source, dst):
-                logger.info(
-                    "Exact duplicate (fast) detected; removing source file: %s",
-                    source.name,
-                )
-                logger.debug("Exact duplicate (fast) full path: %s", source)
-                try:
-                    source.unlink()
-                except Exception:
-                    logger.debug("Failed removing duplicate source: %s", source)
-                return None
-    except Exception:
-        logger.debug("Duplicate check failed for %s and %s", source, dst)
+            is_dup = _is_exact_duplicate_fast(source, dst)
 
-    parent = dst.parent
-    base = dst.stem
-    suffix = dst.suffix
+        if is_dup:
+            logger.info(f"Duplicate detected; removing source: {source.name}")
+            source.unlink(missing_ok=True)
+            return None
+    except Exception as e:
+        logger.debug(f"Duplicate check failed: {e}")
+
+    # Gerar nome único para cópia
     counter = 1
-    new_dest = parent / f"{base}_COPY_{counter}{suffix}"
+    new_dest = dst.parent / f"{dst.stem}_COPY_{counter}{dst.suffix}"
     while new_dest.exists():
         counter += 1
-        new_dest = parent / f"{base}_COPY_{counter}{suffix}"
+        new_dest = dst.parent / f"{dst.stem}_COPY_{counter}{dst.suffix}"
     return new_dest
-
-
-def _try_atomic_replace(source: Path, dest: Path, logger: Any) -> bool:
-    try:
-        source.replace(dest)
-        logger.info("Moved (atomic): %s -> %s", source.name, dest.name)
-        logger.debug("Moved (atomic) full paths: %s -> %s", source, dest)
-        return True
-    except Exception:
-        return False
 
 
 def _copy_and_replace(
@@ -119,78 +79,44 @@ def _copy_and_replace(
     get_file_hash: Callable[[Path], str],
     logger: Any,
 ) -> bool:
-    tmp_path = None
+    """Fallback para mover ficheiros entre diferentes sistemas de ficheiros."""
+    tmp_path: Path | None = None
     try:
-        fd, tmp_name = tempfile.mkstemp(prefix=".emumgr_tmp_", dir=str(dest_parent))
-        tmp_path = Path(tmp_name)
-        os.close(fd)
-
-        shutil.copy2(str(source), str(tmp_path))
-
-        with open(tmp_path, "rb") as f:
-            try:
-                os.fsync(f.fileno())
-            except Exception:
-                logger.debug("fsync failed for temp file %s", tmp_path)
+        # Criar ficheiro temporário no destino para garantir move atómico final
+        with tempfile.NamedTemporaryFile(
+            prefix=".emumgr_tmp_", dir=dest_parent, delete=False
+        ) as tmp_file:
+            tmp_path = Path(tmp_file.name)
+            shutil.copy2(source, tmp_path)
+            # Garantir escrita no disco
+            tmp_file.flush()
+            # os.fsync(tmp_file.fileno()) # Opcional se quisermos ser paranoicos
 
         if getattr(args, "dup_check", "fast") == "strict":
-            if not _verify_hashes(source, tmp_path, get_file_hash, logger):
-                try:
-                    tmp_path.unlink()
-                except Exception:
-                    logger.debug("Failed removing temp file after hash mismatch")
+            if get_file_hash(source) != get_file_hash(tmp_path):
+                logger.error(f"Hash mismatch after copy: {source.name}")
+                tmp_path.unlink(missing_ok=True)
                 return False
 
-        os.replace(str(tmp_path), str(dest))
-        logger.info("Moved (copy+replace): %s -> %s", source.name, dest.name)
-        logger.debug("Moved (copy+replace) full paths: %s -> %s", source, dest)
-        try:
-            source.unlink()
-        except Exception as e:
-            logger.warning(
-                "Could not remove original after move: %s -- %s",
-                source.name,
-                e,
-            )
+        tmp_path.replace(dest)
+        logger.info(f"Moved (copy+replace): {source.name} -> {dest.name}")
+        source.unlink(missing_ok=True)
         return True
     except Exception as e:
-        logger.exception("safe_move failed copying %s -> %s: %s", source, dest, e)
-        if tmp_path and tmp_path.exists():
-            try:
-                tmp_path.unlink()
-            except Exception:
-                logger.debug("Failed cleaning up tmp file %s", tmp_path)
-        return False
-
-
-def _verify_hashes(
-    src: Path, dst: Path, get_file_hash: Callable[[Path], str], logger: Any
-) -> bool:
-    try:
-        return get_file_hash(src) == get_file_hash(dst)
-    except Exception as e:
-        logger.debug("Hash verification error for %s and %s: %s", src, dst, e)
+        logger.exception(f"safe_move (copy) failed: {e}")
+        if tmp_path:
+            tmp_path.unlink(missing_ok=True)
         return False
 
 
 def safe_unlink(path: Path, logger: Any) -> None:
-    """Best-effort, logged deletion for potentially user-important files.
-
-    INFO logs only the filename; DEBUG logs the full path.
-    """
+    """Eliminação segura e logada de ficheiros."""
     try:
-        if not path.exists():
-            logger.debug("Attempted to delete non-existent file: %s", path)
-            return
-
-        path.unlink()
-        logger.info("Deleted file: %s", path.name)
-        logger.debug("Deleted file full path: %s", path)
-    except PermissionError as exc:
-        logger.warning("Permission denied deleting file %s: %s", path.name, exc)
-        logger.debug("Permission denied deleting file full path: %s", path)
-    except Exception:
-        logger.exception("Unexpected error deleting file: %s", path)
+        if path.exists():
+            path.unlink()
+            logger.info(f"Deleted: {path.name}")
+    except Exception as e:
+        logger.warning(f"Failed to delete {path.name}: {e}")
 
 
 def safe_move(
@@ -201,43 +127,36 @@ def safe_move(
     get_file_hash: Callable[[Path], str],
     logger: Any,
 ) -> bool:
-    """Orchestrate a safe, atomic move using helpers."""
+    """Orquestra um move seguro e atómico usando Pathlib puro."""
     if getattr(args, "dry_run", False):
-        logger.info("[DRY-RUN] safe_move %s -> %s", source.name, dest.name)
-        logger.debug("[DRY-RUN] safe_move full paths: %s -> %s", source, dest)
+        logger.info(f"[DRY-RUN] move {source.name} -> {dest.name}")
         return True
 
     try:
-        dest_parent = dest.parent
-        dest_parent.mkdir(parents=True, exist_ok=True)
+        source = Path(source).resolve()
+        dest = Path(dest).resolve()
+        
+        dest.parent.mkdir(parents=True, exist_ok=True)
 
+        # Tratar caminhos demasiado longos (heurística simples)
         if len(dest.name) > 240:
-            stem = dest.stem[:200]
-            dest = dest.with_name(stem + dest.suffix)
+            dest = dest.with_name(dest.stem[:200] + dest.suffix)
 
-        if dest.exists() and source.resolve() != dest.resolve():
+        if dest.exists() and source != dest:
             chosen = _choose_duplicate_target(source, dest, args, get_file_hash, logger)
             if chosen is None:
-                logger.debug(
-                    "safe_move: duplicate detected, source removed: %s", source
-                )
                 return False
-            # attempt rename/move to chosen
-            try:
-                if _try_atomic_replace(source, chosen, logger):
-                    logger.warning("Collision: source renamed to: %s", chosen)
-                    return True
-                shutil.move(str(source), str(chosen))
-                logger.warning("Collision: moved (fallback) to: %s", chosen)
-                return True
-            except Exception as e:
-                logger.error("Failed to move on collision to %s: %s", chosen, e)
-                return False
+            dest = chosen
 
-        # primary move
-        if _try_atomic_replace(source, dest, logger):
+        # Tentativa de move atómico (mesmo FS)
+        try:
+            source.replace(dest)
+            logger.info(f"Moved (atomic): {source.name} -> {dest.name}")
             return True
-        return _copy_and_replace(source, dest, dest_parent, args, get_file_hash, logger)
+        except OSError:
+            # Fallback para cross-device move
+            return _copy_and_replace(source, dest, dest.parent, args, get_file_hash, logger)
+            
     except Exception as e:
-        logger.exception("safe_move unexpected error for %s -> %s: %s", source, dest, e)
+        logger.exception(f"safe_move failed for {source.name}: {e}")
         return False

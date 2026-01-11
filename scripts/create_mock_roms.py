@@ -12,7 +12,7 @@ from pathlib import Path
 # Ensure we can import from the package
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from emumanager import architect  # noqa: E402
+from emumanager import manager  # noqa: E402
 
 
 def create_dummy_file(path: Path, size_bytes: int = 1024):
@@ -40,9 +40,9 @@ def main():
     base = Path(args.target_dir).resolve()
     print(f"Creating mock library at: {base}")
 
-    # 1. Initialize structure using the actual architect module
+    # 1. Initialize structure using the new core (via manager facade)
     print("Initializing structure...")
-    architect.main([str(base)])
+    manager.cmd_init(base)
 
     roms = base / "roms"
 

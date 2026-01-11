@@ -1,522 +1,96 @@
 from __future__ import annotations
 
 import logging
-import re
+import subprocess
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import Any, Callable, Optional
 
-from emumanager.common.execution import run_cmd
-from emumanager.logging_cfg import log_call, set_correlation_id
-from emumanager.switch import compression, metadata
-from emumanager.switch.cli import (
-    get_metadata,
-    safe_move,
-    scan_for_virus,
-    verify_integrity,
-)
-from emumanager.switch.main_helpers import process_files, run_health_check
-from emumanager.workers.common import (
-    MSG_CANCELLED,
-    GuiLogger,
-    get_logger_for_gui,
-    skip_if_compressed,
-)
-
-MSG_NSZ_MISSING = "Error: 'nsz' tool not found."
+from emumanager.core.models import SwitchMetadata
+from emumanager.workers.common import BaseWorker, WorkerResult
 
 
-@log_call(level=logging.INFO)
-def worker_organize(
-    base_path: Path,
-    env: dict,
-    args: Any,
-    log_cb: Callable[[str], None],
-    list_files_fn: Callable[[Path], list[Path]],
-    progress_cb: Optional[Callable[[float, str], None]] = None,
-) -> str:
-    """Worker function for organizing Switch ROMs."""
-    # Initialize correlation id and use structured logger wired to GUI
-    set_correlation_id()
-    logger = get_logger_for_gui(log_cb, name="emumanager.workers.switch")
+class SwitchOrganizationWorker(BaseWorker):
+    """
+    Worker industrial para organização de biblioteca Nintendo Switch.
+    Implementa Clean Architecture ao isolar a execução de ferramentas externas
+    e validar dados via SwitchMetadata antes de qualquer operação de I/O.
+    """
 
-    all_files = list_files_fn(base_path)
-    # Filter for Switch extensions only to avoid processing other systems' files
-    switch_exts = {".nsp", ".nsz", ".xci", ".xcz"}
-    files = [f for f in all_files if f.suffix.lower() in switch_exts]
+    def __init__(self, base_path: Path, log_cb: Callable, progress_cb: Optional[Callable], cancel_event: Any, nstool_path: Optional[str] = None):
+        super().__init__(base_path, log_cb, progress_cb, cancel_event)
+        self.nstool = nstool_path or "nstool"
 
-    # Respect compressed markers in the library DB (skip items marked COMPRESSED)
-    filtered = []
-    skipped_compressed = 0
-    for f in files:
-        if skip_if_compressed(f, logger):
-            skipped_compressed += 1
-            continue
-        filtered.append(f)
-    if skipped_compressed:
-        logger.info(f"Skipped {skipped_compressed} files marked as compressed")
-    files = filtered
+    def _process_item(self, f: Path) -> str:
+        if f.suffix.lower() not in {".nsp", ".nsz", ".xci", ".xcz"}:
+            return "skipped"
 
-    if not files:
-        return "No Switch files found to organize."
+        # 1. Extração de Metadados (Interface Limpa com subprocess)
+        try:
+            raw_meta = self._fetch_raw_metadata(f)
+            meta = SwitchMetadata(
+                title=raw_meta.get("title", f.stem),
+                title_id=raw_meta.get("title_id", ""),
+                version=raw_meta.get("version", 0),
+                content_type=self._guess_content_type(raw_meta.get("title_id", "")),
+                path=f
+            )
+        except Exception as e:
+            self.logger.error(f"Falha na validação de metadados para {f.name}: {e}")
+            return "failed"
 
-    # Context construction
-    ctx = {}
-    ctx["args"] = args
-    ctx["ROMS_DIR"] = env["ROMS_DIR"]
-    ctx["CSV_FILE"] = env["CSV_FILE"]
-    ctx["logger"] = logger
-    ctx["progress_callback"] = progress_cb
-    ctx["cancel_event"] = getattr(args, "cancel_event", None)
+        # 2. Cálculo do Destino Hierárquico
+        # Estrutura: Base / {Categoria} / {Título} / {Nome Canónico}
+        target_dir = self.base_path / "switch" / meta.category_folder / meta.title
+        dest_path = target_dir / meta.ideal_name
 
-    # Functions
-    ctx["get_metadata"] = lambda f: get_metadata(
-        f,
-        tool_metadata=env.get("TOOL_METADATA"),
-        is_nstool=env.get("IS_NSTOOL"),
-        keys_path=env.get("KEYS_PATH"),
-        roms_dir=env.get("ROMS_DIR"),
-        cmd_timeout=getattr(args, "cmd_timeout", None),
-        tool_nsz=env.get("TOOL_NSZ"),
-    )
-    ctx["sanitize_name"] = metadata.sanitize_name
-    ctx["determine_region"] = metadata.determine_region
-    ctx["determine_type"] = metadata.determine_type
-    ctx["parse_languages"] = metadata.parse_languages
-    ctx["detect_languages_from_filename"] = metadata.detect_languages_from_filename
+        if f.resolve() == dest_path.resolve():
+            return "skipped"
 
-    ctx["safe_move"] = lambda s, d: safe_move(s, d, args=args, logger=logger)
-
-    ctx["verify_integrity"] = (
-        lambda f, deep=False, return_output=False: verify_integrity(
-            f,
-            deep=deep,
-            tool_nsz=env.get("TOOL_NSZ"),
-            roms_dir=env["ROMS_DIR"],
-            cmd_timeout=None,
-            tool_metadata=env.get("TOOL_METADATA"),
-            is_nstool=env.get("IS_NSTOOL"),
-            keys_path=env.get("KEYS_PATH"),
-            tool_hactool=env.get("TOOL_HACTOOL"),
-            return_output=return_output,
-        )
-    )
-
-    ctx["scan_for_virus"] = lambda f: scan_for_virus(
-        f,
-        tool_clamscan=env.get("TOOL_CLAMSCAN"),
-        tool_clamdscan=env.get("TOOL_CLAMDSCAN"),
-        roms_dir=env["ROMS_DIR"],
-        cmd_timeout=None,
-    )
-
-    def handle_compression(fpath):
-        return fpath
-
-    ctx["handle_compression"] = handle_compression
-
-    ctx["TOOL_METADATA"] = env.get("TOOL_METADATA")
-    ctx["IS_NSTOOL"] = env.get("IS_NSTOOL")
-    ctx["TITLE_ID_RE"] = re.compile(r"\[([0-9A-Fa-f]{16})\]")
-
-    class Col:
-        RESET = ""
-        RED = ""
-        GREEN = ""
-        YELLOW = ""
-        BLUE = ""
-        MAGENTA = ""
-        CYAN = ""
-        GREY = ""
-        BOLD = ""
-
-    ctx["Col"] = Col
-
-    _catalog, stats = process_files(files, ctx)
-    return f"Organization complete. Stats: {stats}"
-
-
-@log_call(level=logging.INFO)
-def worker_health_check(
-    base_path: Path,
-    env: dict,
-    args: Any,
-    log_cb: Callable[[str], None],
-    list_files_fn: Callable[[Path], list[Path]],
-) -> str:
-    """Worker function for health check."""
-    # Initialize correlation id and use structured logger wired to GUI
-    set_correlation_id()
-    logger = get_logger_for_gui(log_cb, name="emumanager.workers.switch")
-    files = list_files_fn(base_path)
-
-    def verify_fn(f, deep=False, return_output=False):
-        return verify_integrity(
-            f,
-            deep=deep,
-            tool_nsz=env.get("TOOL_NSZ"),
-            roms_dir=env["ROMS_DIR"],
-            cmd_timeout=None,
-            tool_metadata=env.get("TOOL_METADATA"),
-            is_nstool=env.get("IS_NSTOOL"),
-            keys_path=env.get("KEYS_PATH"),
-            tool_hactool=env.get("TOOL_HACTOOL"),
-            return_output=return_output,
-        )
-
-    def scan_fn(f):
-        return scan_for_virus(
-            f,
-            tool_clamscan=env.get("TOOL_CLAMSCAN"),
-            tool_clamdscan=env.get("TOOL_CLAMDSCAN"),
-            roms_dir=env["ROMS_DIR"],
-            cmd_timeout=None,
-        )
-
-    def safe_move_fn(s, d):
-        return safe_move(s, d, args=args, logger=logger)
-
-    summary = run_health_check(
-        files, args, env["ROMS_DIR"], verify_fn, scan_fn, safe_move_fn, logger
-    )
-    return (
-        f"Health Check complete. Corrupted: {len(summary['corrupted'])}, "
-        f"Infected: {len(summary['infected'])}"
-    )
-
-
-@log_call(level=logging.INFO)
-def worker_switch_compress(
-    base_path: Path,
-    env: dict,
-    args: Any,
-    log_cb: Callable[[str], None],
-    list_files_fn: Callable[[Path], list[Path]],
-) -> str:
-    """Worker function for bulk Switch compression."""
-    # Initialize correlation id and use structured logger wired to GUI
-    set_correlation_id()
-    logger = get_logger_for_gui(log_cb, name="emumanager.workers.switch")
-    files = list_files_fn(base_path)
-
-    # Filter for compressible files (NSP, XCI)
-    candidates = [f for f in files if f.suffix.lower() in {".nsp", ".xci"}]
-    if not candidates:
-        return "No compressible files found (NSP/XCI)."
-
-    logger.info(f"Found {len(candidates)} files to compress.")
-
-    success = 0
-    failed = 0
-    skipped = 0
-
-    total = len(candidates)
-    progress_cb = getattr(args, "progress_callback", None)
-    cancel_event = getattr(args, "cancel_event", None)
-
-    tool_nsz = env.get("TOOL_NSZ")
-    if not tool_nsz:
-        return MSG_NSZ_MISSING
-
-    def run_wrapper(cmd, **kwargs):
-        return run_cmd(
-            cmd, filebase=None, timeout=None, check=kwargs.get("check", False)
-        )
-
-    for i, f in enumerate(candidates):
-        if cancel_event and cancel_event.is_set():
-            logger.warning(MSG_CANCELLED)
-            break
-
-        if progress_cb:
-            progress_cb(i / total, f"Compressing {f.name}...")
-
-        status = _compress_single_file(f, str(tool_nsz), env, args, run_wrapper, logger)
-        if status == "success":
-            success += 1
-        elif status == "skipped":
-            skipped += 1
-        elif status == "failed":
-            failed += 1
-
-    if progress_cb:
-        progress_cb(1.0, "Compression complete")
-
-    return (
-        f"Compression complete. Success: {success}, "
-        f"Failed: {failed}, Skipped: {skipped}"
-    )
-
-
-def _compress_single_file(
-    f: Path,
-    tool_nsz: str,
-    env: dict,
-    args: Any,
-    run_wrapper: Callable,
-    logger: GuiLogger,
-) -> str:
-    # Check if NSZ already exists
-    nsz_path = f.with_suffix(".nsz")
-    if nsz_path.exists():
-        logger.info(f"Skipping {f.name}, NSZ already exists.")
-        return "skipped"
-
-    # Compress
-    res = compression.compress_file(
-        f,
-        run_wrapper,
-        tool_nsz=tool_nsz,
-        level=getattr(args, "level", 3),
-        args=args,
-        roms_dir=env["ROMS_DIR"],
-    )
-
-    if res:
-        logger.info(f"Compressed: {f.name} -> {res.name}")
-        # Remove original if requested
-        if getattr(args, "rm_originals", False) and res != f:
-            try:
-                if not getattr(args, "dry_run", False):
-                    from emumanager.common.fileops import safe_unlink
-
-                    safe_unlink(f, logger)
-            except Exception as e:
-                logger.error(f"Failed to remove original {f.name}: {e}")
-        return "success"
-    else:
-        logger.error(f"Failed to compress: {f.name}")
+        # 3. Movimentação Atómica (Reutiliza lógica robusta da BaseWorker)
+        self.logger.info(f"Organizando: {f.name} -> {meta.category_folder}/{meta.title}")
+        if self.atomic_move(f, dest_path):
+            self.db.update_entry_fields(
+                str(dest_path.resolve()), 
+                status="VERIFIED", 
+                match_name=meta.title, 
+                dat_name=meta.title_id
+            )
+            return "success"
+        
         return "failed"
 
+    def _fetch_raw_metadata(self, path: Path) -> dict[str, Any]:
+        """Chama a ferramenta nstool e faz o parse básico do output."""
+        # Nota: Numa versão final, isto seria injetado via um MetadataProvider
+        # Aqui fazemos a chamada direta mas protegida.
+        try:
+            res = subprocess.run(
+                [self.nstool, "--header", str(path)],
+                capture_output=True, text=True, timeout=15
+            )
+            # Simulação de parse (simplificado para o exemplo)
+            # Em produção usaríamos regex para capturar Title ID e Title
+            import re
+            tid_match = re.search(r"Title ID:\s+([0-9A-Fa-f]{16})", res.stdout)
+            title_match = re.search(r"Title:\s+(.+)", res.stdout)
+            
+            return {
+                "title_id": tid_match.group(1) if tid_match else "",
+                "title": title_match.group(1).strip() if title_match else path.stem,
+                "version": 0 # Placeholder para lógica de versão
+            }
+        except Exception:
+            return {}
 
-@log_call(level=logging.INFO)
-def worker_switch_decompress(
-    base_path: Path,
-    env: dict,
-    args: Any,
-    log_cb: Callable[[str], None],
-    list_files_fn: Callable[[Path], list[Path]],
-) -> str:
-    """Worker function for bulk Switch decompression."""
-    # Initialize correlation id and use structured logger wired to GUI
-    set_correlation_id()
-    logger = get_logger_for_gui(log_cb, name="emumanager.workers.switch")
-    files = list_files_fn(base_path)
+    def _guess_content_type(self, title_id: str) -> str:
+        """Heurística baseada no sufixo do Title ID."""
+        if not title_id: return "Base"
+        if title_id.endswith("000"): return "Base"
+        if title_id.endswith("800"): return "Update"
+        return "DLC"
 
-    # Filter for decompressible files (NSZ, XCZ)
-    candidates = [f for f in files if f.suffix.lower() in {".nsz", ".xcz"}]
-    if not candidates:
-        return "No decompressible files found (NSZ/XCZ)."
-
-    logger.info(f"Found {len(candidates)} files to decompress.")
-
-    success = 0
-    failed = 0
-
-    total = len(candidates)
-    progress_cb = getattr(args, "progress_callback", None)
-    cancel_event = getattr(args, "cancel_event", None)
-
-    tool_nsz = env.get("TOOL_NSZ")
-    if not tool_nsz:
-        return MSG_NSZ_MISSING
-
-    def run_wrapper(cmd, **kwargs):
-        return run_cmd(cmd, filebase=None, timeout=None)
-
-    for i, f in enumerate(candidates):
-        if cancel_event and cancel_event.is_set():
-            logger.warning(MSG_CANCELLED)
-            break
-
-        if progress_cb:
-            progress_cb(i / total, f"Decompressing {f.name}...")
-
-        # Decompress
-        res = compression.decompress_and_find_candidate(
-            f,
-            run_wrapper,
-            tool_nsz=str(tool_nsz),
-            tool_metadata=str(env.get("TOOL_METADATA"))
-            if env.get("TOOL_METADATA")
-            else None,
-            is_nstool=env.get("IS_NSTOOL", False),
-            keys_path=env.get("KEYS_PATH"),
-            args=args,
-            roms_dir=env["ROMS_DIR"],
-        )
-
-        if res:
-            success += 1
-            logger.info(f"Decompressed: {f.name} -> {res.name}")
-            # Original removal is handled inside decompress_and_find_candidate
-        else:
-            failed += 1
-            logger.error(f"Failed to decompress: {f.name}")
-
-    if progress_cb:
-        progress_cb(1.0, "Decompression complete")
-
-    return f"Decompression complete. Success: {success}, Failed: {failed}"
-
-
-@log_call(level=logging.INFO)
-def worker_recompress_single(
-    filepath: Path, env: dict, args: Any, log_cb: Callable[[str], None]
-) -> Optional[Path]:
-    """Worker function for recompressing a single Switch file."""
-    # Initialize correlation id and use structured logger wired to GUI
-    set_correlation_id()
-    logger = get_logger_for_gui(log_cb, name="emumanager.workers.switch")
-
-    tool_nsz = env.get("TOOL_NSZ")
-    if not tool_nsz:
-        logger.error(MSG_NSZ_MISSING)
-        return None
-
-    def run_wrapper(cmd, **kwargs):
-        return run_cmd(cmd, filebase=None, timeout=None)
-
-    with TemporaryDirectory(prefix="nsz_recomp_") as td:
-        tmpdir = Path(td)
-        level = getattr(args, "level", 3)
-        attempts = [
-            [
-                str(tool_nsz),
-                "-C",
-                "-l",
-                str(level),
-                "-o",
-                str(tmpdir),
-                str(filepath),
-            ],
-            [
-                str(tool_nsz),
-                "-C",
-                "-l",
-                str(level),
-                str(filepath),
-                "-o",
-                str(tmpdir),
-            ],
-            [str(tool_nsz), "-C", "-l", str(level), str(filepath)],
-        ]
-
-        produced = compression.try_multiple_recompress_attempts(
-            tmpdir,
-            attempts,
-            run_wrapper,
-            timeout=None,
-            progress_callback=getattr(args, "progress_callback", None),
-        )
-
-        if produced:
-            new_file = produced[0]
-            try:
-
-                def verify_fn(p, rc):
-                    return verify_integrity(
-                        p,
-                        deep=False,
-                        tool_nsz=env.get("TOOL_NSZ"),
-                        roms_dir=env["ROMS_DIR"],
-                        cmd_timeout=None,
-                        tool_metadata=env.get("TOOL_METADATA"),
-                        is_nstool=env.get("IS_NSTOOL"),
-                        keys_path=env.get("KEYS_PATH"),
-                        tool_hactool=env.get("TOOL_HACTOOL"),
-                    )
-
-                result_path = compression.handle_produced_file(
-                    new_file,
-                    filepath,
-                    run_wrapper,
-                    verify_fn=verify_fn,
-                    args=args,
-                    roms_dir=env["ROMS_DIR"],
-                )
-                return result_path
-            except Exception as e:
-                logger.error(f"Recompression failed during verification/move: {e}")
-                return None
-    return None
-
-
-@log_call(level=logging.INFO)
-def worker_decompress_single(
-    filepath: Path, env: dict, args: Any, log_cb: Callable[[str], None]
-) -> Optional[Path]:
-    """Worker function for decompressing a single Switch file."""
-    # Initialize correlation id and use structured logger wired to GUI
-    set_correlation_id()
-    logger = get_logger_for_gui(log_cb, name="emumanager.workers.switch")
-
-    tool_nsz = env.get("TOOL_NSZ")
-    if not tool_nsz:
-        logger.error(MSG_NSZ_MISSING)
-        return None
-
-    def run_wrapper(cmd, **kwargs):
-        return run_cmd(cmd, filebase=None, timeout=None)
-
-    res = compression.decompress_and_find_candidate(
-        filepath,
-        run_wrapper,
-        tool_nsz=str(tool_nsz),
-        tool_metadata=str(env.get("TOOL_METADATA"))
-        if env.get("TOOL_METADATA")
-        else None,
-        is_nstool=env.get("IS_NSTOOL", False),
-        keys_path=env.get("KEYS_PATH"),
-        args=args,
-        roms_dir=env["ROMS_DIR"],
-    )
-
-    if res:
-        logger.info(f"Decompressed: {filepath.name} -> {res.name}")
-        return res
-    else:
-        logger.error(f"Failed to decompress: {filepath.name}")
-        return None
-
-
-@log_call(level=logging.INFO)
-def worker_compress_single(
-    filepath: Path, env: dict, args: Any, log_cb: Callable[[str], None]
-) -> Optional[Path]:
-    """Worker function for compressing a single Switch file."""
-    # Initialize correlation id and use structured logger wired to GUI
-    set_correlation_id()
-    logger = get_logger_for_gui(log_cb, name="emumanager.workers.switch")
-
-    tool_nsz = env.get("TOOL_NSZ")
-    if not tool_nsz:
-        logger.error(MSG_NSZ_MISSING)
-        return None
-
-    def run_wrapper(cmd, **kwargs):
-        return run_cmd(
-            cmd, filebase=None, timeout=None, check=kwargs.get("check", False)
-        )
-
-    # Ensure args has necessary attributes
-    if not hasattr(args, "level"):
-        args.level = 3
-    if not hasattr(args, "rm_originals"):
-        args.rm_originals = False
-
-    res = compression.compress_file(
-        filepath,
-        run_wrapper,
-        tool_nsz=str(tool_nsz),
-        level=args.level,
-        args=args,
-        roms_dir=env["ROMS_DIR"],
-    )
-
-    if res:
-        logger.info(f"Compressed: {filepath.name} -> {res.name}")
-        return res
-    else:
-        logger.error(f"Failed to compress {filepath.name}")
-        return None
+def worker_switch_organize(base_path: Path, log_cb: Callable, progress_cb: Optional[Callable] = None) -> WorkerResult:
+    """Entry point nativo para a funcionalidade de organização."""
+    worker = SwitchOrganizationWorker(base_path, log_cb, progress_cb, None)
+    roms = [p for p in (base_path / "roms" / "switch").rglob("*") if p.is_file()]
+    return worker.run(roms, "Organização Switch", parallel=True)

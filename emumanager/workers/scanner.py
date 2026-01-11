@@ -1,149 +1,82 @@
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 from typing import Callable, Optional
 
 from emumanager.library import LibraryDB, LibraryEntry
-from emumanager.logging_cfg import log_call, set_correlation_id
-from emumanager.workers.common import get_logger_for_gui
+from emumanager.workers.common import BaseWorker, set_correlation_id
 
-# Common archive/compressed extensions we should detect and mark in the DB.
-ARCHIVE_EXTS = {
-    ".zip",
-    ".7z",
-    ".rar",
-    ".tar",
-    ".gz",
-    ".bz2",
-    ".xz",
-    ".tgz",
-    ".tbz2",
-}
-
+ARCHIVE_EXTS = {".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz", ".tgz", ".tbz2"}
 
 def is_compressed_file(p: Path) -> bool:
-    """Heuristic: if any suffix indicates an archive/compressed file.
+    return any(suffix.lower() in ARCHIVE_EXTS for suffix in p.suffixes)
 
-    This returns True for names like file.zip, file.iso.zip or file.cso.gz
-    (i.e. any suffix in the chain matches ARCHIVE_EXTS).
-    """
-    try:
-        return any(suffix.lower() in ARCHIVE_EXTS for suffix in p.suffixes)
-    except Exception:
-        return p.suffix.lower() in ARCHIVE_EXTS
+class ScannerWorker(BaseWorker):
+    def _process_file(self, f: Path) -> str:
+        # A lógica do scanner é um pouco diferente da BaseWorker padrão
+        # pois ele decide se deve atualizar ou não.
+        return "success"
 
+    def scan(self) -> dict:
+        set_correlation_id()
+        roms_dir = self.base_path / "roms" if (self.base_path / "roms").exists() else self.base_path
+        self.logger.info(f"Scanning library at {roms_dir}")
+        
+        existing_entries = {entry.path: entry for entry in self.db.get_all_entries()}
+        found_paths = set()
+        
+        system_dirs = [d for d in roms_dir.iterdir() if d.is_dir() and not d.name.startswith(".")]
+        total_systems = len(system_dirs)
 
-@log_call(level=logging.INFO)
-def worker_scan_library(
-    base_dir: Path,
-    log_msg: Callable[[str], None],
-    progress_cb: Optional[Callable[[float, str], None]] = None,
-    cancel_event=None,
-):
-    """
-    Scans the library directory and updates the LibraryDB.
-    """
-    # Initialize correlation id and use structured logger wired to GUI
-    set_correlation_id()
-    logger = get_logger_for_gui(log_msg, name="emumanager.workers.scanner")
-    logger.info(f"Starting library scan at {base_dir}")
+        for i, sys_dir in enumerate(system_dirs):
+            if self.cancel_event.is_set(): break
+            
+            system_name = sys_dir.name
+            if self.progress_cb:
+                self.progress_cb(i / total_systems, f"Scanning {system_name}...")
 
-    db = LibraryDB()
-
-    # Determine roms directory
-    # If base_dir has a 'roms' subdir, use it.
-    # Otherwise, assume base_dir IS the roms directory if it contains system folders.
-    roms_dir = base_dir / "roms"
-    if not roms_dir.exists():
-        # If there's no 'roms' subdir, base_dir might already be the roms folder.
-        # Avoid scanning the entire filesystem by assuming base_dir is correct
-        # when 'roms' is not present.
-        roms_dir = base_dir
-
-    if not roms_dir.exists():
-        logger.warning(f"Directory not found: {roms_dir}")
-        return
-
-    # Get all existing entries from DB to check for removals
-    existing_entries = {entry.path: entry for entry in db.get_all_entries()}
-    found_paths = set()
-
-    # Count total files for progress (approximate)
-    # This might be slow, so maybe we skip total count or do a quick pass?
-    # For now, let's just iterate and update.
-
-    # We can iterate by system folders to give better progress feedback
-    system_dirs = [
-        d for d in roms_dir.iterdir() if d.is_dir() and not d.name.startswith(".")
-    ]
-    total_systems = len(system_dirs)
-
-    for i, sys_dir in enumerate(system_dirs):
-        if cancel_event and cancel_event.is_set():
-            logger.info("Scan cancelled.")
-            return
-
-        system_name = sys_dir.name
-        if progress_cb:
-            progress_cb(i / total_systems, f"Scanning {system_name}...")
-
-        for root, _, files in os.walk(sys_dir):
-            for file in files:
-                if cancel_event and cancel_event.is_set():
-                    return
-
-                file_path = Path(root) / file
-                str_path = str(file_path)
+            for file_path in sys_dir.rglob("*"):
+                if self.cancel_event.is_set(): break
+                if not file_path.is_file() or file_path.name.startswith("."): continue
+                
+                str_path = str(file_path.resolve())
                 found_paths.add(str_path)
-
+                
                 stat = file_path.stat()
-                size = stat.st_size
-                mtime = stat.st_mtime
-
-                # Check if entry exists and is up to date
                 entry = existing_entries.get(str_path)
-                if entry:
-                    if entry.size == size and entry.mtime == mtime:
-                        continue  # No change
+                
+                if entry and entry.size == stat.st_size and abs(entry.mtime - stat.st_mtime) < 1.0:
+                    continue
 
-                # New or modified file
-                # We don't calculate hashes here, just basic info
-                # If the file is an archive/compressed file we mark it so the
-                # rest of the application can decide to skip deep-inspection.
-                detected_status = entry.status if entry else "UNKNOWN"
-                if is_compressed_file(file_path):
-                    detected_status = "COMPRESSED"
-                    logger.info(
-                        "Detected compressed/archive file, marking as COMPRESSED: %s",
-                        file_path,
-                    )
+                status = "COMPRESSED" if is_compressed_file(file_path) else (entry.status if entry else "UNKNOWN")
+                if status == "COMPRESSED":
+                    self.logger.info(f"Compressed file detected: {file_path.name}")
 
                 new_entry = LibraryEntry(
                     path=str_path,
                     system=system_name,
-                    size=size,
-                    mtime=mtime,
+                    size=stat.st_size,
+                    mtime=stat.st_mtime,
+                    status=status,
                     crc32=entry.crc32 if entry else None,
                     md5=entry.md5 if entry else None,
                     sha1=entry.sha1 if entry else None,
-                    sha256=entry.sha256 if entry else None,
-                    status=detected_status,
                     match_name=entry.match_name if entry else None,
                     dat_name=entry.dat_name if entry else None,
                 )
-                db.update_entry(new_entry)
+                self.db.update_entry(new_entry)
+                self.stats["success"] += 1
 
-    # Remove deleted files
-    for path in existing_entries:
-        if path not in found_paths:
-            db.remove_entry(path)
+        # Cleanup
+        for path in existing_entries:
+            if path not in found_paths:
+                self.db.remove_entry(path)
+                self.stats["skipped"] += 1
 
-    logger.info("Library scan complete.")
+        if self.progress_cb: self.progress_cb(1.0, "Scan complete")
+        return self.stats
 
-    # Return stats
-    total_count = db.get_total_count()
-    total_size = db.get_total_size()
-
-    return {"count": total_count, "size": total_size}
+def worker_scan_library(base_dir: Path, log_msg: Callable[[str], None], progress_cb: Optional[Callable[[float, str], None]] = None, cancel_event=None):
+    worker = ScannerWorker(base_dir, log_msg, progress_cb, cancel_event)
+    return worker.scan()

@@ -1,340 +1,74 @@
 #!/usr/bin/env python3
 """
-Manager module
+Manager Facade
 
-O módulo Manager atua como o controlador principal e ponto de entrada
-para operações de alto nível. Ele orquestra chamadas para outros
-módulos (Architect, Workers, Switch Tools) e fornece a interface CLI.
-
-Funcionalidades principais:
--   **Detecção de Sistema**:
-    Implementa lógica heurística (`guess_system_for_file`) para
-    determinar a qual console um arquivo pertence. A detecção usa
-    extensão, padrões de nome (ex: Serial PS2) e estrutura de
-    diretórios.
--   **Interface CLI**:
-    Processamento de argumentos de linha de comando para operações
-    como `init`, `add` e `organize`.
--   **Integração**:
-    Conecta a interface do usuário (GUI/CLI) com a lógica de
-    negócios (Architect/Workers).
+Este módulo atua como a interface pública simplificada do EmuManager,
+delegando a lógica pesada para o pacote 'core'.
 """
 
 from __future__ import annotations
 
-import argparse
-import logging
-import shutil
-import uuid
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
-from . import architect
 from .config import BASE_DEFAULT, EXT_TO_SYSTEM
-from .logging_cfg import get_logger
-from .switch import cli as switch_cli
-from .verification.dat_downloader import DatDownloader
+from .core.session import Session
+from .core.orchestrator import Orchestrator
+
+
+def get_orchestrator(base_dir: Path | str) -> Orchestrator:
+    """Helper para obter um orquestrador configurado."""
+    session = Session(base_dir)
+    return Orchestrator(session)
 
 
 def guess_system_for_file(path: Path) -> Optional[str]:
-    """Guess the target system for a ROM file.
-
-    Strategy:
-    - Direct mapping by extension when unambiguous.
-    - For ambiguous extensions (.iso, .chd, .bin, .zip, .pkg), try:
-      - Detect system hints from path segments (e.g., 'ps2', 'psx', 'wii').
-      - Detect known title IDs in filename (PS2: SLUS/SLES...; PS3: BLUS/BLES...).
-    - Fall back to extension mapping if no better hint is found.
-    """
-
-    name = path.name.upper()
-    ext = path.suffix.lower()
-    mapped = EXT_TO_SYSTEM.get(ext)
-
-    # If extension maps to a specific system and is not ambiguous, return it
-    ambiguous_exts = {".iso", ".chd", ".bin", ".zip", ".pkg"}
-    if mapped and ext not in ambiguous_exts:
-        return mapped
-
-    # 1) Path-based hint: look for known system names in any path segment
-    system_aliases = {
-        "psx": "psx",
-        "ps1": "psx",
-        "playstation": "psx",
-        "ps2": "ps2",
-        "ps3": "ps3",
-        "psp": "psp",
-        "psvita": "psvita",
-        "vita": "psvita",
-        "gamecube": "gamecube",
-        "gc": "gamecube",
-        "wii": "wii",
-        "wiiu": "wiiu",
-        "switch": "switch",
-        "nes": "nes",
-        "snes": "snes",
-        "megadrive": "megadrive",
-        "genesis": "megadrive",
-        "mastersystem": "mastersystem",
-        "dreamcast": "dreamcast",
-        "mame": "mame",
-        "fbneo": "mame",
-        "xbox": "xbox_classic",
-        "xbox360": "xbox360",
-        "gba": "gba",
-        "nds": "nds",
-        "n64": "n64",
-        "3ds": "3ds",
-        "neogeo": "neogeo",
-    }
-    for part in path.parts:
-        alias = system_aliases.get(part.lower())
-        if alias:
-            return alias
-
-    # 2) Filename heuristics for disc identifiers
-    # PS2 serials: SLUS-xxxxx, SLES-xxxxx, SCUS-xxxxx, SCES-xxxxx, SLPS-, SLPM-, etc.
-    ps2_tags = (
-        "SLUS-",
-        "SLES-",
-        "SCUS-",
-        "SCES-",
-        "SLPS-",
-        "SLPM-",
-        "SLKA-",
-        "SLED-",
-    )
-    if any(tag in name for tag in ps2_tags):
-        return "ps2"
-
-    # PSP product codes: ULUS, ULES, NPJH, UCUS, etc.
-    psp_tags = (
-        "ULUS",
-        "ULES",
-        "NPJH",
-        "NPUG",
-        "UCUS",
-        "ULJM",
-        "ULJS",
-        "ULKS",
-        "ULEM",
-    )
-    if any(tag in name for tag in psp_tags):
-        return "psp"
-
-    # PS3 codes: BLUS, BLES, BCES, BLJM
-    ps3_tags = ("BLUS", "BLES", "BCES", "BLJM")
-    if any(tag in name for tag in ps3_tags):
-        return "ps3"
-
-    # 3) Lightweight header sniffing for GC/Wii ISOs
-    # GameCube/Wii disc IDs commonly appear at offset 0 as 6 ASCII chars.
-    # Heuristic: first char 'G' -> GameCube; 'R' or 'S' -> Wii.
-    if ext == ".iso":
-        try:
-            with open(path, "rb") as f:
-                header = f.read(8)
-            if header and len(header) >= 6:
-                disc_id = header[:6]
-                # Ensure alphanumeric uppercase pattern
-                if all((65 <= b <= 90) or (48 <= b <= 57) for b in disc_id):
-                    first = chr(disc_id[0])
-                    if first == "G":
-                        return "gamecube"
-                    if first in ("R", "S"):
-                        return "wii"
-        except Exception:
-            pass
-
-    # Fallback to extension mapping (may be ambiguous but better than None)
-    return mapped
+    """Heurística avançada para detetar o sistema de um ficheiro."""
+    from .common.registry import registry
+    provider = registry.find_provider_for_file(path)
+    if provider and provider.system_id != "unknown":
+        return provider.system_id
+        
+    # Fallback para heurística baseada em nome de pasta/ficheiro se o provider falhar
+    path_str = str(path).lower()
+    for sys_id in registry.list_systems():
+        if sys_id in path_str:
+            return sys_id
+            
+    return None
 
 
-def cmd_init(base_dir: Path, dry_run: bool) -> int:
-    logger = get_logger("manager", base_dir=base_dir)
-    op = uuid.uuid4().hex
-    adapter = logging.LoggerAdapter(logger, {"operation_id": op})
-    adapter.info("[op=%s] Calling init on %s (dry=%s)", op, base_dir, dry_run)
-    args: List[str] = [str(base_dir)]
-    if dry_run:
-        args.append("--dry-run")
-    return architect.main(args)
+def cmd_init(base_dir: Path, dry_run: bool = False) -> int:
+    orch = get_orchestrator(base_dir)
+    orch.initialize_library(dry_run=dry_run)
+    return 0
 
 
-def cmd_list_systems(base_dir: Path):
-    logger = get_logger("manager", base_dir=base_dir)
-    roms = get_roms_dir(base_dir)
+def cmd_list_systems(base_dir: Path) -> list[str]:
+    roms = base_dir / "roms" if (base_dir / "roms").is_dir() else base_dir
     if not roms.exists():
-        logger.debug("No roms directory at %s", roms)
         return []
-    systems = sorted(
-        [p.name for p in roms.iterdir() if p.is_dir() and not p.name.startswith(".")]
-    )
-    logger.debug("Found systems: %s", systems)
-    return systems
+    # Usar set() para eliminar duplicados e depois ordenar
+    systems = {p.name for p in roms.iterdir() if p.is_dir() and not p.name.startswith(".")}
+    return sorted(list(systems))
 
 
-def cmd_add_rom(
-    src: Path,
-    base_dir: Path,
-    system: Optional[str],
-    move: bool = False,
-    dry_run: bool = False,
-) -> Path:
-    logger = get_logger("manager", base_dir=base_dir)
-    op = uuid.uuid4().hex
-    adapter = logging.LoggerAdapter(logger, {"operation_id": op})
-    if not src.exists():
-        adapter.error("Source not found: %s", src)
-        raise FileNotFoundError(src)
 
-    target_sys = system or guess_system_for_file(src)
-    if not target_sys:
-        logger.error("Unable to guess system for file: %s", src)
-        raise ValueError("Unable to guess system for file; please pass --system")
-
-    roms_dir = get_roms_dir(base_dir)
-    dest_dir = roms_dir / target_sys
-    dest_dir.mkdir(parents=True, exist_ok=True)
-
-    dest = dest_dir / src.name
-    adapter.info("Adding ROM %s -> %s (move=%s dry=%s)", src, dest, move, dry_run)
-    if dry_run:
-        return dest
-
-    if move:
-        shutil.move(str(src), str(dest))
-    else:
-        shutil.copy2(str(src), str(dest))
-
-    return dest
+def cmd_add_rom(src: Path, base_dir: Path, system: Optional[str] = None, move: bool = False) -> Path:
+    orch = get_orchestrator(base_dir)
+    return orch.add_rom(src, system=system, move=move)
 
 
 def cmd_update_dats(base_dir: Path, source: str | None = None) -> int:
-    """Download DAT files from Libretro database."""
-    logger = get_logger("manager")
-    op = uuid.uuid4().hex
-    adapter = logging.LoggerAdapter(logger, {"operation_id": op})
-    dats_dir = base_dir / "dats"
-
-    if not dats_dir.exists():
-        logger.error(f"DATs directory not found at {dats_dir}. Run 'init' first.")
-        return 1
-
-    downloader = DatDownloader(dats_dir)
-    sources = [source] if source else ["no-intro", "redump"]
-
-    for src in sources:
-        adapter.info("Checking available DATs for %s...", src)
-        available = downloader.list_available_dats(src)
-
-        if not available:
-            adapter.warning("No DATs found for %s", src)
-            continue
-
-        adapter.info("Found %s DATs for %s. Downloading...", len(available), src)
-        for filename in available:
-            # Check if already exists? For now, overwrite or skip logic could be added.
-            # We'll just download all for now as requested.
-            downloader.download_dat(src, filename)
-
-    adapter.info("DAT update complete.")
-    return 0
+    orch = get_orchestrator(base_dir)
+    return orch.update_dats()
 
 
-def get_roms_dir(base_dir: Path) -> Path:
-    """Resolve the roms directory given a base path.
-
-    Handles cases where base_dir is the project root OR the roms folder itself.
-    """
-    # 1. If base_dir looks like the roms folder itself, prefer it.
-    # This prevents issues if a 'roms' folder accidentally exists inside
-    # the roms folder.
-    if base_dir.name == "roms":
-        return base_dir
-
-    # 2. If base_dir/roms exists, use it.
-    if (base_dir / "roms").is_dir():
-        return base_dir / "roms"
-
-    # 3. Fallback: assume standard structure (base/roms)
-    return base_dir / "roms"
+def cmd_generate_report(base_dir: Path, output_file: str = "report.csv") -> bool:
+    orch = get_orchestrator(base_dir)
+    return orch.generate_compliance_report(Path(output_file))
 
 
-def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(
-        prog="emumanager", description="Manage emulation collection"
-    )
-    sub = p.add_subparsers(dest="cmd", required=True)
-
-    sp = sub.add_parser("init", help="Create standard folder structure")
-    sp.add_argument("base_dir", nargs="?", default=BASE_DEFAULT)
-    sp.add_argument("--dry-run", action="store_true")
-
-    sp = sub.add_parser(
-        "list-systems", help="List configured systems (folders under roms)"
-    )
-    sp.add_argument("base_dir", nargs="?", default=BASE_DEFAULT)
-
-    sp = sub.add_parser("add-rom", help="Add a ROM file to the collection")
-    sp.add_argument("src", help="Path to ROM file")
-    sp.add_argument("base_dir", nargs="?", default=BASE_DEFAULT)
-    sp.add_argument("--system", help="Target system folder (e.g. nes, snes)")
-    sp.add_argument("--move", action="store_true", help="Move file instead of copying")
-    sp.add_argument("--dry-run", action="store_true")
-
-    sp = sub.add_parser(
-        "switch",
-        help="Manage Switch ROMs (organize, compress, verify)",
-        add_help=False,
-    )
-    sp.add_argument(
-        "args",
-        nargs=argparse.REMAINDER,
-        help="Arguments passed to switch organizer",
-    )
-
-    sp = sub.add_parser("update-dats", help="Download/Update DAT files")
-    sp.add_argument("base_dir", nargs="?", default=BASE_DEFAULT)
-    sp.add_argument(
-        "--source", choices=["no-intro", "redump"], help="Limit to specific source"
-    )
-
-    return p.parse_args(argv)
-
-
-def main(argv: List[str] | None = None) -> int:
-    args = parse_args(argv)
-
-    if args.cmd == "init":
-        return cmd_init(Path(args.base_dir), args.dry_run)
-    elif args.cmd == "list-systems":
-        systems = cmd_list_systems(Path(args.base_dir))
-        print("\n".join(systems))
-        return 0
-    elif args.cmd == "add-rom":
-        try:
-            cmd_add_rom(
-                Path(args.src),
-                Path(args.base_dir),
-                args.system,
-                args.move,
-                args.dry_run,
-            )
-            return 0
-        except Exception as e:
-            print(f"Error: {e}")
-            return 1
-    elif args.cmd == "update-dats":
-        return cmd_update_dats(Path(args.base_dir), args.source)
-    elif args.cmd == "switch":
-        # Delegate to switch module
-        # We need to reconstruct argv for switch_cli
-        # args.args contains the remainder
-        return switch_cli.main(args.args)
-
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+def cmd_cleanup_duplicates(base_dir: Path, dry_run: bool = False) -> dict[str, int]:
+    orch = get_orchestrator(base_dir)
+    return orch.cleanup_duplicates(dry_run=dry_run)

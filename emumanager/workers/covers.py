@@ -36,10 +36,8 @@ class CoverDownloader(QRunnable):
             # For PS2, GameTDB has 'ps2'.
             pass
 
-        # Construct local path
-        file_path = os.path.join(
-            self.cache_dir, "covers", gametdb_system, f"{self.game_id}.jpg"
-        )
+        from pathlib import Path
+        file_path = str(Path(self.cache_dir) / "covers" / gametdb_system / f"{self.game_id}.jpg")
 
         # Check cache
         if os.path.exists(file_path):

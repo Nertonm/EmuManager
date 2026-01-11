@@ -1,668 +1,187 @@
 from __future__ import annotations
 
+import abc
 import hashlib
 import logging
-import tempfile
+import threading
+import time
+import multiprocessing
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Iterable, Optional, TypeVar
 
-import emumanager.common.execution as execution
-from emumanager.common.models import VerifyResult
-from emumanager.library import LibraryDB, LibraryEntry
-from emumanager.logging_cfg import get_correlation_id, log_call, set_correlation_id
+from emumanager.library import LibraryDB
+from emumanager.logging_cfg import get_correlation_id, set_correlation_id, get_logger
 
-# Constants for logging
-LOG_WARN = "WARN: "
-LOG_ERROR = "ERROR: "
-LOG_EXCEPTION = "EXCEPTION: "
-MSG_CANCELLED = "Operation cancelled by user."
+@dataclass(slots=True)
+class WorkerResult:
+    """Objeto de retorno estruturado para operações de workers."""
+    task_name: str
+    success_count: int = 0
+    failed_count: int = 0
+    skipped_count: int = 0
+    errors: list[dict[str, str]] = field(default_factory=list)
+    slowest_items: list[tuple[str, float]] = field(default_factory=list) # (nome, segundos)
+    processed_items: list[dict[str, Any]] = field(default_factory=list) # Detalhes para o relatório
+    duration_ms: float = 0.0
+
+    def add_item_result(self, path: Path, status: str, duration: float, original_size: int = 0, final_size: int = 0, system: str = "Unknown"):
+        """Regista o resultado individual de um item para o relatório HTML."""
+        self.processed_items.append({
+            "name": path.name,
+            "system": system,
+            "status": status,
+            "duration": f"{duration:.2f}s",
+            "original_size": original_size,
+            "final_size": final_size,
+            "savings": f"{(1 - (final_size/original_size))*100:.1f}%" if final_size and original_size else "0%"
+        })
+        self.add_timing(path, duration)
 
 
-class GuiLogHandler(logging.Handler):
-    """Logging handler that redirects LogRecords to the GUI callback.
 
-    The handler is robust: it ensures a formatter is present (defaults to the
-    project's JsonFormatter) and shields the GUI from handler errors.
-    """
+
+    def __str__(self) -> str:
+        return (f"{self.task_name} concluído em {self.duration_ms:.2f}ms. "
+                f"Sucesso: {self.success_count}, Falhas: {self.failed_count}, "
+                f"Ignorados: {self.skipped_count}")
+
+def _mp_worker_init(cid: str | None):
+    """Inicializador para processos filhos."""
+    set_correlation_id(cid)
+
+class BaseWorker(abc.ABC):
+    """Motor de execução para tarefas em lote com suporte a Multiprocessing."""
 
     def __init__(
-        self,
-        log_callback: Callable[[str], None],
-        formatter: logging.Formatter | None = None,
+        self, 
+        base_path: Path, 
+        log_cb: Callable[[str], None], 
+        progress_cb: Optional[Callable[[float, str], None]] = None, 
+        cancel_event: Optional[threading.Event] = None
     ):
-        super().__init__()
-        self.log_callback = log_callback
-        # Import here to avoid circular import at module import time
-        try:
-            from emumanager.logging_cfg import JsonFormatter
+        self.base_path = Path(base_path).resolve()
+        self.log_cb = log_cb
+        self.progress_cb = progress_cb
+        self.cancel_event = cancel_event or threading.Event()
+        self.logger = get_logger(self.__class__.__name__)
+        self.db = LibraryDB()
+        self._result = WorkerResult(task_name=self.__class__.__name__)
 
-            default_formatter = JsonFormatter()
-        except Exception:
-            default_formatter = logging.Formatter(
-                "%(asctime)s - %(levelname)s - %(message)s"
-            )
+    def run(self, items: Iterable[Path], task_label: str = "Processando", parallel: bool = False, mp_args: tuple = ()) -> WorkerResult:
+        """Executa a tarefa. Se 'parallel' for True, usa múltiplos núcleos."""
+        start_time = time.perf_counter()
+        set_correlation_id()
+        
+        item_list = list(items)
+        total = len(item_list)
+        if total == 0:
+            return self._result
 
-        self.setFormatter(formatter or default_formatter)
+        self.logger.info(f"Iniciando {task_label} ({'PARALELO' if parallel else 'SEQUENCIAL'}) em {total} itens.")
 
-    def emit(self, record: logging.LogRecord) -> None:
-        try:
-            # Use the raw message text for GUI callbacks to keep tests and
-            # consumers simple (they expect plain strings). Include a simple
-            # level-based prefix so callers that assert for WARN/ERROR messages
-            # continue to work (many tests expect the "WARN: "/"ERROR: "
-            # prefixes).
-            msg_text = record.getMessage()
-            prefix = ""
+        if parallel:
+            self._run_parallel(item_list, task_label, mp_args)
+        else:
+            self._run_sequential(item_list, task_label)
+
+        self._result.duration_ms = (time.perf_counter() - start_time) * 1000
+        if self.progress_cb:
+            self.progress_cb(1.0, f"{task_label} Finalizado")
+            
+        return self._result
+
+    def _run_sequential(self, items: list[Path], label: str):
+        total = len(items)
+        for i, item in enumerate(items):
+            if self.cancel_event.is_set(): break
+            if self.progress_cb: self.progress_cb(i / total, f"{label}: {item.name}")
+            
+            start_item = time.perf_counter()
             try:
-                if record.levelno >= logging.ERROR:
-                    prefix = LOG_ERROR
-                elif record.levelno >= logging.WARNING:
-                    prefix = LOG_WARN
-            except Exception:
-                prefix = ""
-
-            # Guard the callback in case it raises
-            try:
-                self.log_callback(prefix + msg_text)
-            except Exception:
-                # Best-effort: swallow GUI callback errors to avoid crashing app
-                pass
-        except Exception:
-            self.handleError(record)
-
-
-# Expose lightweight wrappers around execution helpers so tests can patch
-# emumanager.common.execution.find_tool and have calls routed dynamically.
-def find_tool(name: str):
-    return execution.find_tool(name)
-
-
-def run_cmd(*args, **kwargs):
-    return execution.run_cmd(*args, **kwargs)
-
-
-def get_logger_for_gui(
-    log_callback: Callable[[str], None],
-    name: str = "emumanager",
-    level: int = logging.INFO,
-) -> logging.Logger:
-    """Create or return a logger wired to a GuiLogHandler.
-
-    This is idempotent: if a handler for the provided callback is already
-    attached it won't be added again.
-    """
-    logger = logging.getLogger(name)
-    logger.setLevel(level)
-
-    # Check existing handlers for a GuiLogHandler using the same callback
-    for h in logger.handlers:
-        if (
-            isinstance(h, GuiLogHandler)
-            and getattr(h, "log_callback", None) == log_callback
-        ):
-            return logger
-
-    # Add a new GuiLogHandler
-    handler = GuiLogHandler(log_callback)
-    # Keep structured output by default (JsonFormatter is set inside GuiLogHandler)
-    logger.addHandler(handler)
-    # Prevent propagation to root to avoid duplicate messages in console
-    logger.propagate = False
-    return logger
-
-
-class GuiLogger:
-    """Adapter to redirect logs to the GUI's log_msg method."""
-
-    def __init__(self, log_callback: Callable[[str], None]):
-        self.log_callback = log_callback
-
-    def info(self, msg, *args):
-        cid = get_correlation_id()
-        prefix = f"[{cid}] " if cid else ""
-        self.log_callback(prefix + (msg % args if args else msg))
-
-    def warning(self, msg, *args):
-        cid = get_correlation_id()
-        prefix = f"[{cid}] " if cid else ""
-        self.log_callback(prefix + LOG_WARN + (msg % args if args else msg))
-
-    def error(self, msg, *args):
-        cid = get_correlation_id()
-        prefix = f"[{cid}] " if cid else ""
-        self.log_callback(prefix + LOG_ERROR + (msg % args if args else msg))
-
-    def debug(self, msg, *args):
-        pass  # Ignore debug logs in GUI by default
-
-    def exception(self, msg, *args):
-        cid = get_correlation_id()
-        prefix = f"[{cid}] " if cid else ""
-        self.log_callback(prefix + LOG_EXCEPTION + (msg % args if args else msg))
-
-
-def calculate_file_hash(
-    file_path: Path,
-    algo: str = "md5",
-    chunk_size: int = 8192,
-    progress_cb=None,
-) -> str:
-    """Calculate hash of a file."""
-    h = hashlib.new(algo)
-    total_size = file_path.stat().st_size
-    processed = 0
-
-    with open(file_path, "rb") as f:
-        while chunk := f.read(chunk_size):
-            h.update(chunk)
-            processed += len(chunk)
-            if progress_cb:
-                progress_cb(processed / total_size)
-    return h.hexdigest()
-
-
-def create_file_progress_cb(
-    main_progress_cb: Optional[Callable[[float, str], None]],
-    start_prog: float,
-    file_weight: float,
-    filename: str,
-):
-    """
-    Creates a callback for file operations that updates the main progress bar.
-
-    Args:
-        main_progress_cb: The main progress callback (accepts float, str).
-        start_prog: The progress value (0.0-1.0) where this file starts.
-        file_weight: The portion of the total progress this file represents (0.0-1.0).
-        filename: The name of the file being processed.
-    """
-    if not main_progress_cb:
-        return None
-
-    def cb(file_prog: float):
-        # Calculate total progress: start + (file_progress * weight)
-        current = start_prog + (file_prog * file_weight)
-        main_progress_cb(current, f"Processing {filename} ({int(file_prog * 100)}%)...")
-
-    return cb
-
-
-def find_target_dir(base_path: Path, subdirs: list[str]) -> Optional[Path]:
-    """Finds a target directory from a list of candidates relative to base_path."""
-    for sub in subdirs:
-        p = base_path / sub
-        if p.exists() and p.is_dir():
-            return p
-    # Fallback: check if base_path itself matches one of the subdirs names
-    for sub in subdirs:
-        if base_path.name == Path(sub).name:
-            return base_path
-    return None
-
-
-def _clean_junk_files(
-    files: list[Path],
-    args: Any,
-    logger: GuiLogger,
-    progress_cb: Optional[Callable[[float, str], None]] = None,
-) -> int:
-    count = 0
-    total = len(files)
-    junk_exts = {".txt", ".nfo", ".url", ".lnk", ".website"}
-
-    for i, f in enumerate(files):
-        if progress_cb and i % 50 == 0:
-            progress_cb(i / total, f"Scanning junk... {int(i / total * 100)}%")
-
-        if f.suffix.lower() in junk_exts:
-            try:
-                if not getattr(args, "dry_run", False):
-                    from emumanager.common.fileops import safe_unlink
-
-                    safe_unlink(f, logger)
-                else:
-                    logger.info(f"[DRY-RUN] Would delete junk file: {f.name}")
-                count += 1
+                status = self._process_item(item)
+                self._update_stats(status)
+                self._result.add_timing(item, time.perf_counter() - start_item)
             except Exception as e:
-                logger.error(f"Failed to delete {f.name}: {e}")
-    return count
+                self._result.add_error(item, str(e))
 
 
-def _clean_empty_dirs(
-    dirs: list[Path],
-    args: Any,
-    logger: GuiLogger,
-    progress_cb: Optional[Callable[[float, str], None]] = None,
-) -> int:
-    count = 0
-    total = len(dirs)
-    # Sort reverse to delete nested empty dirs first
-    sorted_dirs = sorted(dirs, key=lambda x: len(str(x)), reverse=True)
-
-    for i, d in enumerate(sorted_dirs):
-        if progress_cb and i % 10 == 0:
-            progress_cb(i / total, f"Scanning dirs... {int(i / total * 100)}%")
-
-        try:
-            if not any(d.iterdir()):
-                if not getattr(args, "dry_run", False):
-                    d.rmdir()
-                logger.info(f"Deleted empty dir: {d.name}")
-                count += 1
-        except Exception:
-            pass
-    return count
-
-
-@log_call(level=logging.INFO)
-def worker_clean_junk(
-    base_path: Path,
-    args: Any,
-    log_cb: Callable[[str], None],
-    list_files_fn: Callable[[Path], list[Path]],
-    list_dirs_fn: Callable[[Path], list[Path]],
-) -> str:
-    """Worker function for cleaning junk files."""
-    # Initialize correlation id and use structured logger wired to GUI
-    set_correlation_id()
-
-    logger = get_logger_for_gui(log_cb, name="emumanager.workers.common")
-
-    files = list_files_fn(base_path)
-    dirs = list_dirs_fn(base_path)
-
-    progress_cb = getattr(args, "progress_callback", None)
-
-    deleted_files = _clean_junk_files(files, args, logger, progress_cb)
-    deleted_dirs = _clean_empty_dirs(dirs, args, logger, progress_cb)
-
-    if progress_cb:
-        progress_cb(1.0, "Cleanup complete")
-
-    return (
-        f"Cleanup complete. Deleted {deleted_files} files and "
-        f"{deleted_dirs} empty directories."
-    )
-
-
-def skip_if_compressed(
-    file_path: Path, logger: GuiLogger, db: LibraryDB | None = None
-) -> bool:
-    """Check library DB for this file and, if marked COMPRESSED, log and
-    create an action entry. Returns True if processing should be skipped.
-
-    Accepts an optional `db` parameter so callers (and tests) can inject a
-    specific LibraryDB instance (useful for temporary DBs). If `db` is None,
-    a default LibraryDB() is used (backwards compatible).
-    """
-    try:
-        local_db = db if db is not None else LibraryDB()
-        entry = local_db.get_entry(str(file_path))
-        if entry and entry.status == "COMPRESSED":
-            # If a file is marked COMPRESSED in the DB, most formats should be
-            # skipped to avoid expensive decompression. However, CHD files may
-            # contain a header SHA1 that allows DAT verification without full
-            # extraction. Do not short-circuit .chd files here; let callers
-            # perform CHD-specific verification/fallback logic.
-            suffix = file_path.suffix.lower()
-            if suffix == ".chd":
+    def _run_parallel(self, items: list[Path], label: str, mp_args: tuple):
+        total = len(items)
+        max_workers = max(1, multiprocessing.cpu_count() - 1)
+        
+        with ProcessPoolExecutor(
+            max_workers=max_workers,
+            initializer=_mp_worker_init,
+            initargs=(get_correlation_id(),)
+        ) as executor:
+            futures = {executor.submit(self.__class__._dispatch_mp, self.base_path, item, *mp_args): item for item in items}
+            
+            for i, future in enumerate(as_completed(futures)):
+                if self.cancel_event.is_set():
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    break
+                
+                item = futures[future]
+                if self.progress_cb: self.progress_cb(i / total, f"{label}: {item.name}")
+                
                 try:
-                    msg = (
-                        "CHD flagged COMPRESSED in DB; will attempt CHD-specific "
-                        f"verification: {file_path.name}"
-                    )
-                    logger.info(msg)
-                except Exception:
-                    pass
-                return False
+                    status, duration = future.result()
+                    self._update_stats(status)
+                    self._result.add_timing(item, duration)
+                except Exception as e:
+                    self._result.add_error(item, str(e))
 
-            logger.info(f"Skipping compressed file (logged): {file_path.name}")
-            try:
-                local_db.log_action(
-                    str(file_path),
-                    "SKIPPED_COMPRESSED",
-                    "Scanner detected compressed file",
-                )
-            except Exception:
-                # If logging fails, don't break the worker; just proceed to skip
-                logger.warning(f"Failed to write action log for {file_path.name}")
-            return True
-    except Exception:
-        # If DB unavailable, don't skip — let the worker decide (avoid false skips)
-        logger.debug(f"Could not check library DB for {file_path}")
-    return False
+    @classmethod
+    def _dispatch_mp(cls, base_path: Path, item: Path, *args) -> tuple[str, float]:
+        """Ponto de entrada estático para o processo filho."""
+        start = time.perf_counter()
+        instance = cls(base_path, lambda x: None, None, None, *args)
+        status = instance._process_item(item)
+        return status, time.perf_counter() - start
 
 
-def emit_verification_result(
-    per_file_cb: Optional[Callable[[VerifyResult], None]] = None,
-    filename: str | Path = "",
-    status: str = "UNKNOWN",
-    serial: Optional[str] = None,
-    title: Optional[str] = None,
-    md5: Optional[str] = None,
-    sha1: Optional[str] = None,
-    crc: Optional[str] = None,
-    **kwargs,
-):
-    """Emit a standardized verification result."""
-    if not per_file_cb:
-        return
-    try:
-        match_name = None
-        if title and serial:
-            match_name = f"{title} [{serial}]"
-        elif title:
-            match_name = title
-        elif serial:
-            match_name = f"[{serial}]"
+    def _update_stats(self, status: str):
+        if status == "success": self._result.success_count += 1
+        elif status == "skipped": self._result.skipped_count += 1
+        else: self._result.failed_count += 1
 
-        fname = filename.name if isinstance(filename, Path) else str(filename)
-        fpath = str(filename) if isinstance(filename, Path) else None
-
-        res = VerifyResult(
-            filename=fname,
-            status=status,
-            match_name=match_name,
-            crc=crc,
-            sha1=sha1,
-            md5=md5,
-            sha256=None,
-            full_path=fpath,
-        )
-        per_file_cb(res)
-    except Exception:
+    @abc.abstractmethod
+    def _process_item(self, item: Path) -> str:
         pass
 
-
-def make_result_collector(per_file_cb, results_list):
-    """Create a collector function that feeds both a callback and a list."""
-
-    def _collector(d: Any, _cb=per_file_cb, _lst=results_list):
-        if callable(_cb):
-            try:
-                _cb(d)
-            except Exception:
-                pass
-        if isinstance(_lst, list):
-            _lst.append(d)
-
-    return _collector
-
-
-def identify_game_by_hash(
-    file_path: Path,
-    db: LibraryDB | None = None,
-    progress_cb: Optional[Callable[[float], None]] = None,
-) -> Optional[LibraryEntry]:
-    """Try to identify a library entry for `file_path` by computing a strong
-    hash (sha1) and looking up the library DB. Returns a LibraryEntry if a
-    matching hash is found, otherwise None.
-
-    This function is intentionally conservative: it computes only the sha1
-    (fast enough for typical ROM sizes) and consults the library DB's
-    `find_entry_by_hash` method. Callers can then prefer the returned
-    entry's `match_name` or `dat_name` when constructing a canonical filename
-    for renaming.
-    """
-    try:
-        local_db = db if db is not None else LibraryDB()
-        # Compute SHA1; use progress callback if provided
-        sha1 = calculate_file_hash(file_path, "sha1", progress_cb=progress_cb)
-        if not sha1:
-            return None
-        found = local_db.find_entry_by_hash(sha1)
-        return found
-    except Exception:
-        return None
-
-
-def ensure_hashes_in_db(
-    file_path: Path,
-    db: LibraryDB | None = None,
-    progress_cb: Optional[Callable[[float], None]] = None,
-    logger: GuiLogger | None = None,
-):
-    """Ensure MD5 and SHA1 hashes for `file_path` are present in the LibraryDB.
-
-    - If an entry exists and hashes are present, nothing is done.
-    - Otherwise compute MD5 and SHA1 and upsert a LibraryEntry with those values.
-
-    Returns a tuple (md5, sha1).
-    """
-    try:
-        local_db = db if db is not None else LibraryDB()
-        p = Path(file_path)
-        # Try to read existing entry
-        entry = local_db.get_entry(str(p))
-        md5 = entry.md5 if entry and entry.md5 else None
-        sha1 = entry.sha1 if entry and entry.sha1 else None
-
-        if md5 and sha1:
-            return md5, sha1
-
-        # Prepare an effective logger: prefer the provided GUI logger for
-        # messages intended to be shown to the user; otherwise fall back to
-        # the module logger.
-        eff_logger: logging.Logger | GuiLogger
-        if logger:
-            eff_logger = logger
-        else:
-            eff_logger = logging.getLogger("emumanager.workers.common")
-
-        # If the file is a compressed/container format, try to extract to a
-        # temporary ISO using the appropriate tool and compute hashes on the
-        # extracted data. This gives consistent hashes for compressed games
-        # (e.g. .cso, .chd) using the same external tooling the project uses.
-        tmp_iso = None
+    def safe_hash(self, path: Path, algo: str = "sha1") -> str | None:
         try:
-            suffix = p.suffix.lower()
-            if suffix == ".cso":
-                maxcso = find_tool("maxcso")
-                if maxcso:
-                    try:
-                        with tempfile.NamedTemporaryFile(
-                            suffix=".iso",
-                            delete=False,
-                        ) as tf:
-                            tmp_iso = Path(tf.name)
-                        cmd = [
-                            str(maxcso),
-                            "--decompress",
-                            str(p),
-                            "-o",
-                            str(tmp_iso),
-                        ]
-                        # Inform the user we're attempting an extraction when
-                        # running from the GUI.
-                        try:
-                            eff_logger.info(
-                                f"Attempting to decompress CSO for hashing: {p.name}"
-                            )
-                        except Exception:
-                            pass
-
-                        res = run_cmd(cmd)
-                        rc = getattr(res, "returncode", 1)
-                        if rc == 0 and tmp_iso.exists():
-                            if not md5:
-                                md5 = calculate_file_hash(
-                                    tmp_iso, "md5", progress_cb=progress_cb
-                                )
-                            if not sha1:
-                                sha1 = calculate_file_hash(
-                                    tmp_iso, "sha1", progress_cb=progress_cb
-                                )
-                    except Exception:
-                        # Fall back to hashing original file on failure
-                        try:
-                            eff_logger.warning(
-                                f"WARN: maxcso failed to decompress {p.name}; "
-                                "falling back to hashing compressed file"
-                            )
-                        except Exception:
-                            pass
-                else:
-                    # No maxcso available — log explicitly to help users
-                    try:
-                        eff_logger.info(
-                            "Ferramenta 'maxcso' não encontrada no PATH; não "
-                            "será possível decomprimir .cso para hashing"
-                        )
-                    except Exception:
-                        pass
-            elif suffix == ".chd":
-                chdman = find_tool("chdman")
-                if chdman:
-                    try:
-                        with tempfile.NamedTemporaryFile(
-                            suffix=".iso",
-                            delete=False,
-                        ) as tf:
-                            tmp_iso = Path(tf.name)
-                        verbs = [
-                            [
-                                str(chdman),
-                                "extractdvd",
-                                "-i",
-                                str(p),
-                                "-o",
-                                str(tmp_iso),
-                            ],
-                            [
-                                str(chdman),
-                                "extractcd",
-                                "-i",
-                                str(p),
-                                "-o",
-                                str(tmp_iso),
-                            ],
-                            [
-                                str(chdman),
-                                "extract",
-                                "-i",
-                                str(p),
-                                "-o",
-                                str(tmp_iso),
-                            ],
-                        ]
-
-                        # Inform GUI users we're attempting extraction
-                        try:
-                            eff_logger.info(
-                                f"Attempting to extract CHD for hashing: {p.name}"
-                            )
-                        except Exception:
-                            pass
-
-                        rc = 1
-                        for cmd in verbs:
-                            try:
-                                res = run_cmd(cmd)
-                                rc = getattr(res, "returncode", 1)
-                                if rc == 0 and tmp_iso.exists():
-                                    break
-                            except Exception:
-                                rc = 1
-                                continue
-                        if rc == 0 and tmp_iso.exists():
-                            if not md5:
-                                md5 = calculate_file_hash(
-                                    tmp_iso, "md5", progress_cb=progress_cb
-                                )
-                            if not sha1:
-                                sha1 = calculate_file_hash(
-                                    tmp_iso, "sha1", progress_cb=progress_cb
-                                )
-                        else:
-                            try:
-                                eff_logger.warning(
-                                    f"WARN: chdman failed to extract {p.name}; "
-                                    "falling back to hashing compressed file"
-                                )
-                            except Exception:
-                                pass
-                    except Exception:
-                        try:
-                            eff_logger.warning(
-                                f"WARN: chdman extraction failed for {p.name}; "
-                                "falling back to hashing compressed file"
-                            )
-                        except Exception:
-                            pass
-                else:
-                    # No chdman available — log explicitly to help users
-                    try:
-                        eff_logger.info(
-                            "Ferramenta 'chdman' não encontrada no PATH; não "
-                            "será possível extrair .chd para hashing"
-                        )
-                    except Exception:
-                        pass
-        finally:
-            try:
-                if tmp_iso and tmp_iso.exists():
-                    tmp_iso.unlink()
-            except Exception:
-                pass
-
-        # Compute missing hashes
-        if not md5:
-            md5 = calculate_file_hash(p, "md5", progress_cb=progress_cb)
-        if not sha1:
-            sha1 = calculate_file_hash(p, "sha1", progress_cb=progress_cb)
-
-        # Build/update LibraryEntry
-        try:
-            st = p.stat()
-            new_entry = LibraryEntry(
-                path=str(p.resolve()),
-                system=(entry.system if entry else ""),
-                size=st.st_size,
-                mtime=st.st_mtime,
-                crc32=(entry.crc32 if entry else None),
-                md5=md5,
-                sha1=sha1,
-                sha256=(entry.sha256 if entry else None),
-                status=(entry.status if entry else ""),
-                match_name=(entry.match_name if entry else None),
-                dat_name=(entry.dat_name if entry else None),
-            )
-            local_db.update_entry(new_entry)
+            h = hashlib.new(algo)
+            with path.open("rb") as f:
+                while chunk := f.read(256 * 1024):
+                    h.update(chunk)
+            return h.hexdigest()
         except Exception:
-            # Best-effort: ignore DB write failures
-            pass
+            return None
 
-        return md5, sha1
-    except Exception:
-        return None, None
-
-
-def verify_chd(
-    file_path: Path,
-    *,
-    tool_chdman: str = "chdman",
-    timeout: int = 30,
-) -> bool:
-    """Verify a .chd file using chdman verify.
-
-    Returns True when chdman reports success (exit code 0). This is a
-    conservative check intended to be used before attempting extraction or
-    further processing of CHD files.
-    """
-    try:
-        chdman = find_tool(tool_chdman)
-        if not chdman:
-            # chdman not available; cannot verify here
+    def atomic_move(self, src: Path, dst: Path) -> bool:
+        try:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            src.replace(dst)
+            return True
+        except Exception:
             return False
-        # chdman verify -i <file>
-        res = run_cmd([str(chdman), "verify", "-i", str(file_path)], timeout=timeout)
-        rc = getattr(res, "returncode", None)
-        if isinstance(rc, int) and rc == 0:
-            return True
-        # As a fallback, inspect stdout for common success strings
-        out = getattr(res, "stdout", "") or ""
-        if "verify: OK" in out.lower() or "verify ok" in out.lower():
-            return True
-        return False
-    except Exception:
-        return False
+
+def worker_clean_junk(base_path: Path, args: Any, log_cb: Callable[[str], None], list_files_fn: Callable, list_dirs_fn: Callable) -> str:
+    """Legacy entry point para clean junk."""
+    set_correlation_id()
+    from emumanager.logging_cfg import get_logger
+    logger = get_logger("worker.clean_junk")
+    files = list_files_fn(base_path)
+    
+    count = 0
+    junk_exts = {".txt", ".nfo", ".url", ".lnk", ".website"}
+    for f in files:
+        if f.suffix.lower() in junk_exts:
+            if not getattr(args, "dry_run", False):
+                f.unlink(missing_ok=True)
+            count += 1
+    return f"Limpeza concluída. {count} ficheiros removidos."
+

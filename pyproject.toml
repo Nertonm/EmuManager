@@ -4,102 +4,46 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "emumanager"
-version = "0.1.0"
-description = "Small emulation collection manager and utilities"
-authors = [ { name = "EmuManager Maintainer" } ]
+version = "3.0.0"
+description = "Industrial-grade emulation collection manager and utilities"
+authors = [ { name = "EmuManager Engineers" } ]
+requires-python = ">=3.10"
 dependencies = [
     "typer>=0.9.0",
     "rich>=13.0.0",
     "textual>=0.54.0",
+    "requests>=2.31.0",
 ]
 readme = "README.md"
-license = "MIT"
+license = { text = "MIT" }
 
 [project.scripts]
-# Make the installed `emumanager` console script launch the TUI by default
+# Comando unificado (TUI interativa por defeito)
 emumanager = "emumanager.tui:main"
-emumanager-arch = "emumanager.architect:main"
-ps2-convert = "emumanager.converters.ps2_converter:_main"
+# Comando CLI direto para automação
+emumanager-cli = "emumanager.cli:main"
+# Comando para interface gráfica
 emumanager-gui = "emumanager.gui:main"
-emumanager-tui = "emumanager.tui:main"
 
 [project.optional-dependencies]
-gui = ["pyqt6"]
-tui = ["typer>=0.9.0", "rich>=13.0.0", "textual>=0.54.0"]
-docs = [
-    "mkdocs",
-    "mkdocs-material",
-    "mkdocstrings[python]",
-]
-
-# Helpful extras for contributors (use with: pip install ".[dev]" or ".[test]")
-test = ["pytest", "pytest-cov"]
+gui = ["pyqt6>=6.5.0"]
 dev = [
-	"ruff",
-	"pytest",
-	"pytest-cov",
-	"pytest-qt",
-	"build",
-	"mypy",
-	"types-requests",
-    "mkdocs",
-    "mkdocs-material",
-    "mkdocstrings[python]",
+    "pytest>=7.4.0",
+    "pytest-cov",
+    "pyinstaller>=6.0.0",
+    "ruff",
+    "black",
+    "mypy"
 ]
-
-[tool.mypy]
-python_version = "3.10"
-warn_return_any = true
-warn_unused_configs = true
-ignore_missing_imports = true
-check_untyped_defs = false
-exclude = ["scripts/", "tests/"]
-
-[[tool.mypy.overrides]]
-module = [
-    "emumanager.gui_main",
-    "emumanager.converters.dolphin_converter",
-    "emumanager.switch.main_helpers",
-    "emumanager.workers.verification",
-    "emumanager.workers.ps3",
-    "emumanager.workers.n3ds",
-    "emumanager.gui_covers",
-    "emumanager.gui_ui",
-    "emumanager.verification.dat_parser",
-    "emumanager.verification.hasher",
-    "emumanager.common.sfo",
-    "emumanager.n3ds.metadata",
-    "emumanager.psx.metadata",
-    "emumanager.ps2.metadata",
-    "emumanager.converters.n3ds_converter",
-    "emumanager.switch.cli",
-    "emumanager.common.execution",
-    "emumanager.manager",
-    "emumanager.controllers.gallery",
-    "emumanager.psp.database",
-    "emumanager.ps3.database",
-    "emumanager.n3ds.database"
-]
-ignore_errors = true
-
-[tool.ruff]
-# Opinionated but permissive defaults for repository linting
-line-length = 88
-exclude = [".git", "__pycache__", "build", "dist", "logs", "*.pyc"]
-
-[tool.ruff.lint]
-select = ["E", "F", "W", "I"]
-ignore = []
-
-[tool.ruff.format]
-quote-style = "double"
-indent-style = "space"
-skip-magic-trailing-comma = false
-line-ending = "auto"
 
 [tool.setuptools.packages.find]
 include = ["emumanager*"]
 
-[tool.isort]
-profile = "black"
-line_length = 88
+[tool.ruff]
+line-length = 100
+exclude = [".git", "__pycache__", "build", "dist", "logs"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "--strict-markers"

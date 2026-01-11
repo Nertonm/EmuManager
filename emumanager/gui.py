@@ -1,98 +1,57 @@
-"""Simple PySide6 GUI for EmuManager.
-
-This module is intentionally lazy about importing PySide6 so the package can be
-imported in environments without the GUI dependency. Call `main()` to run the
-application; if PySide6 is not installed a clear RuntimeError is raised.
-"""
+"""GUI robusta baseada no Core Orchestrator."""
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
 from importlib import import_module
 
 from .logging_cfg import configure_logging, set_correlation_id
+from .manager import get_orchestrator
 
-try:
-    # Normal package import when used as module: `python -m emumanager.gui`
-    from . import manager
-except Exception:
-    # Allow running the file directly (e.g. `python emumanager/gui.py`) by
-    # ensuring the project root is on sys.path and then using absolute
-    # imports. This mirrors the pattern used in `interface.py`.
-    import sys
-    from pathlib import Path as _P
-
-    _ROOT = _P(__file__).resolve().parent.parent
-    if str(_ROOT) not in sys.path:
-        sys.path.insert(0, str(_ROOT))
-    from emumanager import manager
-
-
-def _ensure_qt() -> None:
-    # Prefer PyQt6 but accept PySide6 as a fallback. Import locally to avoid
-    # hard dependency at package import time.
+def _ensure_qt():
     try:
         import_module("PyQt6")
-        return
-    except Exception:
+    except ImportError:
         try:
             import_module("PySide6")
-            return
-        except Exception as e:  # pragma: no cover - dependency check
-            raise RuntimeError(
-                "PyQt6 (preferred) or PySide6 is required for the GUI. "
-                "Install 'pyqt6' or 'pyside6'."
-            ) from e
-
+        except ImportError:
+            raise RuntimeError("Instale 'pyqt6' ou 'pyside6' para usar a GUI.")
 
 def _run_app():
-    # Import inside function to keep module import cheap. Prefer PyQt6.
     try:
-        QtWidgets = import_module("PyQt6.QtWidgets")
-    except Exception:
-        QtWidgets = import_module("PySide6.QtWidgets")
+        from PyQt6 import QtWidgets
+    except ImportError:
+        from PySide6 import QtWidgets
 
-    # Create the application and a MainWindow from the extracted component
-    try:
-        from .gui_main import MainWindowBase
-    except Exception:
-        # When run as script (not as a package) fall back to absolute import
-        from emumanager.gui_main import MainWindowBase
-
-    app = QtWidgets.QApplication([])
-
-    # Check for headless mode (used by smoke tests)
-    import sys
-
+    from .gui_main import MainWindowBase
+    
+    app = QtWidgets.QApplication(sys.argv)
+    
+    # Usar a base padrão
+    base_path = Path("Acervo_Games_Ultimate").resolve()
+    orchestrator = get_orchestrator(base_path)
+    
+    # Smoke test: modo headless para CI/CD
     if "--headless" in sys.argv:
-        # Just instantiate the window to verify no crashes, then exit
-        win_comp = MainWindowBase(QtWidgets, manager)
+        print("Smoke Test: Inicializando MainWindow em modo headless...")
+        win = MainWindowBase(QtWidgets, orchestrator)
+        print("Sucesso: GUI carregada corretamente com o novo Core.")
         return 0
 
-    win_comp = MainWindowBase(QtWidgets, manager)
-    win_comp.show()
+    win = MainWindowBase(QtWidgets, orchestrator)
+    win.show()
     return app.exec()
 
-
 def main() -> int:
-    # Configure logging and create a correlation id for this run.
-    # Run early so imported modules and workers see the configured logger.
     configure_logging()
     set_correlation_id()
-
-    # Check for Qt availability and run
     _ensure_qt()
     try:
         return _run_app() or 0
     except Exception as e:
-        # Prefer logging the error but fall back to printing if logging not available
-        try:
-            import logging as _logging
-
-            _logging.getLogger(__name__).exception("GUI error: %s", e)
-        except Exception:
-            print("GUI error:", e)
-        return 2
-
+        print(f"Erro fatal na GUI: {e}")
+        return 1
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())

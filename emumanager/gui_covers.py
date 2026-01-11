@@ -108,9 +108,7 @@ class CoverDownloader(QRunnable):
                 if tg_url:
                     # Use TheGamesDB's URL directly
                     ext = tg_url.split(".")[-1]
-                    tgt_path = os.path.join(
-                        self.cache_dir, "covers", self.system, f"{game_name}.{ext}"
-                    )
+                    tgt_path = str(Path(self.cache_dir) / "covers" / self.system / f"{game_name}.{ext}")
                     self.signals.log.emit(f"Trying TheGamesDB URL: {tg_url}")
                     if self._download_file(tg_url, tgt_path):
                         self.signals.log.emit(f"Downloaded from TheGamesDB: {tg_url}")
@@ -140,9 +138,7 @@ class CoverDownloader(QRunnable):
         ext = urls[0].split(".")[-1]
 
         # Construct local path
-        file_path = os.path.join(
-            self.cache_dir, "covers", self.system, f"{self.game_id}.{ext}"
-        )
+        file_path = str(Path(self.cache_dir) / "covers" / self.system / f"{self.game_id}.{ext}")
 
         # If already exists, return immediately
         if os.path.exists(file_path):
@@ -178,9 +174,7 @@ class CoverDownloader(QRunnable):
                 continue
 
             # Libretro is always png
-            file_path = os.path.join(
-                self.cache_dir, "covers", self.system, f"{cand}.png"
-            )
+            file_path = str(Path(self.cache_dir) / "covers" / self.system / f"{cand}.png")
 
             if os.path.exists(file_path):
                 self.signals.log.emit(f"Cover found in cache: {file_path}")

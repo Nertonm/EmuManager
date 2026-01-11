@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from emumanager.gui_covers import CoverDownloader
 from emumanager.verification.hasher import calculate_hashes
-from emumanager.workers.verification import worker_identify_single_file
+from emumanager.gui_workers import worker_identify_single_file
 
 if TYPE_CHECKING:
     from emumanager.gui_main import MainWindowBase
