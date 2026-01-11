@@ -1,8 +1,6 @@
 """MainWindow component for EmuManager GUI.
 
-This module contains the MainWindow class and related UI helpers. It is
-GUI-library-agnostic in the sense that callers should import the Qt classes
-from the binding they prefer and pass them when constructing the window.
+Redesenhado para usar nativamente o Core Orchestrator.
 """
 
 from __future__ import annotations
@@ -22,27 +20,17 @@ from emumanager.library import LibraryDB
 from emumanager.logging_cfg import get_logger, setup_gui_logging
 from emumanager.verification.dat_downloader import DatDownloader
 from emumanager.verification.hasher import calculate_hashes
-from emumanager.workers.common import GuiLogger
-from emumanager.workers.distributor import worker_distribute_root
-from emumanager.workers.dolphin import _organize_dolphin_file
-from emumanager.workers.n3ds import _organize_n3ds_item
-from emumanager.workers.ps2 import _organize_ps2_file
-from emumanager.workers.ps3 import _organize_ps3_item
-from emumanager.workers.psp import _organize_psp_item
 
-# Per-system single-file organize helpers (used by context-menu "Rename to Standard")
-from emumanager.workers.psx import _organize_psx_file
-
-from .architect import get_roms_dir
 from .gui_covers import CoverDownloader
 from .gui_ui import Ui_MainWindow
 from .gui_workers import (
     worker_hash_verify,
-    worker_identify_all,
-    worker_identify_single_file,
-    worker_organize,
     worker_scan_library,
+    worker_clean_junk,
+    worker_identify_single_file,
+    worker_identify_all
 )
+
 
 # Constants
 MSG_NO_ROM = "No ROM selected"
@@ -56,17 +44,23 @@ LAST_SYSTEM_KEY = "ui/last_system"
 
 
 class MainWindowBase:
-    """A minimal abstraction over a Qt MainWindow used by the package.
+    """A minimal abstraction over a Qt MainWindow using the new Core Orchestrator."""
 
-    This class expects the QtWidgets module to be available in the global
-    namespace of the caller (i.e., the module that instantiates it).
-    """
-
-    def __init__(self, qtwidgets: Any, manager_module: Any):
+    def __init__(self, qtwidgets: Any, orchestrator: Any):
         self._qtwidgets = qtwidgets
-        self._manager = manager_module
+        self._orchestrator = orchestrator
         self.ui = Ui_MainWindow()
-        self._last_base = None
+        self._last_base = orchestrator.session.base_path
+
+        self._current_dat_path = None
+
+        # Create widgets (use local alias to the qt binding)
+        qt = self._qtwidgets
+        # Common literals
+        self._dlg_select_base_title = "Select base directory"
+        self.ui = Ui_MainWindow()
+        self._last_base = orchestrator.session.base_path
+
         self._current_dat_path = None
 
         # Create widgets (use local alias to the qt binding)
@@ -1358,43 +1352,13 @@ class MainWindowBase:
 
     # The following methods interact with manager; keep them small and testable
     def on_init(self):
-        qt = self._qtwidgets
-        base = self._last_base
-        if not base:
-            self.log_msg(MSG_SELECT_BASE)
-            return
-
+        self.log_msg(f"Running core init on: {self._last_base}")
         try:
-            yes_btn = qt.QMessageBox.StandardButton.Yes
-            no_btn = qt.QMessageBox.StandardButton.No
-        except AttributeError:
-            yes_btn = qt.QMessageBox.Yes
-            no_btn = qt.QMessageBox.No
+            self._orchestrator.initialize_library(dry_run=False)
+            self.log_msg("Init complete.")
+        except Exception as e:
+            self.log_msg(f"Init error: {e}")
 
-        dry = qt.QMessageBox.question(
-            self.window,
-            "Dry-run?",
-            "Run in dry-run (no changes)?",
-            yes_btn | no_btn,
-        )
-        dry_run = dry == yes_btn
-        self.log_msg(f"Running init on: {base} (dry={dry_run})")
-
-        def _work():
-            return self._manager.cmd_init(base, dry_run=dry_run)
-
-        def _done(result):
-            if isinstance(result, Exception):
-                self.log_msg(f"Init error: {result}")
-            else:
-                try:
-                    self.log_msg(f"Finished init, rc={result}")
-                except Exception:
-                    pass
-            self._set_ui_enabled(True)
-
-        self._set_ui_enabled(False)
-        self._run_in_background(_work, _done)
 
     def on_list(self, force_scan: bool = False):
         base = self._last_base
@@ -2137,6 +2101,7 @@ class MainWindowBase:
         args.progress_callback = self.progress_hook
         args.cancel_event = self._cancel_event
         args.standardize_names = self.chk_standardize_names.isChecked()
+        args.orchestrator = self._orchestrator
         return args
 
     def on_open_library(self):
@@ -2594,7 +2559,7 @@ class MainWindowBase:
         return files
 
     def on_organize_all(self):
-        """Organize all supported systems sequentially."""
+        """Organize all supported systems sequentially using the Core Orchestrator."""
         if not self._last_base:
             self.log_msg(MSG_SELECT_BASE)
             return
@@ -2603,7 +2568,7 @@ class MainWindowBase:
         reply = self._qtwidgets.QMessageBox.question(
             self.window,
             "Confirm Organization",
-            "This will scan and move files to their appropriate system folders.\n"
+            "This will scan, distribute files from root to system folders, and rename everything based on metadata.\n"
             "Are you sure you want to proceed?",
             self._qtwidgets.QMessageBox.StandardButton.Yes
             | self._qtwidgets.QMessageBox.StandardButton.No,
@@ -2614,70 +2579,22 @@ class MainWindowBase:
 
         self._ensure_env(self._last_base)
         args = self._get_common_args()
-        args.organize = True
 
-        self.log_msg("Starting batch organization...")
+        self.log_msg("Starting global organization flow...")
 
         def _work():
-            results = []
-
-            # 1. Distribute root files
-            # If _last_base is the 'roms' folder, we scan it directly.
-            # If _last_base is the project root, we might need to append 'roms'.
-            # Based on user log, _last_base seems to be the roms folder.
-            # But let's be safe: check if 'roms' subdir exists.
-
-            target_root = self._last_base
-            if (self._last_base / "roms").exists():
-                target_root = self._last_base / "roms"
-
-            op = uuid.uuid4().hex
-            log_cb = self._make_op_log_cb(op)
-            try:
-                self.status.showMessage(f"Operation {op} started", 3000)
-            except Exception:
-                pass
-            self.log_msg(f"Distributing files in {target_root}...")
-            dist_stats = worker_distribute_root(
-                target_root,
-                log_cb,
-                progress_cb=getattr(self, "progress_hook", None),
-                cancel_event=self._cancel_event,
+            return self._orchestrator.full_organization_flow(
+                dry_run=args.dry_run, 
+                progress_cb=self.progress_hook
             )
-            results.append(f"Distribution: {dist_stats}")
-
-            # 2. Run Switch Organizer
-            # We want to organize the 'switch' folder inside target_root
-            switch_dir = target_root / "switch"
-            if switch_dir.exists():
-                self.log_msg(f"Organizing Switch folder: {switch_dir}...")
-
-                # Create a copy of env with updated ROMS_DIR
-                switch_env = self._env.copy()
-                switch_env["ROMS_DIR"] = switch_dir
-                switch_env["CSV_FILE"] = switch_dir / "biblioteca_switch.csv"
-                switch_env["DUPE_DIR"] = switch_dir / "_DUPLICATES"
-
-                switch_res = worker_organize(
-                    switch_dir,
-                    switch_env,
-                    args,
-                    log_cb,
-                    self._list_files_flat,
-                    progress_cb=getattr(self, "progress_hook", None),
-                )
-                results.append(f"Switch: {switch_res}")
-            else:
-                results.append("Switch: Skipped (folder not found)")
-
-            return "\n".join(results)
 
         def _done(res):
             if isinstance(res, Exception):
-                self.log_msg(f"Batch Organization error: {res}")
+                self.log_msg(f"Organization error: {res}")
             else:
-                self.log_msg(str(res))
+                self.log_msg(f"Organization complete: {res}")
             self._set_ui_enabled(True)
+            self.on_list() # Refresh list
             self._update_dashboard_stats()
 
         self._set_ui_enabled(False)
