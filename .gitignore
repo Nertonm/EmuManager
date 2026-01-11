@@ -116,3 +116,5 @@ secrets.py
 .env.*
 a
 .bootstrap-chdman-ldd.txt
+\n# Build artifacts\nsite/
+\n# Build artifacts\nsite/
