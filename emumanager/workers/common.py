@@ -39,6 +39,30 @@ class WorkerResult:
         })
         self.add_timing(path, duration)
 
+    def add_timing(self, path: Path, duration: float):
+        """Regista o tempo de processamento de um item."""
+        self.slowest_items.append((path.name, duration))
+        self.slowest_items.sort(key=lambda x: x[1], reverse=True)
+        self.slowest_items = self.slowest_items[:10]
+
+    def add_error(self, path: Path, message: str):
+        """Regista um erro ocorrido num item."""
+        self.failed_count += 1
+        self.errors.append({"file": path.name, "message": message})
+
+    def __getitem__(self, key: str) -> Any:
+        """Permite acesso estilo dicionário para compatibilidade legada."""
+        mapping = {
+            "renamed": self.success_count,
+            "errors": self.failed_count,
+            "skipped": self.skipped_count,
+            "success": self.success_count,
+            "failed": self.failed_count
+        }
+        if key in mapping:
+            return mapping[key]
+        return getattr(self, key)
+
 
 
 

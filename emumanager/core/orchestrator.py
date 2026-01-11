@@ -203,8 +203,8 @@ Wiki: {info.get('wiki', 'N/A')}
 
     def identify_single_file(self, path: Path) -> dict[str, Any]:
         """Tenta identificar um ficheiro específico contra os DATs carregados."""
-        system_id = registry.find_provider_for_file(path).system_id if not None else "unknown"
-        provider = registry.get_provider(system_id)
+        provider = registry.find_provider_for_file(path)
+        system_id = provider.system_id if provider else "unknown"
         
         dat_path = self.dat_manager.find_dat_for_system(system_id)
         from emumanager.verification import dat_parser, hasher
@@ -388,7 +388,46 @@ Wiki: {info.get('wiki', 'N/A')}
         return stats
 
     def cleanup_duplicates(self, dry_run: bool = False) -> dict[str, int]:
-        # ... lógica de duplicados ...
+        """Remove duplicados baseados em hash, preservando a melhor versão."""
+        self.logger.info("Verificando duplicados globais...")
+        entries = self.db.get_all_entries()
+        by_hash = {}
+        for e in entries:
+            if e.sha1:
+                by_hash.setdefault(e.sha1, []).append(e)
+        
+        stats = {"removed": 0, "errors": 0}
+        
+        # Extensões preferidas (modernas/comprimidas)
+        preferred_exts = {".chd", ".rvz", ".cso", ".z64", ".nsp", ".nsz"}
+
+        for sha1, group in by_hash.items():
+            if len(group) <= 1: continue
+            
+            # Ordenar: Preferidos primeiro, depois por tamanho (maior pode ser melhor se não comprimido, 
+            # mas aqui preferimos os formatos específicos se existirem)
+            def score(entry):
+                ext = Path(entry.path).suffix.lower()
+                return (1 if ext in preferred_exts else 0, entry.size)
+            
+            group.sort(key=score, reverse=True)
+            keep = group[0]
+            to_remove = group[1:]
+            
+            for entry in to_remove:
+                if dry_run:
+                    self.logger.info(f"[DRY-RUN] Duplicado removido: {Path(entry.path).name} (Mantido {Path(keep.path).name})")
+                    stats["removed"] += 1
+                    continue
+                
+                try:
+                    Path(entry.path).unlink(missing_ok=True)
+                    self.db.remove_entry(entry.path)
+                    stats["removed"] += 1
+                except Exception as e:
+                    self.logger.error(f"Erro ao remover duplicado {entry.path}: {e}")
+                    stats["errors"] += 1
+                    
         return stats
 
     def generate_m3u_playlists(self, system_id: str, hide_discs: bool = True) -> dict[str, int]:
