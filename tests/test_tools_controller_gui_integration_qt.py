@@ -35,11 +35,11 @@ def test_toolscontroller_compress_click_triggers_worker(tmp_path, monkeypatch):
     QApplication.instance() or QApplication([])
 
     # Build a simple UI
-    from emumanager.gui_ui import Ui_MainWindow
+    from emumanager.gui_ui import MainWindowUI
 
     main_win = QMainWindow()
-    ui = Ui_MainWindow()
-    ui.setupUi(main_win, qtwidgets)
+    ui = MainWindowUI()
+    ui.setup_ui(main_win, qtwidgets)
 
     # Create a real file in the library
     base = tmp_path

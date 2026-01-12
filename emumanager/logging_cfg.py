@@ -124,6 +124,8 @@ def setup_gui_logging(signal_emitter, level: int = logging.INFO):
 def configure_logging(
     level: int = logging.INFO,
     base_dir: Path | None = None,
+    max_bytes: int = 10 * 1024 * 1024,
+    backup_count: int = 5,
 ) -> logging.Logger:
     """Configuração central do logger raiz."""
     root = logging.getLogger()
@@ -142,7 +144,7 @@ def configure_logging(
             log_path = Path(base_dir) / "logs" / "emumanager.log"
             log_path.parent.mkdir(parents=True, exist_ok=True)
             fh = logging.handlers.RotatingFileHandler(
-                log_path, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
+                log_path, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
             )
             fh.name = "emu_file"
             fh.setFormatter(logging.Formatter(_STD_FORMAT))

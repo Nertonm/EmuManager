@@ -13,11 +13,11 @@ from typing import Optional
 
 from .config import BASE_DEFAULT, EXT_TO_SYSTEM
 from .core.session import Session
-from .core.orchestrator import Orchestrator
 
 
-def get_orchestrator(base_dir: Path | str) -> Orchestrator:
+def get_orchestrator(base_dir: Path | str) -> Any:
     """Helper para obter um orquestrador configurado."""
+    from .core.orchestrator import Orchestrator
     session = Session(base_dir)
     return Orchestrator(session)
 

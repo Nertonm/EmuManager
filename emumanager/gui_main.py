@@ -22,7 +22,7 @@ from emumanager.verification.dat_downloader import DatDownloader
 from emumanager.verification.hasher import calculate_hashes
 
 from .gui_covers import CoverDownloader
-from .gui_ui import Ui_MainWindow
+from .gui_ui import MainWindowUI
 from .gui_workers import (
     worker_hash_verify,
     worker_scan_library,
@@ -49,7 +49,7 @@ class MainWindowBase:
     def __init__(self, qtwidgets: Any, orchestrator: Any):
         self._qtwidgets = qtwidgets
         self._orchestrator = orchestrator
-        self.ui = Ui_MainWindow()
+        self.ui = MainWindowUI()
         self._last_base = orchestrator.session.base_path
         self._current_dat_path = None
         self._dlg_select_base_title = "Select base directory"
@@ -59,7 +59,7 @@ class MainWindowBase:
         self._init_state()
         
         self.window = self._qtwidgets.QMainWindow()
-        self.ui.setupUi(self.window, self._qtwidgets)
+        self.ui.setup_ui(self.window, self._qtwidgets)
         self.window.closeEvent = self._on_close_event
         self._original_close_event = self.window.closeEvent
 
@@ -1799,46 +1799,6 @@ class MainWindowBase:
 
                 files.append(p)
             except Exception: continue
-
-        files.sort(key=lambda p: str(p).lower())
-        return files
-            ".ds_store",
-            ".url",
-            ".lnk",
-            ".desktop",
-            ".py",
-            ".pyc",
-            ".log",
-            ".err",
-            ".out",
-        }
-
-        for p in root.rglob("*"):
-            if not p.is_file():
-                continue
-            if p.name.startswith("."):
-                continue
-
-            if p.suffix.lower() in IGNORED_EXTENSIONS:
-                continue
-
-            try:
-                rel = p.relative_to(root)
-                if any(part.startswith(".") for part in rel.parts):
-                    continue
-
-                # Exclude dats/no-intro/redump folders
-                parts_lower = [part.lower() for part in rel.parts]
-                if (
-                    "dats" in parts_lower
-                    or "no-intro" in parts_lower
-                    or "redump" in parts_lower
-                ):
-                    continue
-
-                files.append(p)
-            except ValueError:
-                continue
 
         files.sort(key=lambda p: str(p).lower())
         return files

@@ -38,21 +38,47 @@ def worker_ps2_full_process(base_path: Path, log_cb: Callable, progress_cb: Opti
     return worker.run(roms, "Processamento PS2")
 
 def worker_ps2_convert(base_path: Path, args: Any, log_cb: Callable, list_files_fn: Callable) -> str:
-    """Legacy shim."""
-    return "Use PS2Worker via Orchestrator"
 
-def worker_ps2_verify(base_path: Path, args: Any, log_cb: Callable, list_files_fn: Callable) -> str:
-    """Legacy shim."""
-    worker = PS2Worker(base_path, log_cb, getattr(args, "progress_callback", None))
-    res = worker.run(list_files_fn(base_path), "PS2 Verify")
+    """Legacy shim para conversão, agora conectado ao PS2Worker."""
+
+    worker = PS2Worker(base_path, log_cb, getattr(args, "progress_callback", None), getattr(args, "cancel_event", None))
+
+    res = worker.run(list_files_fn(base_path), "Conversão PS2")
+
     return str(res)
 
+
+
+def worker_ps2_verify(base_path: Path, args: Any, log_cb: Callable, list_files_fn: Callable) -> str:
+
+    """Legacy shim para verificação, agora totalmente conectado."""
+
+    worker = PS2Worker(base_path, log_cb, getattr(args, "progress_callback", None), getattr(args, "cancel_event", None))
+
+    res = worker.run(list_files_fn(base_path), "Verificação PS2")
+
+    return str(res)
+
+
+
 def worker_ps2_organize(base_path: Path, args: Any, log_cb: Callable, list_files_fn: Callable) -> str:
-    """Legacy shim."""
-    return "Use organize_names() via Orchestrator"
+
+    """Legacy shim para organização, agora conectado ao PS2Worker."""
+
+    worker = PS2Worker(base_path, log_cb, getattr(args, "progress_callback", None), getattr(args, "cancel_event", None))
+
+    res = worker.run(list_files_fn(base_path), "Organização PS2")
+
+    return str(res)
+
+
 
 def worker_chd_to_cso_single(path: Path, args: Any, log_cb: Callable) -> str:
-    """Legacy shim."""
-    worker = PS2Worker(path.parent, log_cb, None)
+
+    """Legacy shim para processamento de ficheiro único, agora com cancel_event."""
+
+    worker = PS2Worker(path.parent, log_cb, None, getattr(args, "cancel_event", None))
+
     res = worker._process_item(path)
-    return f"Status: {res}"
+
+    return f"Processamento de {path.name} concluído. Status: {res}"

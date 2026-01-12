@@ -31,19 +31,19 @@ class DuplicatesController:
                 self.core = core
                 
             @property
-            def Checked(self):
+            def checked(self):
                 return self.enum.CheckState.Checked if self.enum else self.core.Qt.Checked
                 
             @property
-            def Unchecked(self):
+            def unchecked(self):
                 return self.enum.CheckState.Unchecked if self.enum else self.core.Qt.Unchecked
                 
             @property
-            def ItemIsUserCheckable(self):
+            def item_is_user_checkable(self):
                 return self.enum.ItemFlag.ItemIsUserCheckable if self.enum else self.core.Qt.ItemIsUserCheckable
                 
             @property
-            def UserRole(self):
+            def user_role(self):
                 if self.enum and hasattr(self.enum, "ItemDataRole"):
                     return self.enum.ItemDataRole.UserRole
                 return self.core.Qt.UserRole if self.core else 256
@@ -199,6 +199,42 @@ class DuplicatesController:
             except Exception as e:
                 logging.debug(f"DB removal failed for {path}: {e}")
 
+    def _do_duplicate_move_work(self, moves: list, dry_run_flag: bool) -> dict:
+        moved, skipped = [], []
+        db = self.mw.library_db
+        logger = getattr(self.mw, "logger", None) or logging.getLogger(__name__)
+
+        class _Args:
+            dry_run = dry_run_flag
+            dup_check = "fast"
+
+        for src, dst, _ in moves:
+            ok, info = self._execute_duplicate_move(src, dst, _Args, db, logger)
+            if ok:
+                moved.append((str(src), info))
+            else:
+                skipped.append(info)
+        return {"moved": moved, "skipped": skipped}
+
+    def _on_duplicate_move_finished(self, result: Any):
+        if isinstance(result, Exception):
+            self.mw.log_msg(f"Move duplicates error: {result}")
+            return
+        
+        moved = result.get("moved", [])
+        skipped = result.get("skipped", [])
+        self.mw.log_msg(f"Move complete. Moved: {len(moved)} | Skipped: {len(skipped)}")
+        
+        if skipped:
+            self.mw.log_msg("Some files were skipped:")
+            for s in skipped[:30]: 
+                self.mw.log_msg(f" - {s}")
+        
+        try:
+            self.scan_duplicates()
+        except Exception as e:
+            logging.debug(f"Refresh failed: {e}")
+
     def _move_others_to_duplicates(self):
         keep_row = self._validate_move_selection()
         if keep_row is None:
@@ -224,41 +260,10 @@ class DuplicatesController:
         duplicates_root = self._resolve_duplicates_root()
         self.mw.log_msg(f"Moving {len(moves)} file(s) to {duplicates_root} (dry_run={dry_run_flag})...")
 
-        def _work():
-            moved, skipped = [], []
-            db = self.mw.library_db
-            logger = getattr(self.mw, "logger", None) or logging.getLogger(__name__)
-
-            class _Args:
-                dry_run = dry_run_flag
-                dup_check = "fast"
-
-            for src, dst, _ in moves:
-                ok, info = self._execute_duplicate_move(src, dst, _Args, db, logger)
-                if ok:
-                    moved.append((str(src), info))
-                else:
-                    skipped.append(info)
-            return {"moved": moved, "skipped": skipped}
-
-        def _done(result):
-            if isinstance(result, Exception):
-                self.mw.log_msg(f"Move duplicates error: {result}")
-                return
-            
-            moved = result.get("moved", [])
-            skipped = result.get("skipped", [])
-            self.mw.log_msg(f"Move complete. Moved: {len(moved)} | Skipped: {len(skipped)}")
-            if skipped:
-                self.mw.log_msg("Some files were skipped:")
-                for s in skipped[:30]: self.mw.log_msg(f" - {s}")
-            
-            try:
-                self.scan_duplicates()
-            except Exception as e:
-                logging.debug(f"Refresh failed: {e}")
-
-        self.mw._run_in_background(_work, _done)
+        self.mw._run_in_background(
+            lambda: self._do_duplicate_move_work(moves, dry_run_flag), 
+            self._on_duplicate_move_finished
+        )
 
     def _update_dups_summary(self, result: dict):
         total_groups = int(result.get("total_groups", 0))
@@ -351,8 +356,8 @@ class DuplicatesController:
         
         chk = self.mw._qtwidgets.QTableWidgetItem("")
         try:
-            chk.setFlags(chk.flags() | qt.ItemIsUserCheckable)
-            chk.setCheckState(qt.Unchecked)
+            chk.setFlags(chk.flags() | qt.item_is_user_checkable)
+            chk.setCheckState(qt.unchecked)
         except Exception as e:
             logging.debug(f"Failed to set check flags: {e}")
 
@@ -362,7 +367,7 @@ class DuplicatesController:
         size_bytes = int(entry.get("size", 0))
         size_item = self.mw._qtwidgets.QTableWidgetItem(human_readable_size(size_bytes))
         try:
-            size_item.setData(qt.UserRole, size_bytes)
+            size_item.setData(qt.user_role, size_bytes)
             align = qt.get_alignment()
             if align:
                 size_item.setTextAlignment(align)
@@ -403,7 +408,7 @@ class DuplicatesController:
             it = table.item(r, 0)
             if it:
                 try:
-                    it.setCheckState(qt.Unchecked)
+                    it.setCheckState(qt.unchecked)
                 except Exception as e:
                     logging.debug(f"Failed to uncheck: {e}")
 
@@ -411,7 +416,7 @@ class DuplicatesController:
         it = table.item(pick_row, 0)
         if it:
             try:
-                it.setCheckState(qt.Checked)
+                it.setCheckState(qt.checked)
             except Exception as e:
                 logging.debug(f"Failed to check: {e}")
 

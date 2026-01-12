@@ -173,7 +173,8 @@ class BaseWorker(abc.ABC):
 
     @abc.abstractmethod
     def _process_item(self, item: Path) -> str:
-        pass
+        """Processa um item individual. Deve ser implementado por subclasses."""
+        raise NotImplementedError("Subclasses must implement _process_item")
 
     def safe_hash(self, path: Path, algo: str = "sha1") -> str | None:
         try:
@@ -200,27 +201,29 @@ class GuiLogger:
     def info(self, msg: str, *args): self.log_cb(msg % args if args else msg)
     def warning(self, msg: str, *args): self.log_cb(f"WARN: {msg % args if args else msg}")
     def error(self, msg: str, *args): self.log_cb(f"ERROR: {msg % args if args else msg}")
-    def debug(self, msg: str, *args): pass
+    def debug(self, msg: str, *args): 
+        # Debug messages are ignored in GUI to keep log clean
+        pass
     def exception(self, msg: str, *args): self.log_cb(f"EXCEPTION: {msg % args if args else msg}")
 
 def get_logger_for_gui(log_cb: Callable[[str], None], name: str = "gui") -> logging.Logger:
     """Retorna um logger configurado para enviar mensagens para a GUI."""
-    logger = logging.getLogger(name)
+    logger_instance = logging.getLogger(name)
     class GuiHandler(logging.Handler):
         def emit(self, record):
             log_cb(self.format(record))
     handler = GuiHandler()
     handler.setFormatter(logging.Formatter("%(message)s"))
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-    return logger
+    logger_instance.addHandler(handler)
+    logger_instance.setLevel(logging.INFO)
+    return logger_instance
 
 def find_tool(name: str) -> Optional[Path]:
     from emumanager.common.execution import find_tool as _ft
     return _path_resolve(_ft(name))
 
 def _path_resolve(p: Optional[Path]) -> Optional[Path]:
-    return p.resolve() if p else None
+    return p.resolve() if p and p.exists() else p
 
 def calculate_file_hash(path: Path, algo: str = "sha1", chunk_size: int = 1024 * 1024, progress_cb: Optional[Callable[[float], None]] = None) -> str:
     from emumanager.verification.hasher import calculate_hashes
@@ -283,10 +286,10 @@ def worker_clean_junk(base_path: Path, args: Any, log_cb: Callable[[str], None],
     # Ordenar por profundidade (reversa)
     for d in sorted(dirs, key=lambda x: len(x.parts), reverse=True):
         try:
-            if not any(d.iterdir()):
-                if not getattr(args, "dry_run", False):
-                    d.rmdir()
-        except Exception: pass
+            if not any(d.iterdir()) and not getattr(args, "dry_run", False):
+                d.rmdir()
+        except Exception as e:
+            logger.debug(f"Failed to remove empty directory {d}: {e}")
         
     return f"Limpeza concluída. {count} ficheiros removidos."
 from types import SimpleNamespace

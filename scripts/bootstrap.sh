@@ -11,7 +11,9 @@ echo -e "${GREEN}=== EmuManager Bootstrap Script ===${NC}"
 
 # Function to check if a command exists
 command_exists() {
-    command -v "$1" >/dev/null 2>&1
+    local cmd_name="$1"
+    command -v "$cmd_name" >/dev/null 2>&1
+    return $?
 }
 
 # 1. System Dependencies
@@ -47,6 +49,7 @@ install_debian_deps() {
     else
         echo -e "${GREEN}All system packages installed.${NC}"
     fi
+    return 0
 }
 
 install_arch_deps() {
@@ -89,6 +92,7 @@ install_arch_deps() {
     else
         echo -e "${GREEN}maxcso is installed.${NC}"
     fi
+    return 0
 }
 
 install_fedora_deps() {
@@ -111,6 +115,7 @@ install_fedora_deps() {
     else
         echo -e "${GREEN}All system packages installed.${NC}"
     fi
+    return 0
 }
 
 case "$DISTRO" in
@@ -173,6 +178,7 @@ check_chdman_codecs() {
         esac
         echo -e "\nIf you prefer, re-run this bootstrap after installing the needed packages."
     fi
+    return 0
 }
 
 # Run the chdman codec check (helps diagnose missing liblzma/libFLAC at runtime)

@@ -14,8 +14,12 @@ def is_compressed_file(p: Path) -> bool:
 
 class ScannerWorker(BaseWorker):
     def _process_file(self, f: Path) -> str:
-        # A lógica do scanner é um pouco diferente da BaseWorker padrão
-        # pois ele decide se deve atualizar ou não.
+        """
+        Ponto de entrada padrão da BaseWorker não utilizado pelo ScannerWorker.
+        A lógica de scan é orquestrada pelo método scan() e decomposta em métodos privados.
+        """
+        # Ignora o parâmetro f para manter compatibilidade com a assinatura da classe base
+        _ = f
         return "success"
 
     def _resolve_roms_dir(self) -> Path:
@@ -46,7 +50,13 @@ class ScannerWorker(BaseWorker):
             if entry and entry.size == stat.st_size and abs(entry.mtime - stat.st_mtime) < 1.0:
                 return
 
-            status = "COMPRESSED" if is_compressed_file(file_path) else (entry.status if entry else "UNKNOWN")
+            if is_compressed_file(file_path):
+                status = "COMPRESSED"
+            elif entry:
+                status = entry.status
+            else:
+                status = "UNKNOWN"
+
             if status == "COMPRESSED":
                 self.logger.info(f"Compressed file detected: {file_path.name}")
 

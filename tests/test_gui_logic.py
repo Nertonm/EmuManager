@@ -36,7 +36,7 @@ class TestMainWindowLogic:
     @pytest.fixture
     def window(self, setup_mocks):
         # Import inside the fixture to use the mocks
-        with patch("emumanager.gui_ui.Ui_MainWindow"):
+        with patch("emumanager.gui_ui.MainWindowUI"):
             from emumanager.gui_main import MainWindowBase
 
             # Mock dependencies

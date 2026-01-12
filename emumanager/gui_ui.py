@@ -6,27 +6,27 @@ IDENTIFY_VERIFY_LABEL = "Identify & Verify Games"
 ORGANIZE_LABEL = "Organize (Rename)"
 
 
-class Ui_MainWindow:
-    def setupUi(self, MainWindow, qtwidgets: Any):
+class MainWindowUI:
+    def setup_ui(self, main_window, qtwidgets: Any):
         qt = qtwidgets
         self._resolve_qt_namespaces()
 
-        MainWindow.setObjectName("MainWindow")
-        MainWindow.resize(900, 700)
+        main_window.setObjectName("MainWindow")
+        main_window.resize(900, 700)
 
-        self.centralwidget = qt.QWidget(MainWindow)
+        self.centralwidget = qt.QWidget(main_window)
         self.centralwidget.setObjectName("centralwidget")
-        self.verticalLayout = qt.QVBoxLayout(self.centralwidget)
-        self.verticalLayout.setObjectName("verticalLayout")
+        self.vertical_layout = qt.QVBoxLayout(self.centralwidget)
+        self.vertical_layout.setObjectName("verticalLayout")
 
         self._setup_top_bar(qt)
 
         # Tabs
         self._setup_tabs_container(qt)
 
-        self._setup_dock_and_status(MainWindow, qt)
+        self._setup_dock_and_status(main_window, qt)
 
-        MainWindow.setCentralWidget(self.centralwidget)
+        main_window.setCentralWidget(self.centralwidget)
 
         # Status bar
         self.statusbar = qt.QStatusBar(MainWindow)
@@ -71,7 +71,7 @@ class Ui_MainWindow:
         except Exception:
             return None
 
-    def setupDashboardTab(self, qt, parent):
+    def setup_dashboard_tab(self, qt, parent):
         layout = qt.QVBoxLayout(parent)
 
         # Welcome / Status Section
@@ -139,7 +139,7 @@ class Ui_MainWindow:
 
         layout.addStretch()
 
-    def setupLibraryTab(self, qt, parent):
+    def setup_library_tab(self, qt, parent):
         layout = qt.QVBoxLayout(parent)
 
         # Top buttons
@@ -211,11 +211,11 @@ class Ui_MainWindow:
 
         # Cover Image
         self.cover_label = qt.QLabel("No Cover")
-        if self._Qt_enum:
+        if self._qt_enum:
             try:
-                self.cover_label.setAlignment(self._Qt_enum.AlignmentFlag.AlignCenter)
+                self.cover_label.setAlignment(self._qt_enum.AlignmentFlag.AlignCenter)
             except AttributeError:
-                self.cover_label.setAlignment(self._Qt_enum.AlignCenter)
+                self.cover_label.setAlignment(self._qt_enum.AlignCenter)
         self.cover_label.setMinimumWidth(200)
         self.cover_label.setStyleSheet(
             "background-color: #222; color: #888; border: 1px solid #444;"
@@ -274,7 +274,7 @@ class Ui_MainWindow:
         btn.setStyleSheet("background-color: #5a2a2a;")
         return btn
 
-    def setupToolsTab(self, qt, parent):
+    def setup_tools_tab(self, qt, parent):
         layout = qt.QVBoxLayout(parent)
         # Create nested tabs for tools
         self.tools_tabs = qt.QTabWidget()
@@ -1209,7 +1209,7 @@ class Ui_MainWindow:
             except Exception:
                 pass
 
-    def setupGalleryTab(self, qt, parent):
+    def setup_gallery_tab(self, qt, parent):
         layout = qt.QVBoxLayout(parent)
 
         # System Selector
@@ -1249,13 +1249,13 @@ class Ui_MainWindow:
         except AttributeError:
             self.list_gallery.setMovement(qt.QListWidget.Static)
 
-        if self._QSize:
-            self.list_gallery.setIconSize(self._QSize(140, 200))
+        if self._q_size:
+            self.list_gallery.setIconSize(self._q_size(140, 200))
         self.list_gallery.setSpacing(15)
 
         layout.addWidget(self.list_gallery)
 
-    def setupDuplicatesTab(self, qt, parent):
+    def setup_duplicates_tab(self, qt, parent):
         layout = qt.QVBoxLayout(parent)
 
         # Controls
@@ -1353,19 +1353,19 @@ class Ui_MainWindow:
 
     def _resolve_qt_namespaces(self):
         """Resolve Qt namespace for enums and common classes across PyQt/PySide."""
-        self._Qt_enum = None
-        self._QSize = None
+        self._qt_enum = None
+        self._q_size = None
         try:
-            from PyQt6.QtCore import QSize as _QSize
-            from PyQt6.QtCore import Qt as _Qt
-            self._Qt_enum = _Qt
-            self._QSize = _QSize
+            from PyQt6.QtCore import QSize as _q_size
+            from PyQt6.QtCore import Qt as _qt_enum
+            self._qt_enum = _qt_enum
+            self._q_size = _q_size
         except ImportError:
             try:
-                from PySide6.QtCore import QSize as _QSize  # type: ignore
-                from PySide6.QtCore import Qt as _Qt  # type: ignore
-                self._Qt_enum = _Qt
-                self._QSize = _QSize
+                from PySide6.QtCore import QSize as _q_size  # type: ignore
+                from PySide6.QtCore import Qt as _qt_enum  # type: ignore
+                self._qt_enum = _qt_enum
+                self._q_size = _q_size
             except ImportError:
                 import logging
                 logging.debug("Could not resolve Qt namespaces for enums.")
@@ -1396,13 +1396,13 @@ class Ui_MainWindow:
 
         # Configuration map: (method, name, icon_key)
         tabs_config = [
-            (self.setupDashboardTab, "Dashboard", "SP_ComputerIcon"),
-            (self.setupLibraryTab, "Library", "SP_DirHomeIcon"),
-            (self.setupToolsTab, "Tools", "SP_FileDialogDetailedView"),
+            (self.setup_dashboard_tab, "Dashboard", "SP_ComputerIcon"),
+            (self.setup_library_tab, "Library", "SP_DirHomeIcon"),
+            (self.setup_tools_tab, "Tools", "SP_FileDialogDetailedView"),
             (self.setup_verification_tab, "Verification", "SP_DialogApplyButton"),
             (self.setup_settings_tab, "Settings", "SP_FileDialogListView"),
-            (self.setupGalleryTab, "Gallery", "SP_FileIcon"),
-            (self.setupDuplicatesTab, "Duplicates", "SP_FileDialogDetailedView")
+            (self.setup_gallery_tab, "Gallery", "SP_FileIcon"),
+            (self.setup_duplicates_tab, "Duplicates", "SP_FileDialogDetailedView")
         ]
 
         for setup_fn, title, icon_key in tabs_config:
@@ -1451,21 +1451,21 @@ class Ui_MainWindow:
         self.progress_label.setVisible(False)
         self.statusbar.addPermanentWidget(self.progress_label)
 
-    def _attach_log_dock(self, MainWindow, qt):
+    def _attach_log_dock(self, main_window, qt):
         """Handles robust dock attachment for different Qt versions."""
         try:
-            if self._Qt_enum is not None:
+            if self._qt_enum is not None:
                 try:
-                    MainWindow.addDockWidget(self._Qt_enum.DockWidgetArea.BottomDockWidgetArea, self.log_dock)
+                    main_window.addDockWidget(self._qt_enum.DockWidgetArea.BottomDockWidgetArea, self.log_dock)
                 except Exception:
-                    MainWindow.addDockWidget(self._Qt_enum.BottomDockWidgetArea, self.log_dock)
+                    main_window.addDockWidget(self._qt_enum.BottomDockWidgetArea, self.log_dock)
             else:
-                MainWindow.addDockWidget(8, self.log_dock) # Numeric 8 is Bottom
+                main_window.addDockWidget(8, self.log_dock) # Numeric 8 is Bottom
         except Exception as e:
             import logging
             logging.warning(f"Failed to attach log dock to area: {e}")
             try:
-                MainWindow.addDockWidget(self.log_dock)
+                main_window.addDockWidget(self.log_dock)
             except Exception:
                 pass
 

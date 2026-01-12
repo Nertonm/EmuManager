@@ -35,20 +35,20 @@ def detect_nsz_level_from_stdout(stdout: Optional[str]) -> Optional[int]:
 
     # Strategy 1: Explicit labels (e.g. 'zstd level: 3', 'compression level: 19')
     lvl = _validate_level(re.search(
-        r"(?:zstd|compression|level)[^0-9]{0,10}([1-9]|1[0-9]|2[0-2])\b",
+        r"(?:zstd|compression|level)\D{0,10}([1-9]|1\d|2[0-2])\b",
         stdout, re.IGNORECASE
     ))
     if lvl:
         return lvl
 
     # Strategy 2: CLI flags embedded in logs (e.g. '-19')
-    lvl = _validate_level(re.search(r"-([1-9]|1[0-9]|2[0-2])\b", stdout))
+    lvl = _validate_level(re.search(r"-([1-9]|1\d|2[0-2])\b", stdout))
     if lvl:
         return lvl
 
     # Strategy 3: Filename-like hints (e.g. 'level3', 'l3')
     return _validate_level(re.search(
-        r"\b(?:level|l)([1-9]|1[0-9]|2[0-2])\b", stdout, re.IGNORECASE
+        r"\b(?:level|l)([1-9]|1\d|2[0-2])\b", stdout, re.IGNORECASE
     ))
 
 
