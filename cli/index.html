@@ -1,0 +1,1559 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Small emulation collection manager and utilities">
+      
+      
+        <meta name="author" content="EmuManager Maintainer">
+      
+      
+        <link rel="canonical" href="https://Nertonm.github.io/EmuManager/cli/">
+      
+      
+        <link rel="prev" href="../usage/">
+      
+      
+        <link rel="next" href="../supported_systems/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+    
+    
+      
+        <title>CLI Reference - EmuManager</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#guia-do-cli-do-emumanager" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="EmuManager" class="md-header__button md-logo" aria-label="EmuManager" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            EmuManager
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              CLI Reference
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/Nertonm/EmuManager" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Nertonm/EmuManager
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="EmuManager" class="md-nav__button md-logo" aria-label="EmuManager" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    EmuManager
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/Nertonm/EmuManager" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Nertonm/EmuManager
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../usage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#entradas-entry-points" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Entradas (entry-points)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#executando-no-virtualenv-recomendado" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Executando no virtualenv (recomendado)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Executando no virtualenv (recomendado)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#modo-fullscreen-textual" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Modo fullscreen (Textual)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#usando-o-tui-terminal-user-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Usando o TUI (Terminal User Interface)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#textual-versoes-e-compatibilidade" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Textual: versões e compatibilidade
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#emumanager-manager-subcomandos-uteis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        emumanager (manager) — subcomandos úteis
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#emumanager-arch-emumanagerarchitect" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        emumanager-arch / emumanager.architect
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#switch-organizer-modulo-emumanagerswitchcli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Switch Organizer (módulo emumanager.switch.cli)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ps2-convert-cso-chd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ps2-convert (CSO → CHD)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#iniciar-a-gui-via-cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Iniciar a GUI via CLI
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fluxo-de-uso-tipico-exemplo-rapido" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fluxo de uso típico (exemplo rápido)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dependencias-externas-importantes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dependências externas importantes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting-erros-comuns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting (erros comuns)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#comandos-praticos-rapidos" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comandos práticos rápidos
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#proximos-passos-opcionais" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Próximos passos (opcionais)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../supported_systems/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Supported Systems
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/orchestrator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Orchestrator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/manager/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Manager
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/gui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GUI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/workers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#entradas-entry-points" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Entradas (entry-points)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#executando-no-virtualenv-recomendado" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Executando no virtualenv (recomendado)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Executando no virtualenv (recomendado)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#modo-fullscreen-textual" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Modo fullscreen (Textual)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#usando-o-tui-terminal-user-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Usando o TUI (Terminal User Interface)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#textual-versoes-e-compatibilidade" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Textual: versões e compatibilidade
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#emumanager-manager-subcomandos-uteis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        emumanager (manager) — subcomandos úteis
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#emumanager-arch-emumanagerarchitect" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        emumanager-arch / emumanager.architect
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#switch-organizer-modulo-emumanagerswitchcli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Switch Organizer (módulo emumanager.switch.cli)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ps2-convert-cso-chd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ps2-convert (CSO → CHD)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#iniciar-a-gui-via-cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Iniciar a GUI via CLI
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fluxo-de-uso-tipico-exemplo-rapido" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fluxo de uso típico (exemplo rápido)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dependencias-externas-importantes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dependências externas importantes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting-erros-comuns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting (erros comuns)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#comandos-praticos-rapidos" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comandos práticos rápidos
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#proximos-passos-opcionais" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Próximos passos (opcionais)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="guia-do-cli-do-emumanager">Guia do CLI do EmuManager</h1>
+<p>Este documento explica como usar as interfaces de linha de comando (CLI) fornecidas pelo EmuManager. O guia foca em executar os entry-points do pacote, exemplos práticos, dependências externas e dicas de solução de problemas.</p>
+<blockquote>
+<p>Local do repositório: suponho que você esteja na raiz do projeto e usando o virtualenv <code>.venv</code> criado pelo repositório.</p>
+</blockquote>
+<h2 id="entradas-entry-points">Entradas (entry-points)</h2>
+<p>O <code>pyproject.toml</code> do projeto expõe os seguintes scripts:</p>
+<ul>
+<li><code>emumanager</code> → <code>emumanager.manager:main</code> (gerenciador CLI principal)</li>
+<li><code>emumanager-arch</code> → <code>emumanager.architect:main</code> (inicialização da estrutura da biblioteca)</li>
+<li><code>ps2-convert</code> → <code>emumanager.converters.ps2_converter:_main</code> (conversor CSO → CHD)</li>
+<li><code>emumanager-gui</code> → <code>emumanager.gui:main</code> (abre a interface gráfica)</li>
+<li><code>emumanager-tui</code> → <code>emumanager.tui:main</code> (modo TUI/CLI com as ações da GUI no terminal)</li>
+<li>Subcomandos principais: <code>tui</code> (menu simples) e <code>tui-full</code> (dashboard fullscreen com painéis ao vivo)</li>
+</ul>
+<p>Se você instalou o pacote com <code>pip install .</code>, esses comandos ficam disponíveis no PATH. Caso contrário, rode-os via <code>python -m</code> usando o Python do virtualenv.</p>
+<hr />
+<h2 id="executando-no-virtualenv-recomendado">Executando no virtualenv (recomendado)</h2>
+<p>Ative o ambiente virtual do repositório:</p>
+<pre><code class="language-bash"># Linux / macOS
+source .venv/bin/activate
+
+# Windows (PowerShell)
+.venv\\Scripts\\Activate.ps1
+</code></pre>
+<p>Depois de ativar, é possível rodar:</p>
+<pre><code class="language-bash"># Gerenciador CLI
+python -m emumanager.manager --help
+
+# GUI
+python -m emumanager.gui
+
+# Conversor PS2
+python -m emumanager.converters.ps2_converter --help
+</code></pre>
+<p>Se você instalou o pacote globalmente, os nomes de script também funcionam diretamente:</p>
+<pre><code class="language-bash">emumanager --help
+emumanager-gui
+emumanager-tui --help
+emumanager-tui tui-full --help
+ps2-convert --help
+</code></pre>
+<h3 id="modo-fullscreen-textual">Modo fullscreen (Textual)</h3>
+<p>O subcomando <code>tui-full</code> abre um dashboard de terminal com painéis de log e progresso:</p>
+<pre><code class="language-bash">emumanager-tui tui-full --base /path/para/biblioteca --keys /path/prod.keys --dats-root /path/dats
+</code></pre>
+<p>Navegação:
+- Seta/Tab para escolher ação; Enter executa.
+- <code>c</code> cancela a operação em andamento (quando suportado).
+- <code>q</code> sai do dashboard.</p>
+<h3 id="usando-o-tui-terminal-user-interface">Usando o TUI (Terminal User Interface)</h3>
+<p>O EmuManager fornece duas formas de usar a interface em terminal:</p>
+<ul>
+<li><code>tui</code>: um menu interativo simples baseado em <code>rich</code> que executa ações sequenciais.</li>
+<li><code>tui-full</code>: dashboard fullscreen interativo (recomenda-se terminal com suporte a 256 cores) baseado em <code>textual</code>.</li>
+</ul>
+<p>1) Executando o menu simples:</p>
+<pre><code class="language-bash"># a partir do virtualenv do projeto
+source .venv/bin/activate
+python -m emumanager.tui tui --base /path/para/biblioteca
+</code></pre>
+<p>O menu mostrouá opções numeradas. Use o número e pressione Enter para executar. Exemplo: escolha <code>5</code> para rodar <code>Verify (DAT)</code> no diretório <code>roms/</code>.</p>
+<p>2) Executando o dashboard fullscreen:</p>
+<pre><code class="language-bash">python -m emumanager.tui tui-full --base /path/para/biblioteca --keys /path/keys.txt --dats-root /path/para/dats
+</code></pre>
+<p>Comportamento e atalhos do <code>tui-full</code>:</p>
+<ul>
+<li>Navegação: use as setas/Tab para navegar na lista de ações à esquerda.</li>
+<li>Enter: executa a ação selecionada.</li>
+<li>Painel "Sistemas": lista os sistemas detectados em <code>roms/</code> — selecione um sistema ali para defini-lo como alvo de <code>Verify</code>.</li>
+<li><code>refresh_systems</code>: ação no menu que atualiza a lista de sistemas em tempo real (útil após adicionar novas pastas sem reiniciar o dashboard).</li>
+<li><code>verify</code> (fluxo aprimorado): ao escolher <code>Verify (DAT)</code> o dashboard solicita seleção do sistema (caso não esteja definido) — confirme ou cancele.</li>
+<li><code>c</code>: solicita cancelamento da operação em andamento (quando suportado pelo worker).</li>
+<li><code>q</code>: sair do dashboard.</li>
+</ul>
+<p>3) Exemplos práticos rápidos</p>
+<ul>
+<li>Verificar um sistema usando o dashboard (passos):</li>
+<li>Abra <code>tui-full</code> apontando a sua base.</li>
+<li>Na lista "Sistemas", selecione o sistema que deseja verificar (ex: <code>snes</code>). A seleção define o alvo da verificação.</li>
+<li>No painel de ações à esquerda selecione <code>Verify (DAT)</code> e pressione Enter.</li>
+<li>
+<p>Acompanhe o progresso no painel principal; quando terminar será exibida uma tabela com os resultados e uma lista com URLs candidatas para capas.</p>
+</li>
+<li>
+<p>Atualizar a lista de sistemas sem reiniciar o dashboard:</p>
+</li>
+<li>Se você criou uma nova pasta de sistema em <code>roms/</code> externamente, selecione a ação <code>Refresh systems</code> no menu (ou pressione Enter nela). A lista de sistemas será atualizada in-place.</li>
+</ul>
+<p>4) Requisitos e dicas</p>
+<ul>
+<li>O <code>tui-full</code> usa a biblioteca <code>textual</code>. Instale dependências recomendadas se não estiverem presentes:</li>
+</ul>
+<pre><code class="language-bash">pip install textual rich typer
+</code></pre>
+<ul>
+<li>Terminais com 256 cores proporcionam melhor aparência; algumas features (como renderização avançada) dependem da versão do <code>textual</code> instalada. O TUI é defensivo e tentará usar fallbacks quando necessário.</li>
+</ul>
+<p>5) Problemas comuns</p>
+<ul>
+<li>Se o dashboard não iniciar, verifique se <code>textual</code> está instalado no mesmo ambiente Python que você está usando.</li>
+<li>Se a lista de sistemas não refletir mudanças, use <code>Refresh systems</code> (no menu) ou reinicie o <code>tui-full</code>.</li>
+<li>Logs e saída de verificação aparecem no painel principal — use-os para diagnosticar falhas de parsing de DAT ou ausência de ferramentas (ex: <code>chdman</code>, <code>nsz</code>).</li>
+</ul>
+<h3 id="textual-versoes-e-compatibilidade">Textual: versões e compatibilidade</h3>
+<p>O <code>tui-full</code> depende da biblioteca <code>textual</code>, que vem evoluindo rapidamente — APIs (widgets, nomes e
+parâmetros) podem variar entre versões. Se você encontrar erros de importação ou tracebacks relacionados
+a widgets (<code>TextLog</code>, <code>ScrollView</code>, <code>ListView</code>, <code>ProgressBar</code>), as seguintes ações ajudam a diagnosticar e
+corrigir:</p>
+<ul>
+<li>Verifique a versão atual instalada:</li>
+</ul>
+<pre><code class="language-bash">python -c &quot;import textual, sys; print(textual.__version__)&quot;
+</code></pre>
+<ul>
+<li>Se a versão for muito antiga (antes de 0.20) ou muito recente (mudação de API), tente instalar a versão
+compatível recomendada:</li>
+</ul>
+<pre><code class="language-bash">pip install 'textual&gt;=0.20,&lt;0.27'
+</code></pre>
+<ul>
+<li>Mensagens comuns e como agir:</li>
+<li>"cannot import name TextLog": sua versão de <code>textual</code> pode não ter <code>TextLog</code> — o TUI inclui um fallback
+    que usa <code>ScrollView</code>/<code>Static</code>, mas pode ser necessário atualizar/downgrade para evitar diferenças visuais.</li>
+<li>
+<p>"Can't mount widget(s) before ListView() is mounted": isso indica diferenças na ordem de montagem; atualize
+    <code>textual</code> ou reinicie o TUI; a aplicação tenta montar de forma defensiva, mas versões antigas podem falhar.</p>
+</li>
+<li>
+<p>Execução segura: em ambientes onde você não tem certeza da versão, crie um venv limpo e instale o conjunto
+  recomendado de dependências (<code>rich</code>, <code>textual</code>, <code>typer</code>) antes de executar <code>tui-full</code>.</p>
+</li>
+</ul>
+<p>Se quiser, eu posso adicionar uma detecção automática que imprime um aviso no startup indicando a versão de
+<code>textual</code> e sugestões (upgrade/downgrade). Diga se prefere que eu adicione essa detecção ao <code>tui-full</code>.</p>
+<p>6) Integração com scripts e automação</p>
+<p>Para scripts automatizados prefira os subcomandos diretos do <code>emumanager</code> (ex: <code>verify</code>, <code>list-systems</code>, <code>organize</code>) em vez do <code>tui</code> interativo. Exemplo para rodar uma verificação programaticamente:</p>
+<pre><code class="language-bash">python -m emumanager.tui verify /path/para/biblioteca/roms/snes --dats-root /path/para/dats
+</code></pre>
+<p>Esse comando roda a verificação de forma não interativa e retorna um relatório resumido no terminal.</p>
+<hr />
+<h2 id="emumanager-manager-subcomandos-uteis"><code>emumanager</code> (manager) — subcomandos úteis</h2>
+<p>Sintaxe básica:</p>
+<pre><code class="language-bash">emumanager &lt;subcommand&gt; [args...]
+# ou
+python -m emumanager.manager &lt;subcommand&gt; [args...]
+</code></pre>
+<p>Subcomandos principais:</p>
+<ul>
+<li><code>init [base_dir] [--dry-run]</code></li>
+<li>Cria a estrutura padrão (<code>roms/</code>, <code>bios/</code>, <code>dats/</code>, etc.).</li>
+<li>
+<p>Exemplo:
+    <code>bash
+    emumanager init /home/usuario/EmuLibrary
+    emumanager init --dry-run</code></p>
+</li>
+<li>
+<p><code>list-systems [base_dir]</code></p>
+</li>
+<li>
+<p>Lista pastas de sistema dentro de <code>roms/</code>.</p>
+</li>
+<li>
+<p><code>add-rom &lt;src&gt; [base_dir] [--system SYSTEM] [--move] [--dry-run]</code></p>
+</li>
+<li>
+<p>Adiciona ou move um ROM para a biblioteca (tenta detectar o sistema automaticamente se <code>--system</code> não for dado).</p>
+</li>
+<li>
+<p><code>update-dats [base_dir] [--source no-intro|redump]</code></p>
+</li>
+<li>
+<p>Baixa/atualiza os DATs usados pela verificação.</p>
+</li>
+<li>
+<p><code>switch -- [args passed to switch organizer]</code></p>
+</li>
+<li>Repassa argumentos para o organizador do Switch (módulo <code>emumanager.switch.cli</code>).</li>
+<li>Exemplo:
+    <code>bash
+    emumanager switch -- --organize --compress --dir /path/to/switch/roms</code></li>
+</ul>
+<p>Use <code>emumanager --help</code> para ver todas as opções.</p>
+<hr />
+<h2 id="emumanager-arch-emumanagerarchitect"><code>emumanager-arch</code> / <code>emumanager.architect</code></h2>
+<p>Usado principalmente para inicializar a estrutura da biblioteca e gerar README por sistema.</p>
+<pre><code class="language-bash">emumanager-arch --help
+emumanager-arch init /home/usuario/EmuLibrary
+</code></pre>
+<p><code>emumanager init</code> delega a <code>architect</code> internamente, então normalmente você usa apenas <code>emumanager init</code>.</p>
+<hr />
+<h2 id="switch-organizer-modulo-emumanagerswitchcli">Switch Organizer (módulo <code>emumanager.switch.cli</code>)</h2>
+<p>Este CLI é rico em opções e atende operações de organização, compressão, verificação e limpeza para Switch.</p>
+<p>Para ver ajuda completa:</p>
+<pre><code class="language-bash">python -m emumanager.switch.cli --help
+# ou via manager
+emumanager switch -- --help
+</code></pre>
+<p>Exemplos comuns:</p>
+<pre><code class="language-bash"># Organizar tudo e remover lixo
+python -m emumanager.switch.cli --dir /path/to/switch --organize --clean-junk
+
+# Comprimir (NSZ) e remover originais quando bem-sucedido
+python -m emumanager.switch.cli --dir /path/to/switch --compress --rm-originals --level 3
+
+# Simulação
+python -m emumanager.switch.cli --dir /path --organize --dry-run
+</code></pre>
+<p>Principais flags: <code>--dir</code>, <code>--keys</code>, <code>--dry-run</code>, <code>--compress</code>, <code>--decompress</code>, <code>--organize</code>, <code>--clean-junk</code>, <code>--level</code>, <code>--deep-verify</code>.</p>
+<hr />
+<h2 id="ps2-convert-cso-chd"><code>ps2-convert</code> (CSO → CHD)</h2>
+<p>Converte arquivos <code>.cso</code> para <code>.chd</code> usando <code>maxcso</code> + <code>chdman</code>.</p>
+<p>Uso:</p>
+<pre><code class="language-bash">ps2-convert --help
+# ou
+python -m emumanager.converters.ps2_converter --dir ./cso_files --backup-dir _LIXO_CSO --remove-original
+</code></pre>
+<p>Opções importantes: <code>--dir</code>, <code>--backup-dir</code>, <code>--dry-run</code>, <code>--remove-original</code>.</p>
+<p>Requisitos: <code>maxcso</code> e <code>chdman</code> no PATH — o script aborta com mensagem clara se faltarem.</p>
+<hr />
+<h2 id="iniciar-a-gui-via-cli">Iniciar a GUI via CLI</h2>
+<pre><code class="language-bash">python -m emumanager.gui
+# ou
+emumanager-gui
+</code></pre>
+<p>Para ambientes sem display (apenas para testes):</p>
+<pre><code class="language-bash">export QT_QPA_PLATFORM=offscreen
+python -m emumanager.gui
+</code></pre>
+<hr />
+<h2 id="fluxo-de-uso-tipico-exemplo-rapido">Fluxo de uso típico (exemplo rápido)</h2>
+<ol>
+<li>Inicializar biblioteca:</li>
+</ol>
+<pre><code class="language-bash">emumanager init /home/usuario/EmuLibrary
+</code></pre>
+<ol>
+<li>Atualizar DATs:</li>
+</ol>
+<pre><code class="language-bash">emumanager update-dats /home/usuario/EmuLibrary --source no-intro
+</code></pre>
+<ol>
+<li>Adicionar ROM:</li>
+</ol>
+<pre><code class="language-bash">emumanager add-rom ~/Downloads/Game.cso /home/usuario/EmuLibrary --move
+</code></pre>
+<ol>
+<li>Converter CSO → CHD (PS2):</li>
+</ol>
+<pre><code class="language-bash">ps2-convert --dir /home/usuario/EmuLibrary/roms/ps2 --remove-original
+</code></pre>
+<ol>
+<li>Organizar/Comprimir Switch:</li>
+</ol>
+<pre><code class="language-bash">emumanager switch -- --dir /home/usuario/EmuLibrary/roms/switch --organize --compress --clean-junk
+</code></pre>
+<hr />
+<h2 id="dependencias-externas-importantes">Dependências externas importantes</h2>
+<p>Algumas funcionalidades exigem ferramentas de terceiros (devem estar no PATH):</p>
+<ul>
+<li><code>chdman</code> (parte do pacote MAME / mame-tools) — usado para CHD (extrair/criar). Fundamental para PS1/PS2 manipulações.</li>
+<li><code>maxcso</code> — descompressão CSO → ISO (usado em <code>ps2-convert</code>).</li>
+<li><code>nsz</code> — compressão para NSZ (Switch). Pode ser instalado via <code>pip install nsz</code> ou pelo pacote do sistema.</li>
+<li><code>hactool</code>, <code>nstool</code> — extrair/ler metadados do Switch quando necessário.</li>
+<li><code>clamscan</code>/<code>clamd</code> — opcionais para health checks.</li>
+</ul>
+<p>Instalação (exemplo Debian/Ubuntu):</p>
+<pre><code class="language-bash">sudo apt update
+sudo apt install mame-tools
+# maxcso pode não estar nos repositórios; procure pacote ou compile/instale binário
+pip install nsz
+</code></pre>
+<hr />
+<h2 id="troubleshooting-erros-comuns">Troubleshooting (erros comuns)</h2>
+<ul>
+<li>"No serial found" em arquivos <code>.chd</code> (PS2):</li>
+<li>Verifique se <code>chdman</code> está instalado e funcional.</li>
+<li>
+<p>Algumas versões de <code>chdman</code> não suportam saída por stdout (<code>-o -</code>) ou certas flags; o EmuManager tenta estratégias (extração parcial com <code>--inputbytes</code> ou extração completa para arquivo temporário). Caso falhe, execute manualmente:</p>
+<p><code>bash
+chdman extractdvd -i "God of War II.chd" -o /tmp/out.iso
+head -c 65536 /tmp/out.iso | strings | egrep -i 'SLUS|SLES|BOOT'</code></p>
+</li>
+<li>
+<p>Se <code>chdman</code> imprimir mensagens de "Usage" ou "Option is missing parameter", verifique a versão e mostre o stderr para diagnóstico.</p>
+</li>
+<li>
+<p>Ferramentas não encontradas (<code>nsz</code>, <code>chdman</code>, <code>maxcso</code>): instale-as e garanta que estejam no PATH. Os CLIs exibem mensagens claras indicando o binário faltante.</p>
+</li>
+<li>
+<p>Erros de GUI em ambiente headless: use <code>QT_QPA_PLATFORM=offscreen</code> para testes automatizados; para uso interativo, execute com display.</p>
+</li>
+<li>
+<p>Logs e verbosidade: use <code>--verbose</code> nas ferramentas que suportam, ou passe <code>--log-file</code>/<code>--log-max-bytes</code> quando disponível.</p>
+</li>
+</ul>
+<hr />
+<h2 id="comandos-praticos-rapidos">Comandos práticos rápidos</h2>
+<pre><code class="language-bash"># Adicionar um ROM
+emumanager add-rom ~/Downloads/game.iso /home/usuario/EmuLibrary
+
+# Listar sistemas
+emumanager list-systems /home/usuario/EmuLibrary
+
+# Converter todos CSO em uma pasta
+ps2-convert --dir /home/usuario/EmuLibrary/roms/ps2 --backup-dir /home/usuario/backup_cso --remove-original
+
+# Organizar e comprimir Switch (simulação)
+emumanager switch -- --dir /home/usuario/EmuLibrary/roms/switch --organize --compress --dry-run
+</code></pre>
+<hr />
+<h2 id="proximos-passos-opcionais">Próximos passos (opcionais)</h2>
+<p>Se você quiser, posso:</p>
+<ul>
+<li>Fornecer um pequeno script de diagnóstico (<code>scripts/debug_chd.py</code>) que tenta as estratégias de extração do <code>chdman</code> (parcial e completa) e grava o stderr para facilitar depuração; ou</li>
+<li>Adicionar instruções detalhadas de instalação das dependências no <code>README.md</code> (com comandos por distribuição).</li>
+</ul>
+<p>Diga qual prefere que eu faça a seguir: gerar o script de diagnóstico (A) ou adicionar instruções de instalação detalhadas ao README (B).</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "toc.follow", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
