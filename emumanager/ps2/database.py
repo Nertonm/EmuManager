@@ -1,4 +1,6 @@
 import csv
+import os
+import sys
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -6,6 +8,30 @@ from typing import Dict, Optional
 class PS2Database:
     def __init__(self):
         self._db: Dict[str, str] = {}
+        self._initialized = False
+
+    def _auto_load(self):
+        """Tenta carregar a base de dados de locais padrão se ainda não o fez."""
+        if self._initialized:
+            return
+        
+        # Ordem de procura:
+        # 1. Recurso embutido (PyInstaller _MEIPASS)
+        # 2. Pasta do script/executável
+        # 3. Diretório de trabalho atual
+        
+        candidates = []
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            candidates.append(Path(sys._MEIPASS) / "ps2_db.csv")
+        
+        candidates.append(Path(sys.argv[0]).parent / "ps2_db.csv")
+        candidates.append(Path("ps2_db.csv"))
+        
+        for cand in candidates:
+            if cand.exists():
+                self.load_from_csv(cand)
+                break
+        self._initialized = True
 
     def load_from_csv(self, csv_path: Path):
         """
@@ -34,6 +60,7 @@ class PS2Database:
 
     def get_title(self, serial: str) -> Optional[str]:
         # Serial expected in XXXX-YYYYY format
+        self._auto_load()
         return self._db.get(serial)
 
 

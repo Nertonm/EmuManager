@@ -4,9 +4,10 @@ from PyInstaller.utils.hooks import collect_data_files
 block_cipher = None
 
 # Coletar dados extras (bases de dados CSV, etc.)
-datas = [
-    ('ps2_db.csv', '.'),
-]
+datas = []
+if os.path.exists('ps2_db.csv'):
+    datas.append(('ps2_db.csv', '.'))
+
 datas += collect_data_files('emumanager')
 
 a = Analysis(
