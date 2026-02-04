@@ -161,9 +161,7 @@ class DatabaseConfig:
 # EXTENSION MAPPINGS
 # ============================================================================
 
-# ============================================================================
-# EXTENSION MAPPINGS
-# ============================================================================
+
 
 # Minimal extension -> system mapping for guessing where to put ROMs
 EXT_TO_SYSTEM: Dict[str, str] = {
