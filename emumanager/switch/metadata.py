@@ -219,3 +219,51 @@ def determine_region(filename: str, langs_str: Optional[str]) -> str:
         if "En" in langs_str:
             return REG_WORLD
     return ""
+
+def get_metadata_minimal(path: Path) -> dict:
+    """Extração mínima de metadados para uso no provider sem dependências pesadas.
+    
+    Retorna um dicionário com campos básicos extraídos do nome do arquivo.
+    Para extração completa, use meta_extractor.get_metadata_info().
+    """
+    filename = path.stem
+    
+    # Extrair Title ID do nome do arquivo
+    title_id_match = re.search(r"\[([0-9a-fA-F]{16})\]", filename)
+    title_id = title_id_match.group(1) if title_id_match else "0000000000000000"
+    
+    # Extrair versão
+    version_match = re.search(r"[\[\(]v?(\d+)[\)\]]", filename)
+    version = version_match.group(1) if version_match else "0"
+    
+    # Remover bracketed info para obter título limpo
+    title = re.sub(r"\[[^\]]*\]", "", filename)
+    title = re.sub(r"\([^\)]*\)", "", title).strip()
+    
+    # Detectar idiomas do nome
+    langs = detect_languages_from_filename(filename)
+    
+    # Determinar tipo (Base/Update/DLC) baseado no suffix do Title ID
+    try:
+        tid_int = int(title_id, 16)
+        suffix = tid_int & 0xFFF
+        if suffix == 0x000:
+            type_name = "Base"
+        elif suffix == 0x800:
+            type_name = "Update"
+        else:
+            type_name = "DLC"
+    except:
+        type_name = "Unknown"
+    
+    # Determinar região
+    region = determine_region(filename, langs)
+    
+    return {
+        "title_id": title_id,
+        "title": title or path.stem,
+        "version": version,
+        "type": type_name,
+        "languages": langs,
+        "region": region
+    }

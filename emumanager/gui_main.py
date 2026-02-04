@@ -1363,6 +1363,9 @@ class MainWindowBase:
         elif result:
             self.log_msg(f"Scan complete. Total files: {result.get('count', 0)}")
             self._update_dashboard_stats(systems, stats=result)
+            
+            # Atualizar tabela de biblioteca com dados do banco
+            self._refresh_library_table()
 
         self._scan_in_progress = False
         self._auto_select_last_system()
@@ -1518,6 +1521,48 @@ class MainWindowBase:
         except Exception:
             logging.exception("Failed to refresh quarantine tab")
 
+    def _refresh_library_table(self):
+        """Atualiza a tabela de resultados com os dados da biblioteca após o scan."""
+        try:
+            if not hasattr(self.ui, "table_results"):
+                return
+                
+            # Obter todas as entradas do banco
+            all_entries = self.library_db.get_all_entries()
+            
+            if not all_entries:
+                self.log_msg("No entries found in library database")
+                return
+            
+            # Criar objetos compatíveis com _create_result_row
+            from types import SimpleNamespace
+            results = []
+            for entry in all_entries:
+                # Converter LibraryEntry para formato esperado pela tabela
+                result = SimpleNamespace(
+                    status=entry.status or "UNKNOWN",
+                    filename=Path(entry.path).name,
+                    full_path=entry.path,
+                    match_name=entry.match_name or "",
+                    dat_name=entry.dat_name or "",
+                    crc=entry.crc32 or "",
+                    sha1=entry.sha1 or "",
+                    md5=entry.md5 or "",
+                    sha256=entry.sha256 or ""
+                )
+                results.append(result)
+            
+            # Atualizar a tabela
+            self.ui.table_results.setRowCount(len(results))
+            for i, result in enumerate(results):
+                self._create_result_row(i, result)
+            
+            self.log_msg(f"Library table updated with {len(results)} entries")
+            
+        except Exception as e:
+            logging.exception(f"Failed to refresh library table: {e}")
+            self.log_msg(f"Error updating library table: {e}")
+
     def _on_quarantine_selection_changed(self):
         try:
             if not hasattr(self.ui, "quarantine_table"):
@@ -1582,6 +1627,12 @@ class MainWindowBase:
                 except Exception:
                     pass
                 self.ui.quarantine_table.removeRow(row)
+                
+                # Synchronize library UI after delete
+                try:
+                    self._sync_after_verification()
+                except Exception as e:
+                    logging.debug(f"UI sync after delete failed: {e}")
             except Exception as e:
                 qt.QMessageBox.warning(self.window, "Error", f"Could not delete: {e}")
         except Exception:
@@ -1663,6 +1714,12 @@ class MainWindowBase:
                 except Exception:
                     pass
                 self.ui.quarantine_table.removeRow(row)
+                
+                # Synchronize library UI after restore
+                try:
+                    self._sync_after_verification()
+                except Exception as e:
+                    logging.debug(f"UI sync after restore failed: {e}")
             except Exception as e:
                 try:
                     self._qtwidgets.QMessageBox.warning(self.window, "Error", f"Failed to restore: {e}")
@@ -1749,6 +1806,24 @@ class MainWindowBase:
                 return
             system = item.text()
             self._populate_roms(system)
+            
+            # Mostrar estatísticas do sistema
+            try:
+                entries = self.library_db.get_entries_by_system(system)
+                stats = {
+                    "total": len(entries),
+                    "verified": sum(1 for e in entries if e.status == "VERIFIED"),
+                    "corrupt": sum(1 for e in entries if e.status == "CORRUPT"),
+                    "unknown": sum(1 for e in entries if e.status == "UNKNOWN"),
+                }
+                self.log_msg(
+                    f"System '{system}': {stats['total']} files - "
+                    f"{stats['verified']} verified, {stats['corrupt']} corrupt, "
+                    f"{stats['unknown']} unknown"
+                )
+            except Exception as e:
+                logging.debug(f"Failed to get system stats: {e}")
+            
             # Remember last selected system
             try:
                 if self._settings:
@@ -1827,17 +1902,45 @@ class MainWindowBase:
             return []
 
     def _populate_roms(self, system: str):
+        """Popula a lista de ROMs com informações do banco de dados."""
         if not self._last_base:
             return
 
-        files = self._find_rom_files(system)
-        self._current_roms = [str(p) for p in files]
-        self.log_msg(f"Found {len(files)} files.")
+        try:
+            # Obter entradas do banco de dados para este sistema
+            entries = self.library_db.get_entries_by_system(system)
+            entry_dict = {Path(e.path).name: e for e in entries}
+            
+            # Listar arquivos físicos
+            files = self._find_rom_files(system)
+            self._current_roms = [str(p) for p in files]
+            self.log_msg(f"Found {len(files)} files ({len(entries)} in database).")
 
-        if self.rom_list is not None:
-            self.rom_list.clear()
-            for f in files:
-                self.rom_list.addItem(str(f))
+            if self.rom_list is not None:
+                self.rom_list.clear()
+                for f in files:
+                    filename = str(f)
+                    # Adicionar indicador de status se disponível
+                    file_key = Path(f).name
+                    if file_key in entry_dict:
+                        entry = entry_dict[file_key]
+                        status = entry.status or "UNKNOWN"
+                        # Adicionar emoji/símbolo baseado no status
+                        if status == "VERIFIED":
+                            display_name = f"✓ {filename}"
+                        elif status == "CORRUPT":
+                            display_name = f"✗ {filename}"
+                        elif status == "ERROR":
+                            display_name = f"⚠ {filename}"
+                        else:
+                            display_name = f"? {filename}"
+                    else:
+                        display_name = f"  {filename}"
+                    
+                    self.rom_list.addItem(display_name)
+        except Exception as e:
+            logging.exception(f"Failed to populate roms: {e}")
+            self.log_msg(f"Error populating ROM list: {e}")
 
     def _on_filter_text(self, text: str):
         try:
@@ -1947,6 +2050,7 @@ class MainWindowBase:
         args.cancel_event = self._cancel_event
         args.standardize_names = self.chk_standardize_names.isChecked()
         args.orchestrator = self._orchestrator
+        args.library_db = self.library_db
         return args
 
     def on_open_library(self):
@@ -2057,12 +2161,46 @@ class MainWindowBase:
                 # Store for filtering/export
                 self._last_verify_results = res.results
                 self.on_verification_filter_changed()
+                
+                # Sincronizar dados após verificação
+                self._sync_after_verification()
             else:
                 self.log_msg(str(res))
             self._set_ui_enabled(True)
 
         self._set_ui_enabled(False)
         self._run_in_background(_work, _done)
+
+    def _sync_after_verification(self):
+        """Sincroniza os dados da biblioteca após verificação."""
+        try:
+            # Recarregar a lista de ROMs do sistema atual para refletir novos status
+            current_sys_item = self.sys_list.currentItem()
+            if current_sys_item:
+                system = current_sys_item.text()
+                self.log_msg(f"🔄 Refreshing {system} library data...")
+                self._populate_roms(system)
+            
+            # Atualizar o inspector se houver ROM selecionada
+            current_rom = self.rom_list.currentItem()
+            if current_rom and current_sys_item:
+                system = current_sys_item.text()
+                rom_text = current_rom.text()
+                # Remover indicadores de status
+                if rom_text.startswith(("✓ ", "✗ ", "⚠ ", "? ", "  ")):
+                    rom_text = rom_text[2:]
+                
+                try:
+                    from .manager import get_roms_dir
+                    base_roms_dir = get_roms_dir(Path(self._last_base))
+                    full_path = base_roms_dir / system / rom_text
+                    self._show_rom_metadata(str(full_path.resolve()))
+                except Exception as e:
+                    logging.debug(f"Failed to update inspector after verification: {e}")
+                    
+            self.log_msg("✓ Library data synchronized")
+        except Exception as e:
+            logging.debug(f"Failed to sync after verification: {e}")
 
     def _get_rehash_targets(self):
         """Identifica os itens da tabela de verificação que devem ser re-hashados."""
@@ -2531,6 +2669,8 @@ class MainWindowBase:
                 self.log_msg(f"Renomeação concluída: {res}")
                 self._populate_roms(system)
                 self._update_dashboard_stats()
+                # Sincronizar inspector após renomeação
+                self._sync_after_verification()
 
             self._set_ui_enabled(False)
             self._run_in_background(_work, _done)
@@ -2600,20 +2740,81 @@ class MainWindowBase:
         system = sys_item.text()
         rom_rel_path = current.text()
         
+        # Remover indicadores de status do nome se presentes
+        rom_display_name = rom_rel_path
+        if rom_display_name.startswith(("✓ ", "✗ ", "⚠ ", "? ", "  ")):
+            rom_display_name = rom_display_name[2:]
+        
         try:
             from .manager import get_roms_dir
             base_roms_dir = get_roms_dir(Path(self._last_base))
-            full_path = base_roms_dir / system / rom_rel_path
+            full_path = base_roms_dir / system / rom_display_name
+            
+            # Mostrar metadados da biblioteca no log
+            self._show_rom_metadata(str(full_path.resolve()))
             
             cache_dir = Path(self._last_base) / ".covers"
             cache_dir.mkdir(exist_ok=True)
             
-            self.log_msg(f"Fetching cover for {rom_rel_path} (System: {system})...")
-            region = self._guess_rom_region(rom_rel_path)
+            self.log_msg(f"Fetching cover for {rom_display_name} (System: {system})...")
+            region = self._guess_rom_region(rom_display_name)
             
             self._start_cover_downloader(system, region, cache_dir, full_path)
         except Exception as e:
             logging.error(f"Selection change failed: {e}")
+
+    def _show_rom_metadata(self, full_path: str):
+        """Mostra metadados da ROM no log a partir do banco de dados."""
+        try:
+            entry = self.library_db.get_entry(full_path)
+            if not entry:
+                self.log_msg(f"⚠ No metadata found in library for this file")
+                return
+            
+            # Mostrar informações básicas
+            self.log_msg("─" * 60)
+            self.log_msg(f"📋 ROM METADATA:")
+            self.log_msg(f"  Status: {entry.status}")
+            
+            if entry.match_name:
+                self.log_msg(f"  Title: {entry.match_name}")
+            
+            if entry.dat_name:
+                self.log_msg(f"  Serial/ID: {entry.dat_name}")
+            
+            # Mostrar hashes se disponíveis
+            if entry.crc32 or entry.sha1 or entry.md5:
+                self.log_msg(f"  Hashes:")
+                if entry.crc32:
+                    self.log_msg(f"    CRC32: {entry.crc32}")
+                if entry.sha1:
+                    self.log_msg(f"    SHA1: {entry.sha1}")
+                if entry.md5:
+                    self.log_msg(f"    MD5: {entry.md5}")
+            
+            # Mostrar informações de tamanho
+            try:
+                size_mb = entry.size / (1024 * 1024)
+                self.log_msg(f"  Size: {size_mb:.2f} MB")
+            except Exception:
+                pass
+            
+            # Mostrar metadados extras se disponíveis
+            if entry.extra_metadata:
+                extra = entry.extra_metadata
+                if extra.get("title"):
+                    self.log_msg(f"  Game Title: {extra['title']}")
+                if extra.get("serial"):
+                    self.log_msg(f"  Game Serial: {extra['serial']}")
+                if extra.get("region"):
+                    self.log_msg(f"  Region: {extra['region']}")
+                if extra.get("ra_compatible"):
+                    self.log_msg(f"  RetroAchievements: ✓ Compatible")
+            
+            self.log_msg("─" * 60)
+            
+        except Exception as e:
+            logging.debug(f"Failed to show ROM metadata: {e}")
 
     def _start_cover_downloader(self, system, region, cache_dir, full_path):
         downloader = CoverDownloader(system, None, region, str(cache_dir), str(full_path))
@@ -2764,6 +2965,8 @@ class MainWindowBase:
             self._qtwidgets.QMessageBox.information(
                 self.window, "Identification Result", str(res)
             )
+            # Sincronizar dados após identificação
+            self._sync_after_verification()
 
         self._run_in_background(_work, _done)
 
@@ -2821,6 +3024,8 @@ class MainWindowBase:
                 self.log_msg(res.text)
                 self._last_verify_results = res.results
                 self.on_verification_filter_changed()
+                # Sincronizar dados após identificar todos
+                self._sync_after_verification()
             else:
                 self.log_msg(str(res))
             self._set_ui_enabled(True)

@@ -73,7 +73,8 @@ class CoverDownloader(QRunnable):
             if not tg_url:
                 return False
 
-            ext = tg_url.split(".")[-1]
+            url_parts = tg_url.split(".")
+            ext = url_parts[-1] if url_parts else "jpg"
             tgt_path = str(Path(self.cache_dir) / "covers" / self.system / f"{game_name or self.game_id}.{ext}")
             
             self.signals.log.emit(f"Trying TheGamesDB URL: {tg_url}")
@@ -139,7 +140,8 @@ class CoverDownloader(QRunnable):
 
         # Determine extension from the first URL. This is a simple heuristic
         # that assumes all candidate URLs share the same extension.
-        ext = urls[0].split(".")[-1]
+        url_parts = urls[0].split(".")
+        ext = url_parts[-1] if url_parts else "jpg"
 
         # Construct local path
         file_path = str(Path(self.cache_dir) / "covers" / self.system / f"{self.game_id}.{ext}")

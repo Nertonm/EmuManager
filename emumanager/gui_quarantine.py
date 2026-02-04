@@ -20,10 +20,11 @@ logger = logging.getLogger(__name__)
 
 
 class QuarantineDialog:
-    def __init__(self, qt, parent, library_db):
+    def __init__(self, qt, parent, library_db, main_window=None):
         self.qt = qt
         self.parent = parent
         self.db = library_db
+        self.mw = main_window
         self.dlg = None
         self.table = None
         self.open_btn = None
@@ -176,6 +177,13 @@ class QuarantineDialog:
                 logger.error(f"DB update failed after deleting {p}: {e}")
             
             self.table.removeRow(row)
+            
+            # Synchronize main window library display if available
+            if self.mw:
+                try:
+                    self.mw._sync_after_verification()
+                except Exception as e:
+                    logger.debug(f"UI sync after delete failed: {e}")
         except Exception as e:
             logger.error(f"File deletion failed for {p}: {e}")
             self.qt.QMessageBox.warning(self.dlg, "Error", f"Could not delete: {e}")
@@ -215,6 +223,13 @@ class QuarantineDialog:
             shutil.move(str(p), str(new_path))
             self._update_db_after_restore(qpath, new_path)
             self.table.removeRow(row)
+            
+            # Synchronize main window library display if available
+            if self.mw:
+                try:
+                    self.mw._sync_after_verification()
+                except Exception as e:
+                    logger.debug(f"UI sync after restore failed: {e}")
         except Exception as e:
             logger.error(f"Restore failed for {p} to {new_path}: {e}")
             self.qt.QMessageBox.warning(self.dlg, "Error", f"Failed to restore: {e}")

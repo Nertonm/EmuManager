@@ -49,10 +49,22 @@ class SystemRegistry:
             try:
                 if p.validate_file(path):
                     return p
-            except Exception:
+            except Exception as e:
+                # Logar falha de validação mas continuar tentando outros
+                import logging
+                logging.getLogger("registry").debug(
+                    f"Falha ao validar {path.name} com {p.system_id}: {e}"
+                )
                 continue
                 
-        return candidates[0] # Fallback para o primeiro se falhar validação profunda
+        # Fallback: retornar provider mais provável baseado em prioridade
+        priority_order = ['ps2', 'dolphin', 'psx', 'psp', 'ps3', 'switch', '3ds']
+        for sys_id in priority_order:
+            for p in candidates:
+                if p.system_id == sys_id:
+                    return p
+        
+        return candidates[0]  # Último recurso
 
     def list_systems(self) -> list[str]:
         return sorted(list(self._providers.keys()))

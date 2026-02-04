@@ -156,7 +156,8 @@ def _extract_with_native_parser(
                 info["ver"] = f"v{ver_match.group(1)}"
 
             # Try to get name from filename
-            name_part = filepath.name.split(f"[{tid}]")[0]
+            name_parts = filepath.name.split(f"[{tid}]")
+            name_part = name_parts[0] if name_parts else filepath.stem
             name_part = re.sub(REGEX_BRACKETS, "", name_part).strip()
             if name_part:
                 info["name"] = name_part
@@ -236,7 +237,8 @@ def get_metadata_info(
         tid_match = re.search(REGEX_TITLE_ID, filepath.name)
         if tid_match:
             clean_tid = tid_match.group(1).upper()
-            name_part = filepath.name.split(f"[{clean_tid}]")[0]
+            name_parts = filepath.name.split(f"[{clean_tid}]")
+            name_part = name_parts[0] if name_parts else filepath.stem
             name_part = re.sub(REGEX_BRACKETS, "", name_part).strip()
             ver_match = re.search(REGEX_VERSION, filepath.name)
             info["name"] = name_part

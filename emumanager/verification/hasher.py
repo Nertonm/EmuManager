@@ -41,7 +41,9 @@ def calculate_hashes(
             if obj:
                 results[alg] = obj.hexdigest()
         return results
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.getLogger("verification.hasher").error(f"Erro ao calcular hashes de {path}: {e}")
         return {}
 
 def get_file_hash(path: Path, algo: str = "sha1") -> str:

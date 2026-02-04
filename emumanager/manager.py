@@ -9,10 +9,15 @@ delegando a lógica pesada para o pacote 'core'.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 
 from .config import BASE_DEFAULT, EXT_TO_SYSTEM
 from .core.session import Session
+
+
+def get_roms_dir(base_path: Path) -> Path:
+    """Helper para obter o diretório roms a partir do base path."""
+    return base_path if base_path.name == "roms" else base_path / "roms"
 
 
 def get_orchestrator(base_dir: Path | str) -> Any:
@@ -48,9 +53,9 @@ def cmd_list_systems(base_dir: Path) -> list[str]:
     roms = base_dir / "roms" if (base_dir / "roms").is_dir() else base_dir
     if not roms.exists():
         return []
-    # Usar set() para eliminar duplicados e depois ordenar
+    # Usar set() para eliminar duplicados e retornar já ordenado
     systems = {p.name for p in roms.iterdir() if p.is_dir() and not p.name.startswith(".")}
-    return sorted(list(systems))
+    return sorted(systems)
 
 
 

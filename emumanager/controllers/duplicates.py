@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from emumanager.common.formatting import human_readable_size
 from emumanager.library import LibraryDB
 from emumanager.workers.duplicates import worker_find_duplicates
+from emumanager.common.fileops import safe_move
 
 if TYPE_CHECKING:
     from emumanager.gui_main import MainWindowBase
@@ -170,8 +171,6 @@ class DuplicatesController:
         return moves
 
     def _execute_duplicate_move(self, src: Path, dst: Path, args: Any, db: LibraryDB, logger: logging.Logger) -> tuple[bool, str]:
-        from emumanager.common.fileops import safe_move as _safe_move
-
         def _fast_hash(p: Path) -> str:
             try:
                 st = p.stat()
@@ -182,7 +181,7 @@ class DuplicatesController:
         try:
             dst.parent.mkdir(parents=True, exist_ok=True)
             chosen = self._unique_dest_path(dst)
-            if _safe_move(src, chosen, args=args, get_file_hash=_fast_hash, logger=logger):
+            if safe_move(src, chosen, args=args, get_file_hash=_fast_hash, logger=logger):
                 self._remove_from_db(db, src)
                 return True, str(chosen)
             return False, str(src)
@@ -229,6 +228,12 @@ class DuplicatesController:
             self.mw.log_msg("Some files were skipped:")
             for s in skipped[:30]: 
                 self.mw.log_msg(f" - {s}")
+        
+        # Synchronize library UI after moving duplicates
+        try:
+            self.mw._sync_after_verification()
+        except Exception as e:
+            logging.debug(f"UI sync failed: {e}")
         
         try:
             self.scan_duplicates()

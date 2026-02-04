@@ -269,6 +269,9 @@ class ToolsController:
             self._handle_task_error_log(res)
             try:
                 self.mw.on_list()
+                # Sincronizar dados da biblioteca após operação
+                if hasattr(self.mw, '_sync_after_verification'):
+                    self.mw._sync_after_verification()
             except Exception:
                 pass
 
@@ -292,7 +295,7 @@ class ToolsController:
         """Open a dialog showing quarantined files and allow restore/delete."""
         try:
             qt = self.mw._qtwidgets
-            dlg = QuarantineDialog(qt, self.mw.window, self.mw.library_db)
+            dlg = QuarantineDialog(qt, self.mw.window, self.mw.library_db, self.mw)
             dlg.show()
         except Exception as e:
             logging.exception(f"Failed to open quarantine dialog: {e}")
@@ -427,6 +430,9 @@ class ToolsController:
             logging.info(str(res))
             self.mw._set_ui_enabled(True)
             self.mw._update_dashboard_stats()
+            # Sincronizar biblioteca após clean_junk
+            if hasattr(self.mw, '_sync_after_verification'):
+                self.mw._sync_after_verification()
 
         self.mw._set_ui_enabled(False)
         self.mw._run_in_background(_work, _done)
@@ -460,6 +466,12 @@ class ToolsController:
             logging.info(str(res))
             self.mw._set_ui_enabled(True)
             self.mw._update_dashboard_stats()
+            
+            # Synchronize library UI after tool operations
+            try:
+                self.mw._sync_after_verification()
+            except Exception as e:
+                logging.debug(f"UI sync after tool task failed: {e}")
 
         self.mw._set_ui_enabled(False)
         self.mw._run_in_background(_work, _done)

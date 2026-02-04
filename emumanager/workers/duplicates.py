@@ -15,7 +15,6 @@ def _is_canceled(cancel_event: Any) -> bool:
 def _gather_duplicate_groups(
     db: LibraryDB,
     hash_prefer: tuple[str, ...],
-    filter_non_games: bool,
     include_name: bool,
     progress_cb: Optional[Callable[[float, str], None]],
     log_cb: Optional[Callable[[str], None]],
@@ -27,7 +26,7 @@ def _gather_duplicate_groups(
     if progress_cb:
         progress_cb(10.0, "Checking hash duplicates...")
     try:
-        groups.extend(db.find_duplicates_by_hash(prefer=hash_prefer, filter_non_games=filter_non_games))
+        groups.extend(db.find_duplicates_by_hash(prefer=hash_prefer))
     except Exception as e:
         if log_cb:
             log_cb(f"Duplicate scan (hash) failed: {e}")
@@ -40,7 +39,7 @@ def _gather_duplicate_groups(
         if progress_cb:
             progress_cb(60.0, "Checking name duplicates...")
         try:
-            groups.extend(db.find_duplicates_by_normalized_name(filter_non_games=filter_non_games))
+            groups.extend(db.find_duplicates_by_normalized_name())
         except Exception as e:
             if log_cb:
                 log_cb(f"Duplicate scan (name) failed: {e}")
@@ -81,7 +80,7 @@ def worker_find_duplicates(
         return {"groups": [], "total_groups": 0, "total_items": 0, "wasted_bytes": 0}
 
     groups = _gather_duplicate_groups(
-        db, hash_prefer, filter_non_games, include_name, progress_cb, log_cb, cancel_event
+        db, hash_prefer, include_name, progress_cb, log_cb, cancel_event
     )
 
     if not groups and _is_canceled(cancel_event):

@@ -6,6 +6,12 @@ from typing import Callable, Optional
 
 from emumanager.library import LibraryDB, LibraryEntry
 from emumanager.workers.common import BaseWorker, set_correlation_id
+from emumanager.common.exceptions import (
+    WorkflowError,
+    FileReadError,
+    DatabaseError,
+)
+from emumanager.common.validation import validate_path_exists
 
 ARCHIVE_EXTS = {".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz", ".tgz", ".tbz2"}
 
@@ -38,7 +44,14 @@ class ScannerWorker(BaseWorker):
                     self.logger.error(f"Erro ao remover entrada órfã {path}: {e}")
 
     def _scan_single_file(self, file_path: Path, system_name: str, existing_entries: dict, found_paths: set):
-        """Analisa um ficheiro individual e atualiza a base de dados se necessário."""
+        """Analisa um ficheiro individual e atualiza a base de dados se necessário.
+        
+        Args:
+            file_path: Caminho do ficheiro
+            system_name: Nome do sistema
+            existing_entries: Entradas existentes na DB
+            found_paths: Set de caminhos encontrados
+        """
         str_path = str(file_path.resolve())
         found_paths.add(str_path)
         
@@ -74,8 +87,15 @@ class ScannerWorker(BaseWorker):
             )
             self.db.update_entry(new_entry)
             self.stats["success"] += 1
+        except OSError as e:
+            self.logger.error(f"Erro ao ler ficheiro {file_path}: {e}")
+            raise FileReadError(str(file_path), str(e)) from e
+        except DatabaseError as e:
+            self.logger.error(f"Erro ao atualizar DB para {file_path}: {e}")
+            raise
         except Exception as e:
-            self.logger.error(f"Erro ao processar ficheiro {file_path}: {e}")
+            self.logger.error(f"Erro inesperado ao processar ficheiro {file_path}: {e}")
+            raise WorkflowError(f"Failed to process file: {e}") from e
 
     def _process_system_directory(self, sys_dir: Path, existing_entries: dict, found_paths: set):
         """Varre recursivamente os ficheiros de um sistema."""

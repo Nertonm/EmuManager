@@ -120,7 +120,8 @@ class BaseWorker(abc.ABC):
         total = len(items)
         for i, item in enumerate(items):
             if self.cancel_event.is_set(): break
-            if self.progress_cb: self.progress_cb(i / total, f"{label}: {item.name}")
+            if self.progress_cb and total > 0:
+                self.progress_cb(i / total, f"{label}: {item.name}")
             
             start_item = time.perf_counter()
             try:
@@ -148,7 +149,8 @@ class BaseWorker(abc.ABC):
                     break
                 
                 item = futures[future]
-                if self.progress_cb: self.progress_cb(i / total, f"{label}: {item.name}")
+                if self.progress_cb and total > 0:
+                    self.progress_cb(i / total, f"{label}: {item.name}")
                 
                 try:
                     status, duration = future.result()
@@ -161,7 +163,8 @@ class BaseWorker(abc.ABC):
     def _dispatch_mp(cls, base_path: Path, item: Path, *args) -> tuple[str, float]:
         """Ponto de entrada estático para o processo filho."""
         start = time.perf_counter()
-        instance = cls(base_path, lambda x: None, None, None, *args)
+        # Inicializar sem cancel_event pois não é serializável
+        instance = cls(base_path, lambda x: None, None, None)
         status = instance._process_item(item)
         return status, time.perf_counter() - start
 
@@ -273,12 +276,24 @@ def worker_clean_junk(base_path: Path, args: Any, log_cb: Callable[[str], None],
     logger = get_logger("worker.clean_junk")
     files = list_files_fn(base_path)
     
+    # Inicializar conexão com banco de dados
+    db = LibraryDB()
+    
     count = 0
     junk_exts = {".txt", ".nfo", ".url", ".lnk", ".website"}
     for f in files:
         if f.suffix.lower() in junk_exts:
             if not getattr(args, "dry_run", False):
-                f.unlink(missing_ok=True)
+                try:
+                    f.unlink(missing_ok=True)
+                    # Remover do banco de dados também
+                    try:
+                        db.remove_entry(str(f.resolve()))
+                        db.log_action(str(f.resolve()), "DELETED", "Removed junk file")
+                    except Exception as e:
+                        logger.debug(f"DB cleanup failed for {f}: {e}")
+                except Exception as e:
+                    logger.debug(f"Failed to delete junk file {f}: {e}")
             count += 1
             
     # Deletar pastas vazias

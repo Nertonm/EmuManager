@@ -23,22 +23,54 @@ from emumanager.logging_cfg import get_logger, set_correlation_id
 from emumanager.common.registry import registry
 from emumanager.common.fileops import safe_move
 from emumanager.common.events import bus
+from emumanager.common.exceptions import (
+    WorkflowError,
+    FileOperationError,
+    ProviderError,
+    DatabaseError,
+)
+from emumanager.common.validation import validate_path_exists
 
 
 class Orchestrator:
-    """
-    O Coração do EmuManager (Arquiteto Principal).
+    """O Coração do EmuManager (Arquiteto Principal).
     
     Coordena os workflows de alto nível da aplicação, emitindo eventos
     via EventBus para feedback assíncrono.
+    
+    Responsável por:
+    - Coordenação de scans de biblioteca
+    - Gestão de verificação de integridade
+    - Adição/remoção de ROMs
+    - Geração de relatórios
+    - Telemetria e monitoring
+    
+    Attributes:
+        session: Sessão ativa com configurações
+        db: Interface da base de dados
+        scanner: Scanner de ficheiros e sistemas
+        integrity: Gestor de verificação de integridade
+        dat_manager: Gestor de ficheiros DAT
+        multidisc: Gestor de jogos multi-disco
     """
 
     def __init__(self, session: Session):
-        """Inicializa o motor core com base numa sessão ativa."""
+        """Inicializa o motor core com base numa sessão ativa.
+        
+        Args:
+            session: Sessão configurada com paths e settings
+            
+        Raises:
+            DatabaseError: Se falhar a inicialização da base de dados
+        """
         self.session = session
         
         # Infraestrutura de Dados
-        self.db = LibraryDB(self.session.base_path / "library.db")
+        try:
+            self.db = LibraryDB(self.session.base_path / "library.db")
+        except Exception as e:
+            raise DatabaseError(f"Failed to initialize database: {e}") from e
+            
         self.logger = get_logger("core.orchestrator")
         
         # Especialistas (Managers)
@@ -53,22 +85,39 @@ class Orchestrator:
         self._items_processed = 0
 
     def get_telemetry(self) -> dict[str, Any]:
-        """Retorna métricas de performance atuais."""
-        import os, time
+        """Retorna métricas de performance atuais.
+        
+        Returns:
+            Dicionário com:
+            - speed: Itens processados por segundo
+            - memory: Memória usada em MB
+            - uptime: Tempo de execução em segundos
+            - items_processed: Total de itens processados
+            
+        Note:
+            Requer psutil instalado para métricas de memória.
+        """
+        import os
+        import time
+        
         elapsed = time.time() - self._start_time if self._start_time else 0
         speed = self._items_processed / elapsed if elapsed > 0 else 0
         
-        import psutil
+        mem = 0.0
         try:
+            import psutil
             process = psutil.Process(os.getpid())
             mem = process.memory_info().rss / 1024 / 1024
-        except Exception:
-            mem = 0
+        except ImportError:
+            self.logger.debug("psutil not available, memory metrics disabled")
+        except Exception as e:
+            self.logger.warning(f"Failed to get memory metrics: {e}")
 
         return {
             "speed": f"{speed:.1f} it/s",
             "memory": f"{mem:.1f} MB",
-            "uptime": f"{elapsed:.0f}s"
+            "uptime": f"{elapsed:.0f}s",
+            "items_processed": self._items_processed,
         }
 
 
@@ -191,7 +240,7 @@ Wiki: {info.get('wiki', 'N/A')}
         
         success = 0
         for i, entry in enumerate(entries):
-            if progress_cb:
+            if progress_cb and len(entries) > 0:
                 progress_cb(i / len(entries), f"Capas: {Path(entry.path).name}")
             
             if self._fetch_single_cover(entry, system_id, provider, cache_dir):
@@ -314,7 +363,7 @@ Wiki: {info.get('wiki', 'N/A')}
         result = WorkerResult(task_name=f"Organize {system_id or 'All'}")
 
         for i, entry in enumerate(entries):
-            if progress_cb:
+            if progress_cb and len(entries) > 0:
                 progress_cb(i / len(entries), f"Organizando {entry.system}...")
             
             item_start = datetime.now()
@@ -365,22 +414,36 @@ Wiki: {info.get('wiki', 'N/A')}
         self.logger.info("Iniciando Fluxo de Organização Global...")
         
         from emumanager.workers.common import WorkerResult
+        from emumanager.workers.distributor import worker_distribute_root
+        
         result = WorkerResult(task_name="Global Organization")
         
         # 1. Distribuir ficheiros da raiz para pastas de sistema
-        from emumanager.workers.distributor import worker_distribute_root
-        dist_stats = worker_distribute_root(self.session.roms_path, log_cb=self.logger.info, progress_cb=progress_cb)
-        result.success_count += dist_stats.get("moved", 0)
-        result.skipped_count += dist_stats.get("skipped", 0)
-        result.failed_count += dist_stats.get("errors", 0)
+        dist_result = worker_distribute_root(
+            self.session.roms_path, 
+            log_cb=self.logger.info, 
+            progress_cb=progress_cb, 
+            library_db=self.db
+        )
+        
+        # Agregar resultados (dist_result já é WorkerResult)
+        result.success_count += dist_result.success_count
+        result.skipped_count += dist_result.skipped_count
+        result.failed_count += dist_result.failed_count
+        result.processed_items.extend(dist_result.processed_items)
 
         # 2. Scan para detetar novos ficheiros e atualizar DB
         self.scan_library(progress_cb=progress_cb)
         
         # 3. Organizar nomes
-        org_stats = self.organize_names(dry_run=dry_run, progress_cb=progress_cb)
+        org_result = self.organize_names(dry_run=dry_run, progress_cb=progress_cb)
         
-        self._merge_organization_stats(result, dist_stats, org_stats)
+        # Merge organization stats (org_result é WorkerResult)
+        if isinstance(org_result, WorkerResult):
+            result.processed_items.extend(org_result.processed_items)
+            result.success_count += org_result.success_count
+            result.failed_count += org_result.failed_count
+            result.skipped_count += org_result.skipped_count
 
         result.duration_ms = (datetime.now() - start_time).total_seconds() * 1000
         return result
@@ -482,27 +545,58 @@ Wiki: {info.get('wiki', 'N/A')}
     def bulk_transcode(self, dry_run: bool = False, progress_cb: Optional[Callable] = None):
         """Workflow de Modernização: Transcoding massivo para formatos eficientes."""
         set_correlation_id()
+        self.logger.info("Iniciando transcoding massivo...")
+        
         entries = self.db.get_all_entries()
         to_convert = {}
+        
         for entry in entries:
             provider = registry.get_provider(entry.system)
-            if provider and provider.needs_conversion(Path(entry.path)):
-                to_convert.setdefault(entry.system, []).append(Path(entry.path))
+            if provider:
+                try:
+                    if provider.needs_conversion(Path(entry.path)):
+                        to_convert.setdefault(entry.system, []).append(Path(entry.path))
+                except Exception as e:
+                    self.logger.warning(f"Erro ao verificar conversão para {entry.path}: {e}")
+
+        if not to_convert:
+            self.logger.info("Nenhum arquivo requer conversão.")
+            return {"converted": 0, "failed": 0, "skipped": 0}
 
         # Workers Paralelos
         from emumanager.workers.ps2 import PS2Worker
         from emumanager.workers.dolphin import DolphinWorker
         from emumanager.workers.psp import PSPWorker
         
-        worker_map = {"ps2": PS2Worker, "gamecube": DolphinWorker, "wii": DolphinWorker, "psp": PSPWorker}
-        total = {"converted": 0, "failed": 0}
+        worker_map = {
+            "ps2": PS2Worker,
+            "dolphin": DolphinWorker,  # Unificado: GameCube + Wii
+            "psp": PSPWorker
+        }
+        
+        total = {"converted": 0, "failed": 0, "skipped": 0}
         
         for sys_id, paths in to_convert.items():
-            if sys_id in worker_map:
-                worker = worker_map[sys_id](self.session.base_path, self.logger.info, progress_cb, None)
+            if sys_id not in worker_map:
+                self.logger.warning(f"Worker não disponível para {sys_id}, pulando...")
+                total["skipped"] += len(paths)
+                continue
+                
+            try:
+                worker_class = worker_map[sys_id]
+                worker = worker_class(
+                    self.session.base_path,
+                    self.logger.info,
+                    progress_cb,
+                    None
+                )
                 res = worker.run(paths, task_label=f"Transcoding {sys_id}", parallel=True)
                 total["converted"] += res.success_count
                 total["failed"] += res.failed_count
+            except Exception as e:
+                self.logger.error(f"Erro no transcoding de {sys_id}: {e}")
+                total["failed"] += len(paths)
+                
         return total
 
     # --- Utilitários de Relatório ---
@@ -527,21 +621,50 @@ Wiki: {info.get('wiki', 'N/A')}
     def add_rom(self, src: Path, system: Optional[str] = None, move: bool = False):
         """Injeta uma nova ROM no ecossistema Core."""
         set_correlation_id()
-        provider = registry.get_provider(system) if system else registry.find_provider_for_file(src)
-        if not provider: raise ValueError(f"Sistema não identificado para: {src.name}")
-            
-        dest = self.session.roms_path / provider.system_id / src.name
-        dest.parent.mkdir(parents=True, exist_ok=True)
         
-        self.logger.info(f"Importando {provider.display_name}: {src.name}")
-        if move: shutil.move(str(src), str(dest))
-        else: shutil.copy2(str(src), str(dest))
-            
+        if not src.exists():
+            raise FileNotFoundError(f"Arquivo não encontrado: {src}")
+        
+        # Descobrir provider
+        provider = registry.get_provider(system) if system else registry.find_provider_for_file(src)
+        if not provider:
+            raise ValueError(f"Sistema não identificado para: {src.name}")
+        
+        # Validar arquivo
+        if not provider.validate_file(src):
+            raise ValueError(f"Arquivo inválido para sistema {provider.system_id}: {src.name}")
+        
+        # Determinar destino
+        dest_dir = self.session.roms_path / provider.system_id
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest_path = dest_dir / src.name
+        
+        # Evitar sobrescrita
+        if dest_path.exists():
+            raise FileExistsError(f"Arquivo já existe: {dest_path}")
+        
+        # Mover ou copiar
         try:
-            meta = provider.extract_metadata(dest)
-            entry = self.scanner._build_entry(dest, provider.system_id, meta)
+            if move:
+                src.rename(dest_path)
+                self.logger.info(f"ROM movida: {src.name} -> {provider.system_id}/")
+            else:
+                import shutil
+                shutil.copy2(src, dest_path)
+                self.logger.info(f"ROM copiada: {src.name} -> {provider.system_id}/")
+        except Exception as e:
+            raise WorkflowError(f"Erro ao adicionar ROM: {e}") from e
+        
+        # Extrair metadados e atualizar DB
+        try:
+            meta = provider.extract_metadata(dest_path)
+            entry = self.scanner._build_entry(dest_path, provider.system_id, meta)
             self.db.update_entry(entry)
         except Exception as e:
             self.logger.warning(f"Metadados não persistidos: {e}")
-        return dest
+        
+        # Atualizar biblioteca (full scan)
+        self.scan_library()
+        return dest_path
+    
     

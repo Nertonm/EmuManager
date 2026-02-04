@@ -14,6 +14,10 @@ from emumanager.workers.n3ds import worker_n3ds_process
 from emumanager.workers.switch import worker_switch_compress
 from emumanager.workers.dolphin import worker_dolphin_compress
 
+# Shim para funcionalidades migradas ou não implementadas
+def _not_imp(*args, **kwargs):
+    return "Esta funcionalidade foi movida para o Orchestrator ou ainda não está disponível."
+
 def worker_organize(base_path: Path, env: Any, args: Any, log_cb: Callable, list_files_fn: Callable, progress_cb: Optional[Callable] = None) -> str:
     # Tentar usar o Orchestrator se disponível via args
     orch = getattr(args, "orchestrator", None)
@@ -23,7 +27,8 @@ def worker_organize(base_path: Path, env: Any, args: Any, log_cb: Callable, list
     
     # Fallback para o distributor simples
     from emumanager.workers.distributor import worker_distribute_root
-    res = worker_distribute_root(base_path, log_cb, progress_cb)
+    library_db = getattr(args, "library_db", None)
+    res = worker_distribute_root(base_path, log_cb, progress_cb, library_db=library_db)
     return f"Distribuição concluída (apenas pastas): {res}"
 
 def _worker_system_organize(system_id: str, base_path: Path, args: Any, log_cb: Callable, progress_cb: Optional[Callable] = None) -> str:
