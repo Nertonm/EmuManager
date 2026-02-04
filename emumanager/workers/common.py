@@ -260,8 +260,9 @@ def verify_chd(path: Path) -> bool:
         return res.returncode == 0 or "verify ok" in (getattr(res, "stdout", "") or "").lower()
     except Exception: return False
 
-def skip_if_compressed(path: Path, logger: logging.Logger) -> bool:
-    db = LibraryDB()
+def skip_if_compressed(path: Path, logger: logging.Logger, db: Optional[LibraryDB] = None) -> bool:
+    if db is None:
+        db = LibraryDB()
     entry = db.get_entry(str(path.resolve()))
     if entry and entry.status == "COMPRESSED":
         logger.info(f"Pular (já comprimido): {path.name}")

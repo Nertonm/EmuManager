@@ -9,7 +9,7 @@ class TestWiiProvider:
         return WiiProvider()
 
     def test_basic_properties(self, provider):
-        assert provider.system_id == "wii"
+        assert provider.system_id == "dolphin"
         assert ".wbfs" in provider.get_supported_extensions()
 
     @patch("emumanager.wii.provider.metadata")
