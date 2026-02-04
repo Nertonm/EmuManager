@@ -1,19 +1,8 @@
 site_name: EmuManager
-site_url: https://Nertonm.github.io/EmuManager/
-site_description: Small emulation collection manager and utilities
-site_author: EmuManager Maintainer
-repo_url: https://github.com/Nertonm/EmuManager
-repo_name: Nertonm/EmuManager
-edit_uri: edit/main/docs/
-
+site_url: https://example.com/emumanager
+site_description: Industrial-grade emulation collection manager
 theme:
   name: material
-  features:
-    - navigation.sections
-    - navigation.expand
-    - navigation.top
-    - toc.follow
-    - content.code.copy
   palette:
     - scheme: default
       primary: indigo
@@ -28,29 +17,10 @@ theme:
         icon: material/brightness-4
         name: Switch to light mode
 
-plugins:
-  - search
-  - mkdocstrings:
-      handlers:
-        python:
-          options:
-            docstring_style: google
-            show_source: true
-            show_root_heading: true
-
 nav:
   - Home: index.md
-  - User Guide:
-    - Installation: installation.md
-    - Usage: usage.md
-    - CLI Reference: cli.md
-    - Supported Systems: supported_systems.md
-    - Troubleshooting: troubleshooting.md
-    - Configuration: configuration.md
-  - API Reference:
-    - Orchestrator: reference/orchestrator.md
-    - Manager: reference/manager.md
-    - GUI: reference/gui.md
-    - Workers: reference/workers.md
+  - Architecture: architecture.md
   - Contributing: contributing.md
-  - Changelog: changelog.md
+
+plugins:
+  - search

@@ -1,3 +1,0 @@
-# Manager API
-
-::: emumanager.manager
