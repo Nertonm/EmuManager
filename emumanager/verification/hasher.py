@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Callable, Optional
 
 def calculate_hashes(
 

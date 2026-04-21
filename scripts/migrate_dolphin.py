@@ -183,10 +183,10 @@ def main():
         try:
             config = ConfigManager()
             base_dir = Path(config.get("base_dir"))
-        except:
+        except Exception:
             base_dir = BASE_DEFAULT
     
-    logger.info(f"🚀 Iniciando migração Dolphin (GameCube + Wii)")
+    logger.info("🚀 Iniciando migração Dolphin (GameCube + Wii)")
     logger.info(f"📁 Diretório base: {base_dir}")
     
     if args.dry_run:

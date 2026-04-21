@@ -2,7 +2,6 @@ import pytest
 from unittest.mock import MagicMock, patch
 from pathlib import Path
 from emumanager.core.scanner import Scanner
-from emumanager.library import LibraryEntry
 
 class TestScanner:
     @pytest.fixture

@@ -1,6 +1,6 @@
 import pytest
-from unittest.mock import MagicMock, patch
 from pathlib import Path
+from unittest.mock import ANY, MagicMock, patch
 from emumanager.controllers.tools import ToolsController
 
 class TestToolsController:
@@ -116,5 +116,3 @@ class TestToolsController:
         # Verify title or text if needed
         args, kwargs = mock_mw._qtwidgets.QMessageBox.call_args
         assert "Extraction Failed" in str(args) or "Extraction Failed" in str(mock_mw._qtwidgets.QMessageBox.return_value.setWindowTitle.call_args)
-
-from unittest.mock import ANY

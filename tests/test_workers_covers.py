@@ -1,7 +1,7 @@
-import pytest; pytest.importorskip("PyQt6")
+import pytest
 from unittest.mock import MagicMock, patch
 
-import pytest
+pytest.importorskip("PyQt6")
 
 from emumanager.workers.covers import CoverDownloader
 

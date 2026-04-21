@@ -148,12 +148,14 @@ def _scan_files(
             break
 
         ok, av_result, used_cache = _check_cache_status(f, lib_db)
-        
+
         if used_cache:
-            if progress_cb: progress_cb(i / total, f"Checking {f.name} (Cached)...")
+            if progress_cb:
+                progress_cb(i / total, f"Checking {f.name} (Cached)...")
             verify_out, av_out = "Cached Result", "Cached Result"
         else:
-            if progress_cb: progress_cb(i / total, f"Checking {f.name}...")
+            if progress_cb:
+                progress_cb(i / total, f"Checking {f.name}...")
             ok, verify_out, av_result, av_out = _check_file_health(f, args, verify_integrity, scan_for_virus)
             _update_file_cache(f, lib_db, ok, av_result)
 

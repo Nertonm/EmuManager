@@ -1,10 +1,10 @@
 # EmuManager Documentation
 
-This documentation provides technical details on the architecture and contribution guidelines for EmuManager.
+This documentation covers the internal structure of EmuManager and the contribution rules used to keep the codebase maintainable.
 
-For usage instructions, please refer to the project [README](../README.md).
+For usage instructions, see the project [README](../README.md).
 
 ## Contents
 
-*   [Architecture](architecture.md): Internal design and component overview.
-*   [Contributing](contributing.md): Guidelines for developers.
+- [Architecture](ARCHITECTURE.md): runtime layers, module responsibilities, and maintenance notes
+- [Contributing](CONTRIBUTING.md): quality gates and conventions for future changes

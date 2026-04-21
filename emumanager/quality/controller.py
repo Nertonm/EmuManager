@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
@@ -232,7 +231,7 @@ class QualityController:
         """Determina o nível de qualidade final baseado no score e issues."""
         # Contabilizar severidades
         critical_count = sum(1 for i in quality.issues if i.severity == 'critical')
-        high_count = sum(1 for i in quality.issues if i.severity == 'high')
+        sum(1 for i in quality.issues if i.severity == 'high')
         
         # Regras de decisão
         if critical_count > 0:

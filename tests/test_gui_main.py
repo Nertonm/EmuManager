@@ -1,7 +1,9 @@
-import pytest; pytest.importorskip("PyQt6")
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+pytest.importorskip("PyQt6")
+
 from PyQt6 import QtGui, QtWidgets
 
 from emumanager.gui_main import MainWindowBase

@@ -18,8 +18,9 @@ class MatchEngine:
 
         norm_a = normalize(a)
         norm_b = normalize(b)
-        if not norm_a or not norm_b: return 0
-        
+        if not norm_a or not norm_b:
+            return 0
+
         ratio = difflib.SequenceMatcher(None, norm_a, norm_b).ratio()
         return int(ratio * 100)
 
@@ -36,6 +37,7 @@ class MatchEngine:
             if score > best_score:
                 best_score = score
                 best_name = cand
-                if best_score == 100: break
-                
+                if best_score == 100:
+                    break
+
         return best_name, best_score

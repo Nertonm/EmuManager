@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Callable, Optional, Any
 from pathlib import Path
 
-from emumanager.workers.common import WorkerResult, worker_clean_junk
+from emumanager.workers.common import worker_clean_junk
 from emumanager.workers.scanner import worker_scan_library
 from emumanager.workers.verification import worker_hash_verify
 from emumanager.workers.ps2 import worker_ps2_full_process
@@ -39,12 +39,18 @@ def _worker_system_organize(system_id: str, base_path: Path, args: Any, log_cb: 
     res = orch.organize_names(system_id=system_id, dry_run=getattr(args, "dry_run", False), progress_cb=progress_cb)
     return f"Organização {system_id.upper()} concluída: {res}"
 
-worker_ps2_organize = lambda bp, args, lcb, lfn, pcb=None: _worker_system_organize("ps2", bp, args, lcb, pcb)
-worker_psx_organize = lambda bp, args, lcb, lfn, pcb=None: _worker_system_organize("psx", bp, args, lcb, pcb)
-worker_ps3_organize = lambda bp, args, lcb, lfn, pcb=None: _worker_system_organize("ps3", bp, args, lcb, pcb)
-worker_psp_organize = lambda bp, args, lcb, lfn, pcb=None: _worker_system_organize("psp", bp, args, lcb, pcb)
-worker_n3ds_organize = lambda bp, args, lcb, lfn, pcb=None: _worker_system_organize("n3ds", bp, args, lcb, pcb)
-worker_dolphin_organize = lambda bp, args, lcb, lfn, pcb=None: _worker_system_organize("gamecube", bp, args, lcb, pcb)
+def worker_ps2_organize(bp, args, lcb, lfn, pcb=None):
+    return _worker_system_organize("ps2", bp, args, lcb, pcb)
+def worker_psx_organize(bp, args, lcb, lfn, pcb=None):
+    return _worker_system_organize("psx", bp, args, lcb, pcb)
+def worker_ps3_organize(bp, args, lcb, lfn, pcb=None):
+    return _worker_system_organize("ps3", bp, args, lcb, pcb)
+def worker_psp_organize(bp, args, lcb, lfn, pcb=None):
+    return _worker_system_organize("psp", bp, args, lcb, pcb)
+def worker_n3ds_organize(bp, args, lcb, lfn, pcb=None):
+    return _worker_system_organize("n3ds", bp, args, lcb, pcb)
+def worker_dolphin_organize(bp, args, lcb, lfn, pcb=None):
+    return _worker_system_organize("gamecube", bp, args, lcb, pcb)
 
 worker_health_check = _not_imp
 worker_dolphin_decompress_single = _not_imp

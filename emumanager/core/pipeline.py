@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import multiprocessing
-import threading
 import time
 from pathlib import Path
 from queue import Empty
-from typing import Callable, Any, Iterable
+from typing import Any, Iterable
 
 from emumanager.logging_cfg import get_logger, set_correlation_id
 

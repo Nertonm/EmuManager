@@ -1,4 +1,3 @@
-import pytest
 from pathlib import Path
 from emumanager.common.system import default_ideal_filename
 

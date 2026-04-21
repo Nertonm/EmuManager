@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import re
 from pathlib import Path
-from typing import Callable, Optional, Any
+from typing import Callable, Optional
 
 from emumanager.ps3 import database as ps3_db
 from emumanager.ps3 import metadata as ps3_meta
@@ -21,7 +20,8 @@ class PS3Worker(BaseWorker):
 
         meta = ps3_meta.get_metadata(f)
         serial = meta.get("serial")
-        if not serial: return "failed"
+        if not serial:
+            return "failed"
 
         title = ps3_db.db.get_title(serial) or meta.get("title", "Unknown")
         self.db.update_entry_fields(str(f.resolve()), status="VERIFIED", match_name=title, dat_name=serial)

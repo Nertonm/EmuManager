@@ -1,17 +1,15 @@
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import Callable, Optional
 
-from emumanager.library import LibraryDB, LibraryEntry
+from emumanager.library import LibraryEntry
 from emumanager.workers.common import BaseWorker, set_correlation_id
 from emumanager.common.exceptions import (
     WorkflowError,
     FileReadError,
     DatabaseError,
 )
-from emumanager.common.validation import validate_path_exists
 
 ARCHIVE_EXTS = {".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz", ".tgz", ".tbz2"}
 

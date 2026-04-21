@@ -22,7 +22,7 @@ class N3DSProvider(SystemProvider):
         
         try:
             with open(path, 'rb') as f:
-                header = f.read(16)
+                f.read(16)
                 
                 # 3DS/CCI: Magic "NCSD" no offset 0x100
                 if ext in {'.3ds', '.cci'}:

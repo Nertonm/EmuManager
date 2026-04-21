@@ -1,14 +1,10 @@
 """Testes para o sistema de validação."""
 
 import pytest
-from pathlib import Path
-import tempfile
-import os
 
 from emumanager.common.validation import (
     validate_path_exists,
     validate_writable_directory,
-    validate_file_extension,
     validate_positive,
     validate_non_negative,
     validate_range,
@@ -151,10 +147,11 @@ class TestCollectionValidation:
             validate_not_empty_list([])
     
     def test_validate_all(self):
-        is_positive = lambda x: x > 0
-        
+        def is_positive(x):
+            return x > 0
+
         assert validate_all([1, 2, 3], is_positive) == [1, 2, 3]
-        
+
         with pytest.raises(ValidationError):
             validate_all([1, -1, 3], is_positive)
     

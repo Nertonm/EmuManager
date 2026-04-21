@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, Optional, Any
+from typing import Callable, Optional
 
 from emumanager.converters import dolphin_converter
 from emumanager.workers.common import BaseWorker, WorkerResult
@@ -14,7 +14,8 @@ class DolphinWorker(BaseWorker):
             return "skipped"
 
         target = f.with_suffix(".rvz")
-        if target.exists(): return "skipped"
+        if target.exists():
+            return "skipped"
 
         try:
             if dolphin_converter.convert_to_rvz(f, target):
@@ -29,5 +30,6 @@ def worker_dolphin_compress(base_path: Path, log_cb: Callable, progress_cb: Opti
     roms = []
     for sys in ["gamecube", "wii"]:
         path = base_path / "roms" / sys
-        if path.exists(): roms.extend(path.rglob("*"))
+        if path.exists():
+            roms.extend(path.rglob("*"))
     return worker.run([r for r in roms if r.is_file()], "Dolphin Process", parallel=True)

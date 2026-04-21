@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import re
 from pathlib import Path
-from typing import Callable, Optional, Any
+from typing import Callable, Optional
 
 from emumanager.psx import database as psx_db
 from emumanager.psx import metadata as psx_meta
@@ -18,10 +17,12 @@ class PSXWorker(BaseWorker):
         src = f
         if f.suffix.lower() == ".cue":
             bin_p = f.with_suffix(".bin")
-            if bin_p.exists(): src = bin_p
+            if bin_p.exists():
+                src = bin_p
 
         serial = psx_meta.get_psx_serial(src)
-        if not serial: return "failed"
+        if not serial:
+            return "failed"
 
         title = psx_db.db.get_title(serial) or f.stem
         self.db.update_entry_fields(str(f.resolve()), status="VERIFIED", match_name=title, dat_name=serial)

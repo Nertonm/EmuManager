@@ -3,14 +3,11 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Optional, TYPE_CHECKING
+from typing import Any, Callable, Optional
 
 from emumanager.logging_cfg import log_call, set_correlation_id
 from emumanager.manager import guess_system_for_file
 from emumanager.workers.common import get_logger_for_gui, skip_if_compressed, WorkerResult
-
-if TYPE_CHECKING:
-    from emumanager.library import LibraryDB
 
 
 def _is_distributable_file(file_path: Path, logger: logging.Logger) -> bool:
@@ -124,7 +121,7 @@ def worker_distribute_root(
         if cancel_event and cancel_event.is_set():
             logger.warning("Distribution cancelled by user.")
             break
-library_db, 
+
         if progress_cb:
             progress_cb(i / total, f"Distributing: {file_path.name}")
 
@@ -132,7 +129,14 @@ library_db,
             result.skipped_count += 1
             continue
 
-        _process_distribution_item(file_path, base_path, logger, result, cancel_event)
+        _process_distribution_item(
+            file_path,
+            base_path,
+            logger,
+            result,
+            library_db=library_db,
+            cancel_event=cancel_event,
+        )
 
     result.duration_ms = (datetime.now() - start_time).total_seconds() * 1000
     logger.info(f"Distribution complete. {result}")

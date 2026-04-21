@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from pathlib import Path
 from emumanager.core.integrity import IntegrityManager
 from emumanager.core.models import IntegrityEvent

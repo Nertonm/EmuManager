@@ -15,7 +15,7 @@ import sys
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Callable
+from typing import Callable
 
 
 class Col:

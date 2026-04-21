@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from emumanager.common.models import VerifyReport, VerifyResult
-from emumanager.library import LibraryDB, LibraryEntry
+from emumanager.common.models import VerifyReport
 from emumanager.verification import dat_parser, hasher
 from emumanager.verification.dat_manager import find_dat_for_system
-from emumanager.workers.common import BaseWorker, WorkerResult, set_correlation_id
+from emumanager.workers.common import BaseWorker, set_correlation_id
 
 class HashVerifyWorker(BaseWorker):
     """Worker especializado em verificação de integridade via DAT com Multiprocessing."""

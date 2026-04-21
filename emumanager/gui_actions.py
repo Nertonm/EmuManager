@@ -71,7 +71,6 @@ class ActionsDialog:
         layout.addWidget(self.table)
 
     def _populate_data(self):
-        qt = self.qt
         rows = self.db.get_actions(500)
         self.table.setRowCount(len(rows))
         

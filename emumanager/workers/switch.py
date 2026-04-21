@@ -84,9 +84,12 @@ class SwitchOrganizationWorker(BaseWorker):
 
     def _guess_content_type(self, title_id: str) -> str:
         """Heurística baseada no sufixo do Title ID."""
-        if not title_id: return "Base"
-        if title_id.endswith("000"): return "Base"
-        if title_id.endswith("800"): return "Update"
+        if not title_id:
+            return "Base"
+        if title_id.endswith("000"):
+            return "Base"
+        if title_id.endswith("800"):
+            return "Update"
         return "DLC"
 
 def worker_switch_organize(base_path: Path, log_cb: Callable, progress_cb: Optional[Callable] = None) -> WorkerResult:
@@ -110,12 +113,20 @@ def worker_switch_compress(base_path: Path, args: Any, log_cb: Callable, list_fi
         for i, f in enumerate(files):
             if args.cancel_event and args.cancel_event.is_set():
                 break
-            if log_cb: log_cb(f"Comprimindo {f.name}...")
-            
-            res = handle_compression(f, args=args, tool_nsz=env["TOOL_NSZ"], roms_dir=env["ROMS_DIR"],
-                                     tool_metadata=env["TOOL_METADATA"], is_nstool=env["IS_NSTOOL"],
-                                     keys_path=env["KEYS_PATH"], cmd_timeout=args.cmd_timeout,
-                                     tool_hactool=env["TOOL_HACTOOL"])
+            if log_cb:
+                log_cb(f"Comprimindo {f.name}...")
+
+            res = handle_compression(
+                f,
+                args=args,
+                tool_nsz=env["TOOL_NSZ"],
+                roms_dir=env["ROMS_DIR"],
+                tool_metadata=env["TOOL_METADATA"],
+                is_nstool=env["IS_NSTOOL"],
+                keys_path=env["KEYS_PATH"],
+                cmd_timeout=args.cmd_timeout,
+                tool_hactool=env["TOOL_HACTOOL"],
+            )
             if res and res != f:
                 success += 1
             if progress_cb := getattr(args, "progress_callback", None):

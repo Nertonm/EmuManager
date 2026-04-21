@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -15,7 +14,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 
-from .manager import get_orchestrator
+from .application import execute_core_workflow
 from .config import BASE_DEFAULT
 
 app = typer.Typer(
@@ -104,7 +103,11 @@ def cmd_scan(
         def prog_wrapper(p, m):
             progress.update(task, completed=p*100, description=f"Auditando: {m}")
             
-        stats = orch.scan_library(progress_cb=prog_wrapper)
+        stats = execute_core_workflow(
+            orch,
+            "scan",
+            progress_cb=prog_wrapper,
+        )
     
     console.print("\n[bold green]✔ Auditoria Finalizada[/bold green]")
     table = Table(show_header=True, header_style="bold cyan")
@@ -127,7 +130,11 @@ def cmd_organize(
     """
     _print_banner()
     orch = _get_orch(base)
-    stats = orch.full_organization_flow(dry_run=dry_run)
+    stats = execute_core_workflow(
+        orch,
+        "organize",
+        dry_run=dry_run,
+    )
     console.print(f"\n[bold blue]✔[/bold blue] Organização concluída. [dim]({stats})[/dim]")
 
 @app.command("maintain")
@@ -143,7 +150,11 @@ def cmd_maintain(
     """
     _print_banner()
     orch = _get_orch(base)
-    stats = orch.maintain_integrity(dry_run=dry_run)
+    stats = execute_core_workflow(
+        orch,
+        "maintain",
+        dry_run=dry_run,
+    )
     console.print(f"\n[bold yellow]✔[/bold yellow] Manutenção finalizada. [dim]({stats})[/dim]")
 
 @app.command("transcode")
@@ -159,7 +170,11 @@ def cmd_transcode(
     """
     _print_banner()
     orch = _get_orch(base)
-    stats = orch.bulk_transcode(dry_run=dry_run)
+    stats = execute_core_workflow(
+        orch,
+        "transcode",
+        dry_run=dry_run,
+    )
     console.print(f"\n[bold red]✔[/bold red] Modernização terminada. [dim]({stats})[/dim]")
 
 @app.command("report")

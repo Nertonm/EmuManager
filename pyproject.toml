@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "emumanager"
 version = "3.0.0"
-description = "Industrial-grade emulation collection manager and utilities"
+description = "Emulation library manager for auditing, organizing, and verification workflows"
 authors = [ { name = "EmuManager Engineers" } ]
 requires-python = ">=3.10"
 dependencies = [

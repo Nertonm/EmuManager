@@ -1,6 +1,5 @@
 site_name: EmuManager
-site_url: https://example.com/emumanager
-site_description: Industrial-grade emulation collection manager
+site_description: Emulation library manager for auditing, organizing, and verifying ROM collections
 theme:
   name: material
   palette:
@@ -19,8 +18,8 @@ theme:
 
 nav:
   - Home: index.md
-  - Architecture: architecture.md
-  - Contributing: contributing.md
+  - Architecture: ARCHITECTURE.md
+  - Contributing: CONTRIBUTING.md
 
 plugins:
   - search

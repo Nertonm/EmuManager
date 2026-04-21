@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Dict, List, Any
 from emumanager.logging_cfg import get_logger
 
 class MultiDiscManager:
@@ -23,8 +22,9 @@ class MultiDiscManager:
         
         for f in files:
             # Ignorar ficheiros que já são m3u
-            if f.suffix.lower() == ".m3u": continue
-            
+            if f.suffix.lower() == ".m3u":
+                continue
+
             match = self.DISC_PATTERN.match(f.stem)
             if match:
                 base_title = match.group(1).strip()

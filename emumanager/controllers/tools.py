@@ -1,508 +1,199 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Callable
 
-from emumanager.gui_actions import ActionsDialog
-from emumanager.gui_quarantine import QuarantineDialog
-from emumanager.gui_workers import (
-    worker_clean_junk,
-    worker_compress_single,
-    worker_decompress_single,
-    worker_dolphin_convert,
-    worker_dolphin_decompress_single,
-    worker_dolphin_organize,
-    worker_dolphin_recompress_single,
-    worker_dolphin_verify,
-    worker_health_check,
-    worker_n3ds_compress,
-    worker_n3ds_compress_single,
-    worker_n3ds_convert_cia,
-    worker_n3ds_decompress,
-    worker_n3ds_decompress_single,
-    worker_n3ds_organize,
-    worker_n3ds_verify,
-    worker_organize,
-    worker_ps2_convert,
-    worker_ps2_organize,
-    worker_ps2_verify,
-    worker_ps3_organize,
-    worker_ps3_verify,
-    worker_psp_compress,
-    worker_psp_compress_single,
-    worker_psp_organize,
-    worker_psp_verify,
-    worker_psx_convert,
-    worker_psx_organize,
-    worker_psx_verify,
-    worker_recompress_single,
-    worker_switch_compress,
-    worker_switch_decompress,
-)
+from emumanager import gui_workers as _gui_workers
 
 if TYPE_CHECKING:
     from emumanager.gui_main import MainWindowBase
 
+from .tools_batch import ToolsBatchMixin
+from .tools_dialogs import ToolsDialogsMixin
+from .tools_single_file import ToolsSingleFileMixin
+
+worker_clean_junk = _gui_workers.worker_clean_junk
+worker_compress_single = _gui_workers.worker_compress_single
+worker_decompress_single = _gui_workers.worker_decompress_single
+worker_dolphin_convert = _gui_workers.worker_dolphin_convert
+worker_dolphin_decompress_single = _gui_workers.worker_dolphin_decompress_single
+worker_dolphin_organize = _gui_workers.worker_dolphin_organize
+worker_dolphin_recompress_single = _gui_workers.worker_dolphin_recompress_single
+worker_dolphin_verify = _gui_workers.worker_dolphin_verify
+worker_health_check = _gui_workers.worker_health_check
+worker_n3ds_compress = _gui_workers.worker_n3ds_compress
+worker_n3ds_compress_single = _gui_workers.worker_n3ds_compress_single
+worker_n3ds_convert_cia = _gui_workers.worker_n3ds_convert_cia
+worker_n3ds_decompress = _gui_workers.worker_n3ds_decompress
+worker_n3ds_decompress_single = _gui_workers.worker_n3ds_decompress_single
+worker_n3ds_organize = _gui_workers.worker_n3ds_organize
+worker_n3ds_verify = _gui_workers.worker_n3ds_verify
+worker_organize = _gui_workers.worker_organize
+worker_ps2_convert = _gui_workers.worker_ps2_convert
+worker_ps2_organize = _gui_workers.worker_ps2_organize
+worker_ps2_verify = _gui_workers.worker_ps2_verify
+worker_ps3_organize = _gui_workers.worker_ps3_organize
+worker_ps3_verify = _gui_workers.worker_ps3_verify
+worker_psp_compress = _gui_workers.worker_psp_compress
+worker_psp_compress_single = _gui_workers.worker_psp_compress_single
+worker_psp_organize = _gui_workers.worker_psp_organize
+worker_psp_verify = _gui_workers.worker_psp_verify
+worker_psx_convert = _gui_workers.worker_psx_convert
+worker_psx_organize = _gui_workers.worker_psx_organize
+worker_psx_verify = _gui_workers.worker_psx_verify
+worker_recompress_single = _gui_workers.worker_recompress_single
+worker_switch_compress = _gui_workers.worker_switch_compress
+worker_switch_decompress = _gui_workers.worker_switch_decompress
+
 MSG_SELECT_BASE = "Please select a base directory first (Open Library)."
+REQUIRED_SIGNAL_BINDINGS = (
+    ("btn_compress", "on_compress_selected"),
+    ("btn_recompress", "on_recompress_selected"),
+    ("btn_decompress", "on_decompress_selected"),
+    ("btn_organize", "on_organize"),
+    ("btn_health", "on_health_check"),
+    ("btn_switch_compress", "on_switch_compress"),
+    ("btn_switch_decompress", "on_switch_decompress"),
+    ("btn_psx_convert", "on_psx_convert"),
+    ("btn_psx_verify", "on_psx_verify"),
+    ("btn_psx_organize", "on_psx_organize"),
+    ("btn_ps2_convert", "on_ps2_convert"),
+    ("btn_ps2_verify", "on_ps2_verify"),
+    ("btn_ps2_organize", "on_ps2_organize"),
+    ("btn_ps3_verify", "on_ps3_verify"),
+    ("btn_ps3_organize", "on_ps3_organize"),
+    ("btn_psp_verify", "on_psp_verify"),
+    ("btn_psp_organize", "on_psp_organize"),
+    ("btn_psp_compress", "on_psp_compress"),
+    ("btn_dolphin_organize", "on_dolphin_organize"),
+    ("btn_dolphin_convert", "on_dolphin_convert"),
+    ("btn_dolphin_verify", "on_dolphin_verify"),
+    ("btn_n3ds_organize", "on_n3ds_organize"),
+    ("btn_n3ds_verify", "on_n3ds_verify"),
+    ("btn_n3ds_compress", "on_n3ds_compress"),
+    ("btn_n3ds_decompress", "on_n3ds_decompress"),
+    ("btn_n3ds_convert_cia", "on_n3ds_convert_cia"),
+    ("btn_clean_junk", "on_clean_junk"),
+)
+OPTIONAL_SIGNAL_BINDINGS = (
+    ("btn_sega_convert", "on_sega_convert"),
+    ("btn_sega_verify", "on_generic_verify_click"),
+    ("btn_sega_organize", "on_generic_organize_click"),
+    ("btn_ms_verify", "on_generic_verify_click"),
+    ("btn_ms_organize", "on_generic_organize_click"),
+    ("btn_nint_compress", "on_nint_compress"),
+    ("btn_nint_verify", "on_generic_verify_click"),
+    ("btn_nint_organize", "on_generic_organize_click"),
+)
+TOOL_TASK_SPECS = {
+    "switch_organize": ("worker_organize", "Organize Switch", True),
+    "switch_health": ("worker_health_check", "Health Check", True),
+    "switch_compress": ("worker_switch_compress", "Compress Switch Library", True),
+    "switch_decompress": ("worker_switch_decompress", "Decompress Switch Library", True),
+    "psx_convert": ("worker_psx_convert", "Convert PS1 to CHD", False),
+    "psx_verify": ("worker_psx_verify", "Verify PS1", False),
+    "psx_organize": ("worker_psx_organize", "Organize PS1", False),
+    "ps2_convert": ("worker_ps2_convert", "Convert PS2 to CHD", False),
+    "ps2_verify": ("worker_ps2_verify", "Verify PS2", False),
+    "ps2_organize": ("worker_ps2_organize", "Organize PS2", False),
+    "ps3_verify": ("worker_ps3_verify", "Verify PS3", False),
+    "ps3_organize": ("worker_ps3_organize", "Organize PS3", False),
+    "psp_verify": ("worker_psp_verify", "Verify PSP", False),
+    "psp_organize": ("worker_psp_organize", "Organize PSP", False),
+    "dolphin_organize": ("worker_dolphin_organize", "Organize GC/Wii", False),
+    "dolphin_convert": ("worker_dolphin_convert", "Convert GC/Wii to RVZ", False),
+    "dolphin_verify": ("worker_dolphin_verify", "Verify GC/Wii", False),
+    "n3ds_organize": ("worker_n3ds_organize", "Organize 3DS", False),
+    "n3ds_verify": ("worker_n3ds_verify", "Verify 3DS", False),
+    "n3ds_compress": ("worker_n3ds_compress", "Compress 3DS", False),
+    "n3ds_decompress": ("worker_n3ds_decompress", "Decompress 3DS", False),
+    "n3ds_convert_cia": ("worker_n3ds_convert_cia", "Convert 3DS to CIA", False),
+}
+PATCHABLE_WORKER_NAMES = {
+    "worker_clean_junk",
+    "worker_compress_single",
+    "worker_decompress_single",
+    "worker_dolphin_convert",
+    "worker_dolphin_decompress_single",
+    "worker_dolphin_organize",
+    "worker_dolphin_recompress_single",
+    "worker_dolphin_verify",
+    "worker_health_check",
+    "worker_n3ds_compress",
+    "worker_n3ds_compress_single",
+    "worker_n3ds_convert_cia",
+    "worker_n3ds_decompress",
+    "worker_n3ds_decompress_single",
+    "worker_n3ds_organize",
+    "worker_n3ds_verify",
+    "worker_organize",
+    "worker_ps2_convert",
+    "worker_ps2_organize",
+    "worker_ps2_verify",
+    "worker_ps3_organize",
+    "worker_ps3_verify",
+    "worker_psp_compress",
+    "worker_psp_compress_single",
+    "worker_psp_organize",
+    "worker_psp_verify",
+    "worker_psx_convert",
+    "worker_psx_organize",
+    "worker_psx_verify",
+    "worker_recompress_single",
+    "worker_switch_compress",
+    "worker_switch_decompress",
+}
 
 
-class ToolsController:
+class ToolsController(
+    ToolsSingleFileMixin,
+    ToolsBatchMixin,
+    ToolsDialogsMixin,
+):
     def __init__(self, main_window: MainWindowBase):
         self.mw = main_window
         self.ui = main_window.ui
         self._connect_signals()
 
     def _connect_signals(self):
-        # Switch Actions (Contextual)
-        self.ui.btn_compress.clicked.connect(self.on_compress_selected)
-        self.ui.btn_recompress.clicked.connect(self.on_recompress_selected)
-        self.ui.btn_decompress.clicked.connect(self.on_decompress_selected)
+        self._connect_binding_group(REQUIRED_SIGNAL_BINDINGS)
+        self._connect_binding_group(OPTIONAL_SIGNAL_BINDINGS, optional=True)
+        self._connect_window_action("act_show_actions", self.on_show_actions)
 
-        # Tools Tab - Switch
-        self.ui.btn_organize.clicked.connect(self.on_organize)
-        self.ui.btn_health.clicked.connect(self.on_health_check)
-        self.ui.btn_switch_compress.clicked.connect(self.on_switch_compress)
-        self.ui.btn_switch_decompress.clicked.connect(self.on_switch_decompress)
+    def _connect_binding_group(self, bindings, optional: bool = False):
+        for attr_name, handler_name in bindings:
+            widget = getattr(self.ui, attr_name, None)
+            if widget is None:
+                if optional:
+                    continue
+                raise AttributeError(f"Missing required UI widget: {attr_name}")
+            widget.clicked.connect(getattr(self, handler_name))
 
-        # Tools Tab - PS1
-        self.ui.btn_psx_convert.clicked.connect(self.on_psx_convert)
-        self.ui.btn_psx_verify.clicked.connect(self.on_psx_verify)
-        self.ui.btn_psx_organize.clicked.connect(self.on_psx_organize)
-
-        # Tools Tab - PS2
-        self.ui.btn_ps2_convert.clicked.connect(self.on_ps2_convert)
-        self.ui.btn_ps2_verify.clicked.connect(self.on_ps2_verify)
-        self.ui.btn_ps2_organize.clicked.connect(self.on_ps2_organize)
-
-        # Tools Tab - PS3
-        self.ui.btn_ps3_verify.clicked.connect(self.on_ps3_verify)
-        self.ui.btn_ps3_organize.clicked.connect(self.on_ps3_organize)
-
-        # Tools Tab - PSP
-        self.ui.btn_psp_verify.clicked.connect(self.on_psp_verify)
-        self.ui.btn_psp_organize.clicked.connect(self.on_psp_organize)
-        self.ui.btn_psp_compress.clicked.connect(self.on_psp_compress)
-
-        # Tools Tab - Dolphin
-        self.ui.btn_dolphin_organize.clicked.connect(self.on_dolphin_organize)
-        self.ui.btn_dolphin_convert.clicked.connect(self.on_dolphin_convert)
-        self.ui.btn_dolphin_verify.clicked.connect(self.on_dolphin_verify)
-
-        # Tools Tab - 3DS
-        self.ui.btn_n3ds_organize.clicked.connect(self.on_n3ds_organize)
-        self.ui.btn_n3ds_verify.clicked.connect(self.on_n3ds_verify)
-        self.ui.btn_n3ds_compress.clicked.connect(self.on_n3ds_compress)
-        self.ui.btn_n3ds_decompress.clicked.connect(self.on_n3ds_decompress)
-        self.ui.btn_n3ds_convert_cia.clicked.connect(self.on_n3ds_convert_cia)
-
-        # Tools Tab - General
-        self.ui.btn_clean_junk.clicked.connect(self.on_clean_junk)
-
-        # Show actions (audit trail)
+    def _connect_window_action(self, action_name: str, handler: Callable):
         try:
-            if hasattr(self.mw, "act_show_actions"):
-                self.mw.act_show_actions.triggered.connect(self.on_show_actions)
+            action = getattr(self.mw, action_name, None)
+            if action is not None:
+                action.triggered.connect(handler)
         except Exception:
             pass
 
-        # Tools Tab - Sega
-        if hasattr(self.ui, "btn_sega_convert"):
-            self.ui.btn_sega_convert.clicked.connect(self.on_sega_convert)
-        if hasattr(self.ui, "btn_sega_verify"):
-            self.ui.btn_sega_verify.clicked.connect(self.on_generic_verify_click)
-        if hasattr(self.ui, "btn_sega_organize"):
-            self.ui.btn_sega_organize.clicked.connect(self.on_generic_organize_click)
+    def _get_worker(self, name: str):
+        if name not in PATCHABLE_WORKER_NAMES:
+            raise KeyError(f"Unknown worker alias: {name}")
+        return globals()[name]
 
-        # Tools Tab - Microsoft
-        if hasattr(self.ui, "btn_ms_verify"):
-            self.ui.btn_ms_verify.clicked.connect(self.on_generic_verify_click)
-        if hasattr(self.ui, "btn_ms_organize"):
-            self.ui.btn_ms_organize.clicked.connect(self.on_generic_organize_click)
+    def _get_tool_task_spec(self, key: str):
+        return TOOL_TASK_SPECS[key]
 
-        # Tools Tab - Nintendo Legacy
-        if hasattr(self.ui, "btn_nint_compress"):
-            self.ui.btn_nint_compress.clicked.connect(self.on_nint_compress)
-        if hasattr(self.ui, "btn_nint_verify"):
-            self.ui.btn_nint_verify.clicked.connect(self.on_generic_verify_click)
-        if hasattr(self.ui, "btn_nint_organize"):
-            self.ui.btn_nint_organize.clicked.connect(self.on_generic_organize_click)
+    def _ensure_base_selected(self) -> bool:
+        if self.mw._last_base:
+            return True
+        logging.warning(MSG_SELECT_BASE)
+        return False
 
-    def _compression_dispatcher(self, path: Path, env: Any, args: Any, log_cb: Callable):
-        ext = path.suffix.lower()
-        if ext in (".nsp", ".xci"):
-            return worker_compress_single(path, env, args, log_cb)
-        if ext in (".3ds", ".cia", ".cci"):
-            return worker_n3ds_compress_single(path, args, log_cb)
-        
-        if ext == ".iso":
-            system = self._get_current_system_name()
-            if system in ("gamecube", "wii"):
-                from emumanager.workers.dolphin import worker_dolphin_convert_single
-                return worker_dolphin_convert_single(path, args, log_cb)
-            if system == "psp":
-                return worker_psp_compress_single(path, args, log_cb)
-
-        logging.warning(f"No compression handler for {ext}")
-        return None
-
-    def _get_current_system_name(self) -> Optional[str]:
-        try:
-            sys_item = self.mw.sys_list.currentItem()
-            return sys_item.text().lower() if sys_item else None
-        except Exception as e:
-            logging.debug(f"Failed to get current system: {e}")
-            return None
-
-    def on_compress_selected(self):
-        self._run_single_file_task(self._compression_dispatcher, "Compress", needs_env=True)
-
-    def on_recompress_selected(self):
-        def dispatcher(path, env, args, log_cb):
-            ext = path.suffix.lower()
-            if ext == ".rvz":
-                return worker_dolphin_recompress_single(path, args, log_cb)
-            # CHD recompress: if current system is PS2, offer CHD->CSO; else do CHD->CHD
-            if ext == ".chd":
-                try:
-                    sys_item = self.mw.sys_list.currentItem()
-                    system = sys_item.text().lower() if sys_item else None
-                except Exception:
-                    system = None
-
-                if system == "ps2":
-                    from emumanager.workers.ps2 import worker_chd_to_cso_single
-
-                    return worker_chd_to_cso_single(path, args, log_cb)
-                else:
-                    from emumanager.workers.psx import worker_chd_recompress_single
-
-                    return worker_chd_recompress_single(path, args, log_cb)
-            elif ext in (".nsz", ".xcz"):
-                return worker_recompress_single(path, env, args, log_cb)
-
-            logging.warning(f"No recompression handler for {ext}")
-            return None
-
-        self._run_single_file_task(dispatcher, "Recompress", needs_env=True)
-
-    def on_decompress_selected(self):
-        def dispatcher(path, env, args, log_cb):
-            ext = path.suffix.lower()
-            # Dolphin
-            if ext in (".rvz", ".gcz", ".wia"):
-                return worker_dolphin_decompress_single(path, args, log_cb)
-            # Switch
-            elif ext in (".nsz", ".xcz"):
-                return worker_decompress_single(path, env, args, log_cb)
-            # 3DS
-            elif ext == ".7z":
-                # Check if it's a 3DS 7z?
-                if "3ds" in str(path).lower() or "n3ds" in str(path).lower():
-                    return worker_n3ds_decompress_single(path, args, log_cb)
-            # CHD (use chdman)
-            elif ext == ".chd":
-                # Use PSX worker to extract CHD -> ISO
-                from emumanager.workers.psx import worker_chd_decompress_single
-
-                return worker_chd_decompress_single(path, args, log_cb)
-
-            logging.warning(f"No decompression handler for {ext}")
-            return None
-
-        self._run_single_file_task(dispatcher, "Decompress", needs_env=True)
-
-    def _resolve_rom_path(self, rom_name: str, system: str) -> Optional[Path]:
-        if not self.mw._last_base:
-            return None
-        base = Path(self.mw._last_base)
-        if base.name == "roms":
-            return base / system / rom_name
-        return base / "roms" / system / rom_name
-
-    def _handle_task_error_log(self, res: Any):
-        if not (isinstance(res, str) and "see " in res and ".chdman.out" in res):
-            logging.info(str(res))
-            return
-
-        try:
-            qt = self.mw._qtwidgets
-            idx = res.rfind("see ")
-            logpath = res[idx + 4 :].strip()
-            
-            mb = qt.QMessageBox(self.mw.window)
-            mb.setWindowTitle("Extraction Failed")
-            mb.setText(f"{res}")
-            open_btn = mb.addButton("Open Log", qt.QMessageBox.ActionRole)
-            mb.addButton(qt.QMessageBox.StandardButton.Ok)
-            mb.exec()
-            
-            if mb.clickedButton() == open_btn:
-                import subprocess
-                subprocess.run(["xdg-open", logpath], check=False)
-        except Exception as e:
-            logging.debug(f"Failed to show error dialog: {e}")
-            logging.info(str(res))
-
-    def _run_single_file_task(self, worker_func, label, needs_env=False):
-        rom_item = self.mw.rom_list.currentItem() if self.mw.rom_list else None
-        sys_item = self.mw.sys_list.currentItem() if self.mw.sys_list else None
-        
-        if not rom_item or not sys_item:
-            logging.error("No ROM or system selected")
-            return
-
-        full_path = self._resolve_rom_path(rom_item.text(), sys_item.text())
-        if not full_path or not full_path.exists():
-            logging.error(f"File not found or base invalid: {full_path}")
-            return
-
-        logging.info(f"{label}ing {full_path.name}...")
-        args, env = self.mw._get_common_args(), self.mw._env
-
-        def _work():
-            if needs_env:
-                return worker_func(full_path, env, args, self.mw.log_msg)
-            return worker_func(full_path, args, self.mw.log_msg)
-
-        def _done(res):
-            self._handle_task_error_log(res)
-            try:
-                self.mw.on_list()
-                # Sincronizar dados da biblioteca após operação
-                if hasattr(self.mw, '_sync_after_verification'):
-                    self.mw._sync_after_verification()
-            except Exception:
-                pass
-
+    def _set_ui_enabled(self, enabled: bool) -> None:
         if hasattr(self.mw, "_set_ui_enabled"):
             try:
-                self.mw._set_ui_enabled(False)
+                self.mw._set_ui_enabled(enabled)
             except Exception:
                 pass
-        self.mw._run_in_background(_work, _done)
-
-    def on_show_actions(self):
-        """Open a dialog showing recent library actions."""
-        try:
-            qt = self.mw._qtwidgets
-            dlg = ActionsDialog(qt, self.mw.window, self.mw.library_db)
-            dlg.show()
-        except Exception as e:
-            logging.exception(f"Failed to open actions dialog: {e}")
-
-    def on_show_quarantine(self):
-        """Open a dialog showing quarantined files and allow restore/delete."""
-        try:
-            qt = self.mw._qtwidgets
-            dlg = QuarantineDialog(qt, self.mw.window, self.mw.library_db, self.mw)
-            dlg.show()
-        except Exception as e:
-            logging.exception(f"Failed to open quarantine dialog: {e}")
-
-    def on_organize(self):
-        self._run_tool_task(worker_organize, "Organize Switch", needs_env=True)
-
-    def on_health_check(self):
-        self._run_tool_task(worker_health_check, "Health Check", needs_env=True)
-
-    def on_switch_compress(self):
-        self._run_tool_task(
-            worker_switch_compress, "Compress Switch Library", needs_env=True
-        )
-
-    def on_switch_decompress(self):
-        self._run_tool_task(
-            worker_switch_decompress, "Decompress Switch Library", needs_env=True
-        )
-
-    def on_psx_convert(self):
-        self._run_tool_task(worker_psx_convert, "Convert PS1 to CHD")
-
-    def on_psx_verify(self):
-        self._run_tool_task(worker_psx_verify, "Verify PS1")
-
-    def on_psx_organize(self):
-        self._run_tool_task(worker_psx_organize, "Organize PS1")
-
-    def on_ps2_convert(self):
-        self._run_tool_task(worker_ps2_convert, "Convert PS2 to CHD")
-
-    def on_ps2_verify(self):
-        self._run_tool_task(worker_ps2_verify, "Verify PS2")
-
-    def on_ps2_organize(self):
-        self._run_tool_task(worker_ps2_organize, "Organize PS2")
-
-    def on_ps3_verify(self):
-        self._run_tool_task(worker_ps3_verify, "Verify PS3")
-
-    def on_ps3_organize(self):
-        self._run_tool_task(worker_ps3_organize, "Organize PS3")
-
-    def on_psp_verify(self):
-        self._run_tool_task(worker_psp_verify, "Verify PSP")
-
-    def on_psp_organize(self):
-        self._run_tool_task(worker_psp_organize, "Organize PSP")
-
-    def on_psp_compress(self):
-        # PSP compress needs extra args (level)
-        if not self.mw._last_base:
-            logging.warning(MSG_SELECT_BASE)
-            return
-
-        args = self.mw._get_common_args()
-        args.level = 9
-        args.rm_originals = self.ui.chk_rm_originals.isChecked()
-
-        def _work():
-            return worker_psp_compress(
-                self.mw._last_base, args, self.mw.log_msg, self.mw._get_list_files_fn()
-            )
-
-        def _done(res):
-            logging.info(str(res))
-            self.mw._set_ui_enabled(True)
-
-        self.mw._set_ui_enabled(False)
-        self.mw._run_in_background(_work, _done)
-
-    def on_dolphin_organize(self):
-        self._run_tool_task(worker_dolphin_organize, "Organize GC/Wii")
-
-    def on_dolphin_convert(self):
-        self._run_tool_task(worker_dolphin_convert, "Convert GC/Wii to RVZ")
-
-    def on_dolphin_verify(self):
-        self._run_tool_task(worker_dolphin_verify, "Verify GC/Wii")
-
-    def on_n3ds_organize(self):
-        self._run_tool_task(worker_n3ds_organize, "Organize 3DS")
-
-    def on_n3ds_verify(self):
-        self._run_tool_task(worker_n3ds_verify, "Verify 3DS")
-
-    def on_n3ds_compress(self):
-        self._run_tool_task(worker_n3ds_compress, "Compress 3DS")
-
-    def on_n3ds_decompress(self):
-        self._run_tool_task(worker_n3ds_decompress, "Decompress 3DS")
-
-    def on_n3ds_convert_cia(self):
-        self._run_tool_task(worker_n3ds_convert_cia, "Convert 3DS to CIA")
-
-    def on_clean_junk(self):
-        if not self.mw._last_base:
-            logging.warning(MSG_SELECT_BASE)
-            return
-
-        # Confirmation Dialog
-        reply = self.mw._qtwidgets.QMessageBox.question(
-            self.mw.window,
-            "Confirm Clean Junk",
-            "This will remove .txt, .url, .nfo files and empty directories.\n"
-            "Are you sure you want to proceed?",
-            self.mw._qtwidgets.QMessageBox.StandardButton.Yes
-            | self.mw._qtwidgets.QMessageBox.StandardButton.No,
-            self.mw._qtwidgets.QMessageBox.StandardButton.No,
-        )
-
-        if reply != self.mw._qtwidgets.QMessageBox.StandardButton.Yes:
-            return
-
-        args = self.mw._get_common_args()
-
-        # Define list_dirs_fn
-        def list_dirs(path):
-            return [p for p in path.rglob("*") if p.is_dir()]
-
-        def _work():
-            return worker_clean_junk(
-                self.mw._last_base,
-                args,
-                self.mw.log_msg,
-                self.mw._get_list_files_fn(),
-                list_dirs,
-            )
-
-        def _done(res):
-            logging.info(str(res))
-            self.mw._set_ui_enabled(True)
-            self.mw._update_dashboard_stats()
-            # Sincronizar biblioteca após clean_junk
-            if hasattr(self.mw, '_sync_after_verification'):
-                self.mw._sync_after_verification()
-
-        self.mw._set_ui_enabled(False)
-        self.mw._run_in_background(_work, _done)
-
-    def _run_tool_task(self, worker_func, label, needs_env=False):
-        if not self.mw._last_base:
-            logging.warning(MSG_SELECT_BASE)
-            return
-
-        args = self.mw._get_common_args()
-        env = self.mw._env
-
-        def _work():
-            if needs_env:
-                return worker_func(
-                    self.mw._last_base,
-                    env,
-                    args,
-                    self.mw.log_msg,
-                    self.mw._get_list_files_fn(),
-                )
-            else:
-                return worker_func(
-                    self.mw._last_base,
-                    args,
-                    self.mw.log_msg,
-                    self.mw._get_list_files_fn(),
-                )
-
-        def _done(res):
-            logging.info(str(res))
-            self.mw._set_ui_enabled(True)
-            self.mw._update_dashboard_stats()
-            
-            # Synchronize library UI after tool operations
-            try:
-                self.mw._sync_after_verification()
-            except Exception as e:
-                logging.debug(f"UI sync after tool task failed: {e}")
-
-        self.mw._set_ui_enabled(False)
-        self.mw._run_in_background(_work, _done)
-
-    def on_generic_verify_click(self):
-        """Redirects to the Verification tab."""
-        self.ui.tabs.setCurrentWidget(self.ui.tab_verification)
-        logging.info("Please select a DAT file to verify your games.")
-        self.ui.btn_select_dat.setFocus()
-
-    def on_generic_organize_click(self):
-        self.mw._qtwidgets.QMessageBox.information(
-            self.mw.window,
-            "Feature Not Available",
-            "Automatic organization for this system is not yet implemented.\n"
-            "Please use the 'Organize (Rename)' button in the Dashboard "
-            "for generic renaming.",
-        )
-
-    def on_sega_convert(self):
-        self.mw._qtwidgets.QMessageBox.information(
-            self.mw.window,
-            "Sega Conversion",
-            "CHD conversion for Sega systems (Dreamcast/Saturn) uses the same "
-            "'chdman' tool as PS1.\n"
-            "This feature will be fully enabled in the next update.",
-        )
-
-    def on_nint_compress(self):
-        self.mw._qtwidgets.QMessageBox.information(
-            self.mw.window,
-            "Compression",
-            "Generic 7z/Zip compression for legacy systems is coming soon.",
-        )

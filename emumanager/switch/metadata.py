@@ -14,6 +14,7 @@ migration of the larger legacy script.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Optional
 
 TITLE_ID_RE = re.compile(
@@ -253,7 +254,7 @@ def get_metadata_minimal(path: Path) -> dict:
             type_name = "Update"
         else:
             type_name = "DLC"
-    except:
+    except Exception:
         type_name = "Unknown"
     
     # Determinar região

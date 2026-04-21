@@ -1,7 +1,5 @@
 """Testes para o sistema de exceções customizadas."""
 
-import pytest
-from pathlib import Path
 
 from emumanager.common.exceptions import (
     EmuManagerError,
@@ -11,8 +9,6 @@ from emumanager.common.exceptions import (
     ValidationError,
     IntegrityError,
     ProviderError,
-    ConversionError,
-    DatabaseError,
     WorkflowCancelledError,
     format_exception_chain,
 )

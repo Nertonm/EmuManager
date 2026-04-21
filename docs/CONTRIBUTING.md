@@ -1,34 +1,52 @@
 # Contributing
 
-We welcome contributions to EmuManager. Please follow these guidelines to ensure code quality and consistency.
+Changes should leave the project more maintainable than they found it. This repository already has a large surface area, so the contribution bar is intentionally practical and strict.
 
 ## Environment Setup
 
-1.  **Python Version**: Ensure you are using Python 3.10+.
-2.  **Dependencies**: Install in editable mode with dev dependencies:
-    ```bash
-    pip install -e ".[dev,gui]"
-    ```
+1. Use Python 3.10 or newer.
+2. Install editable dependencies:
 
-## Development Standards
+```bash
+pip install -e ".[dev,gui]"
+```
 
-### Code Style
-*   Follow PEP 8 guidelines.
-*   Use type hints for all function arguments and return values.
-*   Keep functions small and focused on a single responsibility.
+## Required Quality Checks
 
-### Testing
-*   All new features must be accompanied by unit tests.
-*   Run the test suite using `pytest` before submitting a Pull Request.
-*   Ensure that existing tests do not break.
+Run these before opening a PR:
 
-### Commits
-*   Write clear, concise commit messages.
-*   Reference issue numbers where applicable.
+```bash
+ruff check emumanager
+python -m compileall -q emumanager
+pytest -q
+```
+
+## Code Guidelines
+
+- Prefer improving existing abstractions over adding parallel ones.
+- Keep UI layers thin. Domain rules belong in providers, services, workers, or the orchestrator.
+- Do not reintroduce legacy names from the old `switch_organizer` layout.
+- Use type hints on new public functions and methods.
+- Replace broad inline logic with small named helpers when a block becomes hard to scan.
+- Avoid silent fallbacks unless the degraded behavior is intentional and documented.
+
+## Tests
+
+- Add or update tests for behavior changes.
+- If a module is weakly covered, prefer small targeted tests instead of leaving the change implicit.
+- For GUI-related changes, add coverage where practical, but do not expand brittle test scaffolding without reason.
+
+## Documentation
+
+- Update `README.md` when commands, entry points, or developer workflow change.
+- Update `docs/ARCHITECTURE.md` when responsibilities move between layers.
+- Keep docs grounded in the current code, not in aspirational structure.
 
 ## Providers
+
 If adding support for a new system:
-1.  Create a new package under `emumanager/[system_name]`.
-2.  Implement `provider.py` inheriting from `SystemProvider`.
-3.  Register the provider in `emumanager/common/registry.py` (or ensure auto-discovery works).
-4.  Add unit tests for metadata extraction and file validation.
+
+1. Create a new package under `emumanager/[system_name]`.
+2. Implement `provider.py` inheriting from `SystemProvider`.
+3. Register the provider in `emumanager.common.registry` or ensure auto-discovery covers it.
+4. Add tests for metadata extraction, extension support, and validation behavior.

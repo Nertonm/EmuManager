@@ -1,20 +1,15 @@
-from __future__ import annotations
-
 """Dialog to show quarantined files and allow restore/delete actions."""
 
-import os
+from __future__ import annotations
+
 import shutil
 from pathlib import Path
 from typing import Optional
 
 
 import logging
-import os
 import re
-import shutil
 import time
-from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 

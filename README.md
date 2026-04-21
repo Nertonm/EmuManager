@@ -1,39 +1,33 @@
 # EmuManager
 
-**Industrial-grade emulation collection manager and utilities.**
+EmuManager is a Python application for auditing, organizing, verifying, and maintaining emulation libraries. It shares one backend across three interfaces:
 
-EmuManager is a specialized tool designed for the automated management, verification, and organization of large-scale emulation libraries. It provides a robust backend capable of handling thousands of files with industrial reliability, supporting multiple modern consoles including PS2, GameCube, Wii, Switch, 3DS, PSP, and PSX.
+- `emumanager`: Textual TUI for interactive workflows
+- `emumanager-cli`: Typer CLI for scripted operations
+- `emumanager-gui`: PyQt desktop interface
 
-## Key Features
+The project targets mixed collections with multiple systems and file formats, with support modules for PS2, PSX, PSP, PS3, Switch, 3DS, GameCube, and Wii.
 
-*   **Universal Orchestrator**: Centralized logic for scanning, processing, and organizing ROM files across different directory structures.
-*   **Modular Architecture**: System-specific providers ensure correct handling of unique file formats (e.g., ISO for PS2, RVZ for GameCube/Wii, NSP/XCI for Switch).
-*   **Integrity Verification**: 
-    *   Multi-threaded hashing (CRC32, MD5, SHA1).
-    *   DAT file support (No-Intro, Redump) for precise verification.
-    *   Native format verification (e.g., `dolphin-tool verify` for RVZ, `chdman verify` for CHD).
-*   **Advanced Deduplication**: Identifies duplicates based on cryptographic hashes and normalized naming conventions, helping to recover wasted storage.
-*   **Format Conversion**: 
-    *   ISO to CHD (PS2, PSX).
-    *   ISO to RVZ (GameCube, Wii).
-    *   Compression management for Switch (NSZ).
-*   **Analytics Dashboard**: Insights into collection completion, verification status, and storage usage.
-*   **Multiple Interfaces**:
-    *   **TUI (Textual)**: Rich terminal user interface for servers and remote management.
-    *   **GUI (PyQt6)**: Full desktop experience with visual gallery and inspectors.
-    *   **CLI**: Scriptable interface for cron jobs and pipelines.
+## Capabilities
+
+- Central orchestration for scan, organization, verification, quarantine, duplicate cleanup, and reporting
+- Provider-based system support for metadata extraction, validation, and canonical naming
+- Integrity tooling with hashes, DAT parsing, and optional external verification tools
+- Deduplication and quarantine workflows backed by the local library database
+- Conversion/compression helpers for formats such as CHD, RVZ, and NSZ
+- Analytics and quality-control modules for collection health inspection
 
 ## Installation
 
 Requires Python 3.10 or higher.
 
-### Core Installation (Headless/Server)
+### Core
 
 ```bash
 pip install .
 ```
 
-### Full Installation (with GUI)
+### With GUI
 
 ```bash
 pip install ".[gui]"
@@ -41,41 +35,53 @@ pip install ".[gui]"
 
 ## Usage
 
-### Terminal User Interface (Recommended)
-
-The interactive TUI serves as the main cockpit for managing the library.
+### TUI
 
 ```bash
 emumanager
 ```
 
-### Command Line Interface (Automation)
-
-For specific commands without interactivity:
+### CLI
 
 ```bash
 emumanager-cli --help
 ```
 
-### Graphical User Interface
-
-For desktop environments:
+### GUI
 
 ```bash
 emumanager-gui
 ```
 
+## Project Layout
+
+```text
+emumanager/
+  application/   Shared workflow contracts and collection view services
+  common/        Shared primitives, validation, execution helpers
+  core/          Session, orchestrator facade, and focused workflow mixins
+  controllers/   GUI-facing controllers
+  gui_main_*.py  Main window behavior split by feature area
+  gui_ui*.py     Qt layout/scaffolding split by tab groups
+  workers/       Background workflows and bridge helpers
+  [system]/      Per-system metadata, database, and provider modules
+docs/            Architecture and contribution documentation
+tests/           Pytest suite
+```
+
 ## Development
 
-1.  Clone the repository.
-2.  Install development dependencies:
-    ```bash
-    pip install -e ".[dev,gui]"
-    ```
-3.  Run tests:
-    ```bash
-    pytest
-    ```
+```bash
+pip install -e ".[dev,gui]"
+ruff check emumanager
+python -m compileall -q emumanager
+pytest -q
+```
+
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Contributing](docs/CONTRIBUTING.md)
 
 ## License
 

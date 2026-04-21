@@ -6,11 +6,9 @@ from typing import Any
 from . import metadata, database
 from ..common.system import SystemProvider
 from ..common.exceptions import (
-    ProviderError,
     MetadataExtractionError,
     UnsupportedFormatError,
     FileReadError,
-    CorruptedFileError,
 )
 from ..common.validation import (
     validate_path_exists,

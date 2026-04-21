@@ -1,8 +1,7 @@
 import pytest
-from pathlib import Path
 from emumanager.core.session import Session
 from emumanager.core.orchestrator import Orchestrator
-from emumanager.library import LibraryDB, LibraryEntry
+from emumanager.library import LibraryEntry
 
 @pytest.fixture
 def clean_orch(tmp_path):

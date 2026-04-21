@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import requests
-import hashlib
-from pathlib import Path
 from typing import Optional, Any
 
 class RetroAchievementsProvider:
@@ -20,8 +18,9 @@ class RetroAchievementsProvider:
 
     def get_game_hashes(self, game_id: int) -> list[str]:
         """Obtém a lista de hashes (MD5) suportados para um Game ID."""
-        if not self.is_configured(): return []
-        
+        if not self.is_configured():
+            return []
+
         url = f"{self.API_BASE}API_GetGameHashes.php"
         params = {"z": self.username, "y": self.api_key, "i": game_id}
         

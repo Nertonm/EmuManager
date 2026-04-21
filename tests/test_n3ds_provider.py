@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from pathlib import Path
 from emumanager.n3ds.provider import N3DSProvider
 

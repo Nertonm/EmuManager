@@ -133,7 +133,7 @@ def exemplo_estatisticas():
     # Obter estatísticas
     stats = controller.get_quality_statistics()
     
-    print(f"\n📈 Estatísticas Gerais")
+    print("\n📈 Estatísticas Gerais")
     print("─" * 70)
     print(f"Total de ROMs: {stats['total']}")
     print(f"Score médio: {stats['average_score']:.1f}/100")
@@ -141,7 +141,7 @@ def exemplo_estatisticas():
     print(f"Danificadas/Corrompidas: {stats['damaged']} ({stats['damaged_percentage']:.1f}%)")
     print()
     
-    print(f"📊 Distribuição por Nível")
+    print("📊 Distribuição por Nível")
     print("─" * 70)
     
     total = stats['total']
@@ -162,7 +162,7 @@ def exemplo_estatisticas():
         print(f"{icon} {level.value:15} {count:4} ({percentage:5.1f}%) {bar}")
     print()
     
-    print(f"⚠️ Top 10 Problemas Mais Comuns")
+    print("⚠️ Top 10 Problemas Mais Comuns")
     print("─" * 70)
     
     for i, (issue_type, count) in enumerate(stats['top_issues'][:10], 1):

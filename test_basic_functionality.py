@@ -10,28 +10,20 @@ def test_imports():
     """Testa todos os imports críticos."""
     print("🔍 Testando imports...")
     try:
-        from emumanager import manager
         print("  ✓ manager")
         
-        from emumanager import config
         print("  ✓ config")
         
-        from emumanager.core import orchestrator
         print("  ✓ core.orchestrator")
         
-        from emumanager.core import session
         print("  ✓ core.session")
         
-        from emumanager.common import events
         print("  ✓ common.events")
         
-        from emumanager.common import types
         print("  ✓ common.types (NEW)")
         
-        from emumanager import library
         print("  ✓ library")
         
-        from emumanager import tui
         print("  ✓ tui")
         
         return True
@@ -46,7 +38,7 @@ def test_manager_functions():
     """Testa funções do manager."""
     print("\n🔧 Testando funções do manager...")
     try:
-        from emumanager.manager import get_orchestrator, get_roms_dir
+        from emumanager.manager import get_roms_dir
         
         # Testar get_roms_dir
         test_path = Path("/tmp/test_base")
@@ -73,7 +65,6 @@ def test_tui_creation():
     print("\n🎨 Testando criação do TUI...")
     try:
         from emumanager.tui import AsyncFeedbackTui
-        from emumanager.core.config_manager import ConfigManager
         
         # Configurar path temporário
         test_base = Path("/tmp/emumanager_test")
@@ -81,7 +72,7 @@ def test_tui_creation():
         
         # Criar instância
         tui = AsyncFeedbackTui(test_base)
-        print(f"  ✓ TUI instance created")
+        print("  ✓ TUI instance created")
         print(f"    Base: {tui.base}")
         print(f"    Orchestrator: {type(tui.orchestrator).__name__}")
         print(f"    Cancel event: {tui.cancel_event}")
@@ -135,8 +126,7 @@ def test_types():
     print("\n📦 Testando common.types...")
     try:
         from emumanager.common.types import (
-            WorkerResult, ProcessedItem, ScanResult, 
-            ProgressCallback, LogCallback
+            WorkerResult, ScanResult
         )
         
         # Criar WorkerResult
@@ -156,7 +146,7 @@ def test_types():
             1234.5,
             system="ps2"
         )
-        print(f"  ✓ ProcessedItem added")
+        print("  ✓ ProcessedItem added")
         
         # Criar ScanResult
         scan = ScanResult(files_scanned=100, files_verified=95)

@@ -9,7 +9,8 @@ import multiprocessing
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Iterable, Optional, TypeVar
+from types import SimpleNamespace
+from typing import Any, Callable, Iterable, Optional
 
 from emumanager.library import LibraryDB
 from emumanager.logging_cfg import get_correlation_id, set_correlation_id, get_logger
@@ -119,7 +120,8 @@ class BaseWorker(abc.ABC):
     def _run_sequential(self, items: list[Path], label: str):
         total = len(items)
         for i, item in enumerate(items):
-            if self.cancel_event.is_set(): break
+            if self.cancel_event.is_set():
+                break
             if self.progress_cb and total > 0:
                 self.progress_cb(i / total, f"{label}: {item.name}")
             
@@ -170,9 +172,12 @@ class BaseWorker(abc.ABC):
 
 
     def _update_stats(self, status: str):
-        if status == "success": self._result.success_count += 1
-        elif status == "skipped": self._result.skipped_count += 1
-        else: self._result.failed_count += 1
+        if status == "success":
+            self._result.success_count += 1
+        elif status == "skipped":
+            self._result.skipped_count += 1
+        else:
+            self._result.failed_count += 1
 
     @abc.abstractmethod
     def _process_item(self, item: Path) -> str:
@@ -231,9 +236,11 @@ def _path_resolve(p: Optional[Path]) -> Optional[Path]:
 def calculate_file_hash(path: Path, algo: str = "sha1", chunk_size: int = 1024 * 1024, progress_cb: Optional[Callable[[float], None]] = None) -> str:
     from emumanager.verification.hasher import calculate_hashes
     # Simulação de progresso se progress_cb for passado
-    if progress_cb: progress_cb(0.5) # Simplificado
+    if progress_cb:
+        progress_cb(0.5)  # Simplificado
     res = calculate_hashes(path, algorithms=(algo,), chunk_size=chunk_size)
-    if progress_cb: progress_cb(1.0)
+    if progress_cb:
+        progress_cb(1.0)
     return res.get(algo, "")
 
 def create_file_progress_cb(main_cb: Callable, start: float, end: float, name: str) -> Callable:
@@ -245,20 +252,24 @@ def create_file_progress_cb(main_cb: Callable, start: float, end: float, name: s
 def find_target_dir(base: Path, candidates: list[str]) -> Optional[Path]:
     for c in candidates:
         p = base / c
-        if p.is_dir(): return p
+        if p.is_dir():
+            return p
     return None
 
 def emit_verification_result(cb: Callable, **kwargs):
-    if cb: cb(SimpleNamespace(**kwargs))
+    if cb:
+        cb(SimpleNamespace(**kwargs))
 
 def verify_chd(path: Path) -> bool:
     from emumanager.common.execution import run_cmd
     chdman = find_tool("chdman")
-    if not chdman: return False
+    if not chdman:
+        return False
     try:
         res = run_cmd([str(chdman), "verify", "-i", str(path)], timeout=60)
         return res.returncode == 0 or "verify ok" in (getattr(res, "stdout", "") or "").lower()
-    except Exception: return False
+    except Exception:
+        return False
 
 def skip_if_compressed(path: Path, logger: logging.Logger, db: Optional[LibraryDB] = None) -> bool:
     if db is None:
@@ -308,5 +319,3 @@ def worker_clean_junk(base_path: Path, args: Any, log_cb: Callable[[str], None],
             logger.debug(f"Failed to remove empty directory {d}: {e}")
         
     return f"Limpeza concluída. {count} ficheiros removidos."
-from types import SimpleNamespace
-
